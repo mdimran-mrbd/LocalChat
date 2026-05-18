@@ -184,6 +184,7 @@ code {
   border-top: 1px solid var(--border);
   background: var(--bg);
 }
+.mobile-menu[hidden] { display: none; }
 .mobile-menu a {
   padding: 12px 10px;
   border-radius: 10px;
@@ -632,7 +633,11 @@ code {
   border-radius: 8px;
 }
 .foot-links a:hover { color: var(--text); background: var(--bg-elev); }
-.foot-meta { color: var(--text-faint); font-size: 0.88rem; }
+.foot-meta { color: var(--text-faint); font-size: 0.88rem; display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+.foot-meta a { color: var(--text-dim); text-decoration: none; }
+.foot-meta a:hover { color: var(--text); }
+.made-in { display: inline-flex; align-items: center; gap: 6px; }
+.flag-in { border-radius: 2px; box-shadow: 0 0 0 1px var(--border); vertical-align: middle; }
 
 /* ---------------- Reveal-on-scroll ---------------- */
 .reveal {
