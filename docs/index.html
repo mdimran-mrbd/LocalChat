@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>LocalChat — Private team chat for your own Wi-Fi</title>
+  <meta name="description" content="LocalChat is a private, zero-install team chat that runs on your own Wi-Fi. One ~5 MB binary. No accounts. No cloud. No telemetry." />
+  <meta name="theme-color" content="#0b0d12" />
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="LocalChat — Private team chat for your own Wi-Fi" />
+  <meta property="og:description" content="One ~5 MB binary. No accounts. No cloud. No telemetry. Double-click. Share the LAN URL. Done." />
+  <meta property="og:type" content="website" />
+  <meta property="og:image" content="assets/LocalChat.png" />
+
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="nav" id="nav">
+    <div class="container nav-inner">
+      <a class="brand" href="#top" aria-label="LocalChat home">
+        <svg class="brand-mark" width="28" height="28" viewBox="0 0 32 32" aria-hidden="true">
+          <defs>
+            <linearGradient id="lg1" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#7c5cff"/>
+              <stop offset="100%" stop-color="#22d3ee"/>
+            </linearGradient>
+          </defs>
+          <rect x="2" y="3" width="28" height="22" rx="6" fill="url(#lg1)"/>
+          <path d="M9 26 L13 22 H21 a5 5 0 0 0 5 -5 V11" fill="none" stroke="rgba(255,255,255,.85)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="11" cy="14" r="1.6" fill="#fff"/>
+          <circle cx="16" cy="14" r="1.6" fill="#fff"/>
+          <circle cx="21" cy="14" r="1.6" fill="#fff"/>
+        </svg>
+        <span class="brand-name">LocalChat</span>
+      </a>
+
+      <nav class="nav-links" aria-label="Primary">
+        <a href="#features">Features</a>
+        <a href="#screenshots">Screenshots</a>
+        <a href="#quickstart">Quick start</a>
+        <a href="#faq">FAQ</a>
+        <a href="https://github.com/BipulRaman/LocalChat" target="_blank" rel="noopener">GitHub</a>
+      </nav>
+
+      <div class="nav-actions">
+        <button class="icon-btn theme-toggle" id="themeToggle" aria-label="Toggle theme" title="Toggle theme">
+          <svg class="ic-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+          <svg class="ic-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        </button>
+        <a class="btn btn-primary nav-cta" href="https://github.com/BipulRaman/LocalChat/releases/latest" target="_blank" rel="noopener">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Download
+        </a>
+        <button class="icon-btn menu-toggle" id="menuToggle" aria-label="Open menu" aria-expanded="false">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="mobile-menu" id="mobileMenu" hidden>
+      <a href="#features">Features</a>
+      <a href="#screenshots">Screenshots</a>
+      <a href="#quickstart">Quick start</a>
+      <a href="#faq">FAQ</a>
+      <a href="https://github.com/BipulRaman/LocalChat" target="_blank" rel="noopener">GitHub</a>
+      <a class="btn btn-primary" href="https://github.com/BipulRaman/LocalChat/releases/latest" target="_blank" rel="noopener">Download</a>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- Hero -->
+    <section class="hero" id="top">
+      <div class="hero-bg" aria-hidden="true">
+        <div class="blob blob-a"></div>
+        <div class="blob blob-b"></div>
+        <div class="grid"></div>
+      </div>
+      <div class="container hero-inner">
+        <div class="hero-copy">
+          <div class="eyebrow">
+            <span class="dot"></span> LAN-only · Zero-install · Open source
+          </div>
+          <h1>
+            Private team chat that runs on <span class="grad">your own Wi-Fi</span>.
+          </h1>
+          <p class="lede">
+            One ~5&nbsp;MB binary. No accounts. No cloud. No telemetry.
+            Double-click. Share the LAN URL. Done.
+          </p>
+          <div class="cta-row">
+            <a class="btn btn-primary btn-lg" href="https://github.com/BipulRaman/LocalChat/releases/latest" target="_blank" rel="noopener">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Download for Windows
+            </a>
+            <a class="btn btn-ghost btn-lg" href="https://github.com/BipulRaman/LocalChat" target="_blank" rel="noopener">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.7.5.7 5.5.7 11.8c0 5 3.2 9.2 7.7 10.7.6.1.8-.2.8-.6v-2.2c-3.1.7-3.8-1.3-3.8-1.3-.5-1.3-1.3-1.7-1.3-1.7-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.5-.3-5.2-1.3-5.2-5.7 0-1.3.4-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.2 1.2.9-.3 1.9-.4 2.9-.4s2 .1 2.9.4c2.2-1.5 3.2-1.2 3.2-1.2.6 1.6.2 2.8.1 3.1.7.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.2 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6 4.5-1.5 7.7-5.7 7.7-10.7C23.3 5.5 18.3.5 12 .5z"/></svg>
+              View on GitHub
+            </a>
+          </div>
+          <div class="badges">
+            <span class="badge"><span class="badge-key">~5</span> MB binary</span>
+            <span class="badge"><span class="badge-key">~5</span> MB RAM</span>
+            <span class="badge"><span class="badge-key">0</span> outbound requests</span>
+            <span class="badge"><span class="badge-key">MIT</span> licensed</span>
+          </div>
+        </div>
+
+        <div class="hero-art">
+          <div class="window">
+            <div class="window-chrome">
+              <span class="dot d-r"></span><span class="dot d-y"></span><span class="dot d-g"></span>
+              <div class="window-url">https://192.168.1.42:5000</div>
+            </div>
+            <img src="assets/LocalChat.png" alt="LocalChat chat interface with channels and direct messages" loading="eager" />
+          </div>
+          <div class="floating-card card-encrypted" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            <div>
+              <div class="fc-title">End-to-end encrypted</div>
+              <div class="fc-sub">Host can't read your DMs</div>
+            </div>
+          </div>
+          <div class="floating-card card-lan" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14 0"/><path d="M2 8.82a15 15 0 0 1 20 0"/><path d="M8.5 16.43a6 6 0 0 1 7 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+            <div>
+              <div class="fc-title">LAN-only</div>
+              <div class="fc-sub">Air-gap friendly</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Why -->
+    <section class="section" id="why">
+      <div class="container">
+        <div class="section-head">
+          <div class="kicker">Why LocalChat</div>
+          <h2>The missing <span class="grad">fourth option</span>.</h2>
+          <p class="section-sub">
+            Slack and Teams need internet, accounts, and SaaS pricing.
+            IRC needs a server admin and config files. Discord owns your data.
+            LocalChat is for offices, classrooms, hackathons, homelabs, secure
+            facilities, factory floors, ships, planes, and anywhere people share
+            a network but not necessarily the internet.
+          </p>
+        </div>
+
+        <div class="why-grid">
+          <div class="why-card">
+            <div class="why-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></div>
+            <h3>One binary, no install</h3>
+            <p>Drop <code>LocalChat.exe</code> on a desktop. Double-click. That's the whole setup.</p>
+          </div>
+          <div class="why-card">
+            <div class="why-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></div>
+            <h3>Air-gapped friendly</h3>
+            <p>Zero outbound traffic. Works on a router with no WAN connection at all.</p>
+          </div>
+          <div class="why-card">
+            <div class="why-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
+            <h3>No accounts</h3>
+            <p>Pick a name, you're in. Identity is bound to a per-browser key — usernames can't be impersonated.</p>
+          </div>
+          <div class="why-card">
+            <div class="why-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+            <h3>E2E encrypted DMs</h3>
+            <p>The host process literally cannot read direct messages — keys never leave the browser.</p>
+          </div>
+          <div class="why-card">
+            <div class="why-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg></div>
+            <h3>Persistent</h3>
+            <p>Channels, members, history, reactions and uploads survive restarts. One tiny SQLite file.</p>
+          </div>
+          <div class="why-card">
+            <div class="why-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 2 13 9 20 9"/><path d="M20 9v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h7"/></svg></div>
+            <h3>Tiny</h3>
+            <p>~5 MB on disk, ~5 MB RAM at 200 users / 50 channels. Boring infra should be fast.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Features -->
+    <section class="section section-alt" id="features">
+      <div class="container">
+        <div class="section-head">
+          <div class="kicker">Features</div>
+          <h2>All the modern niceties. <span class="grad">None of the cloud.</span></h2>
+        </div>
+
+        <div class="features-grid">
+          <article class="feature">
+            <div class="feature-ic">💬</div>
+            <h3>Channels</h3>
+            <p>Public, private, and a lobby. Create, invite, join, leave.</p>
+          </article>
+          <article class="feature">
+            <div class="feature-ic">🔐</div>
+            <h3>1:1 Direct Messages</h3>
+            <p>True end-to-end encryption — keys live only in the browser.</p>
+          </article>
+          <article class="feature">
+            <div class="feature-ic">📞</div>
+            <h3>Voice &amp; video calls</h3>
+            <p>Direct peer-to-peer between users on the LAN.</p>
+          </article>
+          <article class="feature">
+            <div class="feature-ic">📎</div>
+            <h3>File sharing</h3>
+            <p>Drag &amp; drop with image previews and a built-in lightbox.</p>
+          </article>
+          <article class="feature">
+            <div class="feature-ic">↩️</div>
+            <h3>Replies &amp; reactions</h3>
+            <p>Quote any message. React with any emoji.</p>
+          </article>
+          <article class="feature">
+            <div class="feature-ic">👋</div>
+            <h3>Mentions &amp; presence</h3>
+            <p>Typing indicators, read receipts, online status — all the niceties.</p>
+          </article>
+          <article class="feature">
+            <div class="feature-ic">🛡️</div>
+            <h3>Admin dashboard</h3>
+            <p>Live metrics, kick/ban, broadcast, and runtime settings.</p>
+          </article>
+          <article class="feature">
+            <div class="feature-ic">🌗</div>
+            <h3>Light &amp; dark themes</h3>
+            <p>Polished, mobile-friendly UI that looks great on any screen.</p>
+          </article>
+          <article class="feature">
+            <div class="feature-ic">🔁</div>
+            <h3>Auto-reconnect</h3>
+            <p>Survives sleep, Wi-Fi roams, and momentary network blips.</p>
+          </article>
+          <article class="feature">
+            <div class="feature-ic">🚫</div>
+            <h3>No telemetry</h3>
+            <p>Not a single outbound request. Verify it with Wireshark.</p>
+          </article>
+          <article class="feature">
+            <div class="feature-ic">🦀</div>
+            <h3>Built with Rust</h3>
+            <p>Memory-safe, fast, and tiny. Boring infrastructure done right.</p>
+          </article>
+          <article class="feature">
+            <div class="feature-ic">📦</div>
+            <h3>Portable data</h3>
+            <p>Move the data folder anywhere. Override with <code>LOCALCHAT_HOME</code>.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- Screenshots -->
+    <section class="section" id="screenshots">
+      <div class="container">
+        <div class="section-head">
+          <div class="kicker">Screenshots</div>
+          <h2>Polished where it counts.</h2>
+          <p class="section-sub">A clean, familiar chat surface — plus a real admin dashboard built in from day one.</p>
+        </div>
+
+        <div class="shot">
+          <div class="shot-frame">
+            <div class="window-chrome">
+              <span class="dot d-r"></span><span class="dot d-y"></span><span class="dot d-g"></span>
+              <div class="window-url">https://192.168.1.42:5000 — chat</div>
+            </div>
+            <img src="assets/LocalChat.png" alt="The LocalChat chat interface with channels, messages, and member list" loading="lazy"/>
+          </div>
+          <p class="shot-caption">The chat experience: channels, DMs, reactions, replies, file previews, mentions, presence.</p>
+        </div>
+
+        <div class="shot">
+          <div class="shot-frame">
+            <div class="window-chrome">
+              <span class="dot d-r"></span><span class="dot d-y"></span><span class="dot d-g"></span>
+              <div class="window-url">https://localhost:5000/admin</div>
+            </div>
+            <img src="assets/LocalChatAdmin.png" alt="The LocalChat admin dashboard showing live metrics, users, and settings" loading="lazy"/>
+          </div>
+          <p class="shot-caption">The admin dashboard: live metrics, user moderation, broadcasts, file management, and runtime settings.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Quick start -->
+    <section class="section section-alt" id="quickstart">
+      <div class="container">
+        <div class="section-head">
+          <div class="kicker">60-second quick start</div>
+          <h2>Running in <span class="grad">under a minute</span>.</h2>
+        </div>
+
+        <ol class="steps">
+          <li>
+            <div class="step-num">1</div>
+            <div class="step-body">
+              <h3>Download</h3>
+              <p>Grab <code>LocalChat.exe</code> from the <a href="https://github.com/BipulRaman/LocalChat/releases/latest" target="_blank" rel="noopener">latest release</a>.</p>
+            </div>
+          </li>
+          <li>
+            <div class="step-num">2</div>
+            <div class="step-body">
+              <h3>Double-click</h3>
+              <p>A tray icon appears; the host's browser opens automatically.</p>
+            </div>
+          </li>
+          <li>
+            <div class="step-num">3</div>
+            <div class="step-body">
+              <h3>Allow on Private network</h3>
+              <p>Click through Windows Firewall — Private network is enough.</p>
+            </div>
+          </li>
+          <li>
+            <div class="step-num">4</div>
+            <div class="step-body">
+              <h3>Share the LAN URL</h3>
+              <p>Read it from the tray tooltip — e.g. <code>https://192.168.1.42:5000</code> — and share it with anyone on the same Wi-Fi.</p>
+            </div>
+          </li>
+          <li>
+            <div class="step-num">5</div>
+            <div class="step-body">
+              <h3>Start chatting</h3>
+              <p>They open the URL, pick a name, and they're in. No install, no signup, no account.</p>
+            </div>
+          </li>
+        </ol>
+
+        <div class="callout">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+          <p>The first visit shows a browser warning because the cert is self-signed. Click <strong>Advanced → Proceed</strong>. To use a real cert, see <a href="https://github.com/BipulRaman/LocalChat/tree/main/app/scripts" target="_blank" rel="noopener"><code>app/scripts/</code></a>.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Build from source -->
+    <section class="section" id="build">
+      <div class="container build-grid">
+        <div>
+          <div class="kicker">For developers</div>
+          <h2>Build it yourself in <span class="grad">two commands</span>.</h2>
+          <p class="section-sub">Hacking on the internals? Check the <a href="https://github.com/BipulRaman/LocalChat/blob/main/DESIGN.md" target="_blank" rel="noopener">design doc</a> for the full architecture — concurrency model, persistence layout, E2EE protocol, wire spec, and a file-by-file map of the codebase.</p>
+          <div class="cta-row">
+            <a class="btn btn-primary" href="https://github.com/BipulRaman/LocalChat" target="_blank" rel="noopener">Star on GitHub</a>
+            <a class="btn btn-ghost" href="https://github.com/BipulRaman/LocalChat/blob/main/DESIGN.md" target="_blank" rel="noopener">Read DESIGN.md</a>
+          </div>
+        </div>
+        <div class="code-card">
+          <div class="code-head">
+            <span class="dot d-r"></span><span class="dot d-y"></span><span class="dot d-g"></span>
+            <span class="code-title">terminal</span>
+          </div>
+<pre class="code"><span class="c-dim"># clone &amp; build</span>
+<span class="c-prompt">$</span> git clone https://github.com/BipulRaman/LocalChat
+<span class="c-prompt">$</span> cd LocalChat/app
+<span class="c-prompt">$</span> cargo run --release                          <span class="c-dim"># tray + browser auto-open</span>
+<span class="c-prompt">$</span> cargo build --release --features tray        <span class="c-dim"># target/release/localchat.exe</span>
+
+<span class="c-dim"># release</span>
+<span class="c-prompt">$</span> git tag v2.0.0 &amp;&amp; git push origin v2.0.0      <span class="c-dim"># CI publishes LocalChat.exe</span></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- FAQ -->
+    <section class="section section-alt" id="faq">
+      <div class="container">
+        <div class="section-head">
+          <div class="kicker">FAQ</div>
+          <h2>Questions, answered.</h2>
+        </div>
+
+        <div class="faq-list">
+          <details>
+            <summary>Does LocalChat need the internet?</summary>
+            <p>No. LocalChat runs entirely on your LAN. It makes zero outbound requests and is happy on a router with no WAN. Perfect for air-gapped or restricted networks.</p>
+          </details>
+          <details>
+            <summary>Where does my data live?</summary>
+            <p>In a single folder you pick on first launch (default <code>C:\LocalChat</code>): a SQLite file, an <code>uploads/</code> directory, a self-signed cert, rolling logs, and <code>config.json</code>. Move it, back it up, or delete it — that's all of it.</p>
+          </details>
+          <details>
+            <summary>How does identity work without accounts?</summary>
+            <p>The first time you open the page, your browser generates a keypair and stores it locally. Your username is bound to that key, so even on an open LAN, nobody can impersonate you.</p>
+          </details>
+          <details>
+            <summary>Are DMs really end-to-end encrypted?</summary>
+            <p>Yes. Direct messages are encrypted in the browser using per-conversation keys. The host process never sees plaintext — it just relays opaque blobs and stores them in the database.</p>
+          </details>
+          <details>
+            <summary>Which platforms are supported?</summary>
+            <p>Today: a single <code>LocalChat.exe</code> for Windows (the host) plus any modern browser (the clients — Windows, macOS, Linux, iOS, Android). macOS and Linux tray builds are on the roadmap.</p>
+          </details>
+          <details>
+            <summary>How do voice and video calls work?</summary>
+            <p>Peer-to-peer over WebRTC, mediated by the LocalChat server only for signaling. Media never leaves the LAN.</p>
+          </details>
+          <details>
+            <summary>How big can it scale?</summary>
+            <p>Comfortably to ~200 users and ~50 channels using about 5 MB of RAM. It's a single Rust process designed to be boring and reliable, not infinitely scalable.</p>
+          </details>
+          <details>
+            <summary>Is it really free?</summary>
+            <p>Yes. <a href="https://github.com/BipulRaman/LocalChat/blob/main/LICENSE" target="_blank" rel="noopener">MIT licensed</a> — do anything you want; attribution appreciated.</p>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <!-- CTA -->
+    <section class="section cta-section">
+      <div class="container cta-card">
+        <div>
+          <h2>Ready to chat <span class="grad">without the cloud</span>?</h2>
+          <p>One double-click. One LAN URL. Your team is online.</p>
+        </div>
+        <div class="cta-row">
+          <a class="btn btn-primary btn-lg" href="https://github.com/BipulRaman/LocalChat/releases/latest" target="_blank" rel="noopener">Download for Windows</a>
+          <a class="btn btn-ghost btn-lg" href="https://github.com/BipulRaman/LocalChat" target="_blank" rel="noopener">Star on GitHub</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer-inner">
+      <div class="foot-brand">
+        <svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true">
+          <rect x="2" y="3" width="28" height="22" rx="6" fill="url(#lg1)"/>
+        </svg>
+        <span>LocalChat</span>
+      </div>
+      <nav class="foot-links" aria-label="Footer">
+        <a href="https://github.com/BipulRaman/LocalChat" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/BipulRaman/LocalChat/releases" target="_blank" rel="noopener">Releases</a>
+        <a href="https://github.com/BipulRaman/LocalChat/blob/main/DESIGN.md" target="_blank" rel="noopener">Design</a>
+        <a href="https://github.com/BipulRaman/LocalChat/blob/main/LICENSE" target="_blank" rel="noopener">License</a>
+        <a href="https://github.com/BipulRaman/LocalChat/blob/main/CODE_OF_CONDUCT.md" target="_blank" rel="noopener">Code of Conduct</a>
+      </nav>
+      <div class="foot-meta">
+        <span>Built with Rust 🦀 — MIT licensed.</span>
+      </div>
+    </div>
+  </footer>
+
+  <script src="script.js" defer></script>
+</body>
+</html>
