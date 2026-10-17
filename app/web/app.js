@@ -1842,7 +1842,7 @@ async function renderMessage(m, { follow, peer, ch }) {
       title: isMessagePinned(m) ? "Unpin message" : "Pin message",
       "aria-label": isMessagePinned(m) ? "Unpin message" : "Pin message",
       onclick: (ev) => { ev.stopPropagation(); toggleMessagePin(m); },
-    }, isMessagePinned(m) ? "📌" : "⌖"),
+    }, isMessagePinned(m) ? "📌" : "📍"),
     el("button", {
       class: "ma-btn bookmark-btn" + (savedNow ? " saved" : ""),
       title: savedNow ? "Remove bookmark" : "Save message",
