@@ -1618,9 +1618,8 @@ async function renderMessage(m, { follow, peer, ch }) {
       class: "ma-btn bookmark-btn" + (savedNow ? " saved" : ""),
       title: savedNow ? "Remove bookmark" : "Save message",
       "aria-label": savedNow ? "Remove bookmark" : "Save message",
-      textContent: savedNow ? "★" : "☆",
       onclick: (ev) => { ev.stopPropagation(); toggleMessageBookmark(m, ev.currentTarget); },
-    }),
+    }, savedNow ? "★" : "☆"),
     el("button", {
       class: "ma-btn",
       title: "Add reaction",
