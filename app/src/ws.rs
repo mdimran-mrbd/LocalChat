@@ -1480,6 +1480,24 @@ async fn handle_op(
 
             let key = (channel_id.clone(), msg_id);
             let entry = state.reactions.entry(key).or_default();
+            // Remove this user's prior emoji(s) for this message before toggling
+            // the selected one. Other users' reactions are left untouched.
+            let old_emojis: Vec<CompactString> = entry.iter()
+                .filter_map(|item| {
+                    if item.key() != &emoji && item.value().contains(&user_id) {
+                        Some(item.key().clone())
+                    } else { None }
+                })
+                .collect();
+            for old in old_emojis {
+                if let Some(mut users) = entry.get_mut(&old) {
+                    users.retain(|u| u != &user_id);
+                    if users.is_empty() {
+                        drop(users);
+                        entry.remove(&old);
+                    }
+                }
+            }
             let mut on = true;
             {
                 let mut users = entry.entry(emoji.clone()).or_default();
