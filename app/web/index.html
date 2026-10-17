@@ -225,6 +225,8 @@
         </div>
       </header>
 
+      <div id="messages" class="chat-stream" role="log" aria-live="polite"></div>
+
       <section id="messageSearchPanel" class="message-search-panel hidden" aria-label="Search messages">
         <form class="message-search-form" onsubmit="runMessageSearch(event)">
           <input id="messageSearchInput" type="search" placeholder="Search messages in this channel…" minlength="2" maxlength="100" autocomplete="off" aria-label="Search messages" />
@@ -234,8 +236,6 @@
         <div id="messageSearchStatus" class="muted xs" aria-live="polite"></div>
         <div id="messageSearchResults" class="message-search-results"></div>
       </section>
-
-      <div id="messages" class="chat-stream" role="log" aria-live="polite"></div>
 
       <div id="typing" class="typing-row"></div>
 
