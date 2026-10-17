@@ -806,6 +806,43 @@ impl Db {
         )).await
     }
 
+    /// Soft-delete a message for everyone while retaining its position in history.
+    /// The original text and attachment metadata are removed from the database.
+    pub async fn delete_message_for_everyone(&self, channel: &str, message_id: u64) -> rusqlite::Result<Option<WireMsg>> {
+        let channel = channel.to_string();
+        self.with(move |c| {
+            let mid = i64::try_from(message_id)
+                .map_err(|_| rusqlite::Error::IntegralValueOutOfRange(1, i64::MAX))?;
+            let changed = c.execute(
+                "UPDATE messages
+                    SET kind='system', text='This message was deleted.', deleted=1,
+                        file_id=NULL, file_name=NULL, file_size=NULL, file_mime=NULL, file_url=NULL
+                  WHERE channel_id=?1 AND id=?2 AND deleted=0",
+                params![channel, mid],
+            )?;
+            if changed == 0 { return Ok(None); }
+            c.execute("DELETE FROM pinned_messages WHERE channel_id=?1 AND message_id=?2", params![channel, mid])?;
+            c.execute("DELETE FROM saved_messages WHERE channel_id=?1 AND message_id=?2", params![channel, mid])?;
+            c.query_row(
+                "SELECT id, channel_id, user_id, username, avatar, color,
+                        kind, ts, text, reply_to, edited_at, deleted,
+                        file_id, file_name, file_size, file_mime, file_url
+                   FROM messages WHERE channel_id=?1 AND id=?2",
+                params![channel, mid], row_to_message
+            ).optional()
+        }).await
+    }
+
+    /// Return the author ID for permission checks before deletion/forwarding.
+    pub async fn message_author_id(&self, channel: &str, message_id: u64) -> rusqlite::Result<Option<String>> {
+        let channel = channel.to_string();
+        self.with(move |c| c.query_row(
+            "SELECT user_id FROM messages WHERE channel_id=?1 AND id=?2 AND deleted=0",
+            params![channel, message_id as i64],
+            |r| r.get::<_, Option<String>>(0)
+        ).optional().map(|v| v.flatten())).await
+    }
+
     pub async fn search_messages(&self, channel: &str, query: &str, limit: usize) -> rusqlite::Result<Vec<WireMsg>> {
         let cid = channel.to_string();
         let needle = format!("%{}%", query);
