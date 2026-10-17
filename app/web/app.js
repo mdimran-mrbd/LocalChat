@@ -1001,7 +1001,7 @@ function positionMessageActions(row) {
   }
   actions.style.left = `${left}px`;
   actions.style.right = "auto";
-  actions.style.top = `${top - rr.top + rr.top}px`;
+  actions.style.top = `${top - rr.top}px`;
   // All coordinates are row-local; never use fixed positioning or document scroll offsets.
 }
 
@@ -1015,7 +1015,7 @@ function messageMentionsMe(m) {
       if (decrypted == null) return false;
       text = decrypted;
     }
-    const escaped = S.me.username.replace(/[.*+?^${}()|[\]\\]/g, "\\function toggleReaction(msgId, emoji) {
+    const escaped = S.me.username.replace(/[^A-Za-z0-9._-]/g, (ch) => "\\" + ch);
 ");
     return new RegExp(`(^|[^A-Za-z0-9._-])@${escaped}(?=$|[^A-Za-z0-9._-])`, "i").test(text);
   };
