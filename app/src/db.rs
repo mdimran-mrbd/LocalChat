@@ -843,6 +843,24 @@ impl Db {
         ).optional().map(|v| v.flatten())).await
     }
 
+    /// Stable author identity for permission checks across reconnects.
+    pub async fn message_author_username(&self, channel: &str, message_id: u64) -> rusqlite::Result<Option<String>> {
+        let channel = channel.to_string();
+        self.with(move |c| c.query_row(
+            "SELECT username FROM messages WHERE channel_id=?1 AND id=?2 AND deleted=0",
+            params![channel, message_id as i64], |r| r.get::<_, String>(0)
+        ).optional()).await
+    }
+
+    /// Return the stored upload filename before its reference is cleared.
+    pub async fn message_attachment_filename(&self, channel: &str, message_id: u64) -> rusqlite::Result<Option<String>> {
+        let channel = channel.to_string();
+        self.with(move |c| c.query_row(
+            "SELECT file_id FROM messages WHERE channel_id=?1 AND id=?2 AND deleted=0",
+            params![channel, message_id as i64], |r| r.get::<_, Option<String>>(0)
+        ).optional().map(|v| v.flatten())).await
+    }
+
     pub async fn search_messages(&self, channel: &str, query: &str, limit: usize) -> rusqlite::Result<Vec<WireMsg>> {
         let cid = channel.to_string();
         let needle = format!("%{}%", query);
