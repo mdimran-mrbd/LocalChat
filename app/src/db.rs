@@ -103,6 +103,15 @@ CREATE INDEX IF NOT EXISTS idx_messages_user       ON messages(user_id);
 -- in Db::open() so it can run *after* the ALTER TABLE that adds the
 -- column on legacy installs.
 
+CREATE TABLE IF NOT EXISTS saved_messages (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    channel_id TEXT NOT NULL,
+    message_id INTEGER NOT NULL,
+    saved_at INTEGER NOT NULL,
+    PRIMARY KEY (user_id, channel_id, message_id)
+);
+CREATE INDEX IF NOT EXISTS idx_saved_messages_user ON saved_messages(user_id, saved_at DESC);
+
 CREATE TABLE IF NOT EXISTS reactions (
     message_id  INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
     user_id     TEXT    NOT NULL REFERENCES users(id)    ON DELETE CASCADE,
@@ -780,6 +789,14 @@ impl Db {
 
     /// Search visible channel history by message text or attached file name.
     /// Results are newest first and capped by the caller.
+    pub async fn message_exists_in_channel(&self, channel: &str, message_id: u64) -> rusqlite::Result<bool> {
+        let channel = channel.to_string();
+        self.with(move |c| c.query_row(
+            "SELECT EXISTS(SELECT 1 FROM messages WHERE channel_id=?1 AND id=?2)",
+            params![channel, message_id as i64], |r| r.get(0)
+        )).await
+    }
+
     pub async fn search_messages(&self, channel: &str, query: &str, limit: usize) -> rusqlite::Result<Vec<WireMsg>> {
         let cid = channel.to_string();
         let needle = format!("%{}%", query);
@@ -930,6 +947,70 @@ pub struct ReactionRow {
 
 impl Db {
     /// Toggle a reaction. Returns true if it ended up "on" (added).
+    /// Save or unsave a message for one authenticated user.
+    pub async fn toggle_saved_message(&self, user_id: UserId, channel: &str, message_id: u64, saved_at: i64) -> rusqlite::Result<bool> {
+        let uid = user_id.to_string();
+        let channel = channel.to_string();
+        self.with(move |c| {
+            let exists: bool = c.query_row(
+                "SELECT EXISTS(SELECT 1 FROM saved_messages WHERE user_id=?1 AND channel_id=?2 AND message_id=?3)",
+                params![uid, channel, message_id as i64], |r| r.get(0)
+            )?;
+            if exists {
+                c.execute("DELETE FROM saved_messages WHERE user_id=?1 AND channel_id=?2 AND message_id=?3",
+                    params![uid, channel, message_id as i64])?;
+                Ok(false)
+            } else {
+                c.execute("INSERT INTO saved_messages(user_id, channel_id, message_id, saved_at) VALUES (?1,?2,?3,?4)",
+                    params![uid, channel, message_id as i64, saved_at])?;
+                Ok(true)
+            }
+        }).await
+    }
+
+    /// List the authenticated user's saved messages with a safe preview.
+    pub async fn list_saved_messages(&self, user_id: UserId) -> rusqlite::Result<Vec<serde_json::Value>> {
+        let uid = user_id.to_string();
+        self.with(move |c| {
+            let mut stmt = c.prepare(
+                "SELECT s.channel_id, COALESCE(ch.name, s.channel_id), s.message_id,
+                        COALESCE(m.username, ''), COALESCE(m.text, ''), COALESCE(m.file_name, ''),
+                        COALESCE(m.ts, s.saved_at), s.saved_at, COALESCE(m.kind, 'text')
+                   FROM saved_messages s
+                   LEFT JOIN channels ch ON ch.id=s.channel_id
+                   LEFT JOIN messages m ON m.id=s.message_id AND m.channel_id=s.channel_id
+                  WHERE s.user_id=?1
+                  ORDER BY s.saved_at DESC LIMIT 500"
+            )?;
+            let rows = stmt.query_map(params![uid], |r| {
+                let kind: String = r.get(8)?;
+                let text: String = r.get(4)?;
+                let file_name: String = r.get(5)?;
+                Ok(serde_json::json!({
+                    "channel": r.get::<_, String>(0)?,
+                    "channelName": r.get::<_, String>(1)?,
+                    "id": r.get::<_, i64>(2)?,
+                    "username": r.get::<_, String>(3)?,
+                    "text": if kind == "file" { format!("📎 {}", file_name) } else { text },
+                    "ts": r.get::<_, i64>(6)?,
+                    "savedAt": r.get::<_, i64>(7)?
+                }))
+            })?;
+            let mut out = Vec::new();
+            for row in rows { out.push(row?); }
+            Ok(out)
+        }).await
+    }
+
+    pub async fn is_message_saved(&self, user_id: UserId, channel: &str, message_id: u64) -> rusqlite::Result<bool> {
+        let uid = user_id.to_string();
+        let channel = channel.to_string();
+        self.with(move |c| c.query_row(
+            "SELECT EXISTS(SELECT 1 FROM saved_messages WHERE user_id=?1 AND channel_id=?2 AND message_id=?3)",
+            params![uid, channel, message_id as i64], |r| r.get(0)
+        )).await
+    }
+
     pub async fn toggle_reaction(
         &self,
         channel: &str,
