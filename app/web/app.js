@@ -996,13 +996,25 @@ function positionMessageActions(row) {
     left = leftCandidate - rr.left;
     top = sideTop - rr.top;
   } else {
-    // The row reserves 42px above its bubble while hovered. Put the toolbar
-    // in that strip rather than allowing it to cover any neighbouring text.
-    row.classList.add("actions-above");
+    // Prefer the reserved strip above the bubble. At the very top edge, use
+    // a reserved strip below it instead of letting the toolbar be clipped.
     const updatedBubble = bubble.getBoundingClientRect();
     const updatedRow = row.getBoundingClientRect();
     left = Math.max(6, Math.min(updatedBubble.left - updatedRow.left, updatedRow.width - width - 6));
-    top = Math.max(2, updatedBubble.top - updatedRow.top - height - 8);
+    const minTop = sr.top + 6 - updatedRow.top;
+    const maxTop = sr.bottom - height - 6 - updatedRow.top;
+    const aboveTop = updatedBubble.top - updatedRow.top - height - 8;
+    if (aboveTop >= minTop && aboveTop <= maxTop) {
+      top = aboveTop;
+    } else {
+      row.classList.add("actions-below");
+      const belowBubble = bubble.getBoundingClientRect();
+      const belowRow = row.getBoundingClientRect();
+      const belowTop = belowBubble.bottom - belowRow.top + 8;
+      top = belowTop + height <= sr.bottom - 6 - belowRow.top
+        ? belowTop
+        : Math.max(2, Math.min(maxTop, aboveTop));
+    }
   }
   actions.style.left = `${left}px`;
   actions.style.right = "auto";
