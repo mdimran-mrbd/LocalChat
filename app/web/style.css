@@ -2408,51 +2408,63 @@ html, body.admin-shell { height: 100%; overflow: hidden; }
 }
 
 
-/* ── Message search ─────────────────────────────────────────────── */
-.message-search-panel {
-  flex: 0 0 auto;
-  max-height: 42%;
-  overflow-y: auto;
-  padding: 10px 6%;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-1);
-}
-.message-search-form {
-  display: flex;
+.message-search-bar {
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-}
-.message-search-form input {
-  flex: 1;
-  min-width: 0;
-  padding: 9px 11px;
+  gap: 4px;
+  padding: 3px 5px;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-0);
+  border-radius: 10px;
+  background: var(--bg-1);
+  box-shadow: var(--shadow-sm);
+  min-width: 0;
+}
+.message-search-bar input {
+  width: clamp(130px, 18vw, 240px);
+  min-width: 0;
+  padding: 6px 8px;
+  border: 0;
+  outline: 0;
+  background: transparent;
   color: var(--fg-0);
   font: inherit;
+  font-size: 13px;
 }
-.message-search-form input:focus { outline: none; border-color: var(--brand); }
-#messageSearchStatus { margin: 8px 0 4px; }
-.message-search-results { display: flex; flex-direction: column; gap: 6px; }
-.message-search-result {
-  padding: 9px 11px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-0);
-  overflow-wrap: anywhere;
+.search-nav-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg-1);
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
 }
-.message-search-result-heading {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 10px;
-  margin-bottom: 4px;
+.search-nav-btn:hover { background: var(--bg-hover); color: var(--fg-0); }
+.search-match-count {
+  min-width: 34px;
+  text-align: center;
+  color: var(--fg-2);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
-.message-search-result-heading time { color: var(--muted); font-size: 11px; }
-.message-search-result-text { white-space: pre-wrap; font-size: 13px; }
-@media (max-width: 560px) {
-  .message-search-form { flex-wrap: wrap; }
-  .message-search-form input { flex-basis: 100%; }
-  .message-search-panel { padding: 10px 12px; max-height: 45%; }
+.search-close-btn { font-size: 22px; }
+#messages .msg.search-match .bubble {
+  outline: 2px solid rgba(245, 158, 11, 0.42);
+  outline-offset: 2px;
+}
+#messages .msg.search-current .bubble {
+  outline: 3px solid #f59e0b;
+  background: rgba(245, 158, 11, 0.20);
+  box-shadow: 0 0 0 5px rgba(245, 158, 11, 0.12);
+}
+@media (max-width: 720px) {
+  .message-search-bar { gap: 1px; }
+  .message-search-bar input { width: 110px; }
+  .search-nav-btn { width: 25px; flex-basis: 25px; }
+  .ch-actions { gap: 4px; }
 }
