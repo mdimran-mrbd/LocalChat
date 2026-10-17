@@ -944,7 +944,7 @@ function onReact({ channel, msgId, userId, emoji, on }) {
   if (!perCh) { perCh = new Map(); S.reactions.set(channel, perCh); }
   let perMsg = perCh.get(msgId);
   if (!perMsg) { perMsg = new Map(); perCh.set(msgId, perMsg); }
-  if (on) for (const [oldEmoji, oldUsers] of perMsg.entries()) {
+  for (const [oldEmoji, oldUsers] of perMsg.entries()) {
     if (oldEmoji !== emoji) { oldUsers.delete(userId); if (!oldUsers.size) perMsg.delete(oldEmoji); }
   }
   let users = perMsg.get(emoji);
