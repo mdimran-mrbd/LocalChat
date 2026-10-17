@@ -1008,11 +1008,6 @@ function positionMessageActions(row) {
   actions.style.right = "auto";
   actions.style.top = `${top}px`;
 }
-  actions.style.left = `${left}px`;
-  actions.style.right = "auto";
-  actions.style.top = `${top - rr.top}px`;
-  // All coordinates are row-local; never use fixed positioning or document scroll offsets.
-}
 
 function repositionVisibleMessageActions() {
   document.querySelectorAll("#messages .msg.actions-visible").forEach(positionMessageActions);
