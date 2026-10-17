@@ -1,0 +1,27 @@
+name: Validate LocalChat
+
+on:
+  push:
+    branches: [feature/message-search]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Check Rust code
+        run: cargo check --manifest-path app/Cargo.toml --no-default-features
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check JavaScript syntax
+        run: node --check app/web/app.js
