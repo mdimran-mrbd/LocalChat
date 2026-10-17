@@ -856,7 +856,7 @@ impl Db {
     pub async fn message_attachment_filename(&self, channel: &str, message_id: u64) -> rusqlite::Result<Option<String>> {
         let channel = channel.to_string();
         self.with(move |c| c.query_row(
-            "SELECT file_id FROM messages WHERE channel_id=?1 AND id=?2 AND deleted=0",
+            "SELECT file_url FROM messages WHERE channel_id=?1 AND id=?2 AND deleted=0",
             params![channel, message_id as i64], |r| r.get::<_, Option<String>>(0)
         ).optional().map(|v| v.flatten())).await
     }
