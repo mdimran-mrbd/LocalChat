@@ -2713,7 +2713,7 @@ html, body.admin-shell { height: 100%; overflow: hidden; }
 
 /* Message-attached reaction control and composer-safe floating action menu. */
 .msg .msg-hover-reaction { position: absolute; z-index: 4; margin: 0; align-self: auto; }
-.msg .msg-menu.menu-floating {
+.msg-menu.menu-floating {
   position: fixed; display: flex; flex-direction: column; min-width: 190px;
   width: max-content; max-width: min(260px, calc(100vw - 16px));
   box-sizing: border-box; z-index: 100;
