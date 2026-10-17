@@ -1388,8 +1388,8 @@ input:focus, textarea:focus {
 /* Message action toolbar is a sibling of the bubble, positioned by JS
    within the message row. Hover reserves vertical room so it cannot cover
    neighbouring messages; horizontal placement stays outside the bubble. */
-.msg.actions-visible { padding-top: 42px; }
-.msg.actions-visible.actions-below { padding-bottom: 42px; }
+.msg.actions-visible { padding-top: 50px; }
+.msg.actions-visible.actions-below { padding-bottom: 50px; }
 .msg .msg-actions {
   position: absolute;
   display: flex;
