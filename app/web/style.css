@@ -1389,6 +1389,7 @@ input:focus, textarea:focus {
    within the message row. Hover reserves vertical room so it cannot cover
    neighbouring messages; horizontal placement stays outside the bubble. */
 .msg.actions-visible { padding-top: 42px; }
+.msg.actions-visible.actions-below { padding-bottom: 42px; }
 .msg .msg-actions {
   position: absolute;
   display: flex;
