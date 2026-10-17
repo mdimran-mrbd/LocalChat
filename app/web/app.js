@@ -1972,7 +1972,9 @@ function toggleMessageBookmark(message, button) {
 function updateSavedCount() {
   const button = $("savedMessagesBtn");
   if (!button) return;
-  button.textContent = savedMessages.length ? `Saved · ${savedMessages.length}` : "Saved";
+  button.title = savedMessages.length ? `View saved messages (${savedMessages.length})` : "View saved messages";
+  const count = $("savedMessagesCount");
+  if (count) { count.textContent = savedMessages.length > 99 ? "99+" : String(savedMessages.length); count.classList.toggle("hidden", savedMessages.length === 0); }
 }
 function onSavedMessages(e) {
   savedMessages = Array.isArray(e.items) ? e.items : [];
