@@ -2379,7 +2379,8 @@ function openForwardDialog(message, displayText, fileRealName, sourcePeer) {
               mime = envelope.mime || mime;
             }
             const forwardedFile = new File([bytes], name, { type: mime });
-            await uploadFile(forwardedFile, ch.id);
+            const uploaded = await uploadFile(forwardedFile, ch.id);
+            if (!uploaded) return;
             close();
             toast("Attachment forwarded");
           } catch (err) {
@@ -2974,7 +2975,7 @@ async function uploadFile(f, targetChannel = S.active) {
     }
     if (!S.session) {
       toast("Not connected — try again in a moment", 4000);
-      return;
+      return false;
     }
   }
   const ch = S.channels.get(targetChannel);
@@ -3009,7 +3010,7 @@ async function uploadFile(f, targetChannel = S.active) {
       envelopeWire = await E2EE.encryptFor(peer.id, peer.pubkey, env);
     } catch (err) {
       toast("Encrypt failed: " + err.message, 4000);
-      return;
+      return false;
     }
   } else if (ch?.kind === "dm") {
     // DM but no peer pubkey / insecure context — warn before sending in clear.
@@ -3017,7 +3018,7 @@ async function uploadFile(f, targetChannel = S.active) {
       "Direct-message files normally travel end-to-end encrypted, but the peer's\n" +
       "encryption key isn't available right now (peer offline or insecure context).\n\n" +
       "Send this file in plaintext anyway? The server admin will be able to read it.")) {
-      return;
+      return false;
     }
   }
 
@@ -3041,8 +3042,10 @@ async function uploadFile(f, targetChannel = S.active) {
     // Server already broadcast the message via the channel bus;
     // our own onWireMsg will render it. Nothing else to do.
     toast(isDmEncrypted ? `Sent (encrypted) ${f.name}` : `Uploaded ${f.name}`);
+    return true;
   } catch (err) {
     toast("Upload failed: " + err.message, 4000);
+    return false;
   }
 }
 $("msgInput").addEventListener("paste", async (e) => {
