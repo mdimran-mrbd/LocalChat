@@ -359,6 +359,9 @@ const S = {
   channels: new Map(),     // id → meta
   msgs: new Map(),         // channelId → array of wire messages (raw)
   reactions: new Map(),    // channelId → Map<msgId, Map<emoji, Set<userId>>>
+  pins: new Map(),         // channelId → pinned-message metadata array
+  pinsExpanded: false,
+  mentions: new Map(),      // channelId → latest message ID mentioning me
   readMarks: new Map(),    // channelId → Map<userId, latestReadMsgId>
   unread: new Map(),       // channelId → count
   typing: new Map(),       // channelId → Map<userId, { username, until }>
@@ -581,6 +584,7 @@ function handleEvent(e) {
     case "search_results": return onSearchResults(e);
     case "saved_messages": return onSavedMessages(e);
     case "react":        return onReact(e);
+    case "pin_update":   return onPinUpdate(e);
     case "ch_created":   return onChannelCreated(e.channel);
     case "ch_invited":   return onChannelInvited(e);
     case "ch_deleted":   return onChannelDeleted(e.channel);
@@ -755,6 +759,10 @@ async function onWireMsg(m) {
     try { onReact(JSON.parse(m.text)); } catch {}
     return;
   }
+  if (m.username === "__pin") {
+    try { onPinUpdate(JSON.parse(m.text)); } catch {}
+    return;
+  }
   if (m.username === "__read") {
     try { onRead(JSON.parse(m.text)); } catch {}
     return;
@@ -796,7 +804,13 @@ async function onWireMsg(m) {
   S.msgs.set(m.channel, arr);
 
   const isMine = S.me && (m.userId === S.me.id || m.username === S.me.username);
-  if (!isMine && m.kind !== "system") notifyIncomingMessage(m);
+  if (!isMine && m.kind !== "system") {
+    notifyIncomingMessage(m);
+    if (await messageMentionsMe(m)) {
+      S.mentions.set(m.channel, String(m.id));
+      updateMentionBadge();
+    }
+  }
 
   if (m.channel !== S.active) {
     S.unread.set(m.channel, (S.unread.get(m.channel) || 0) + 1);
@@ -809,7 +823,7 @@ async function onWireMsg(m) {
   }
 }
 
-async function onHistory({ channel, messages, reactions }) {
+async function onHistory({ channel, messages, reactions, pins }) {
   const filtered = (messages || []).filter((m) =>
     !(m.kind === "system" && /\b(joined|left) the chat\b/.test(m.text || ""))
   );
@@ -832,7 +846,8 @@ async function onHistory({ channel, messages, reactions }) {
     }
   }
   S.reactions.set(channel, rmap);
-  if (S.active === channel) await renderStream();
+  S.pins.set(channel, Array.isArray(pins) ? pins : []);
+  if (S.active === channel) { await renderStream(); updateMentionBadge(); }
 }
 
 let messageSearchMatches = [];
@@ -902,6 +917,12 @@ function navigateMessageSearch(direction) {
   $("messageSearchCount").textContent = `${messageSearchIndex + 1}/${messageSearchMatches.length}`;
 }
 
+function onPinUpdate({ channel, pins }) {
+  if (!channel) return;
+  S.pins.set(channel, Array.isArray(pins) ? pins : []);
+  if (channel === S.active) renderStream();
+}
+
 function onReact({ channel, msgId, userId, emoji, on }) {
   let perCh = S.reactions.get(channel);
   if (!perCh) { perCh = new Map(); S.reactions.set(channel, perCh); }
@@ -914,6 +935,107 @@ function onReact({ channel, msgId, userId, emoji, on }) {
   if (users.size === 0) perMsg.delete(emoji);
   if (perMsg.size === 0) perCh.delete(msgId);
   if (channel === S.active) renderStream();
+}
+
+function isMessagePinned(m) {
+  return (S.pins.get(m.channel) || []).some((p) => String(p.id) === String(m.id));
+}
+
+function toggleMessagePin(m) {
+  sendOp({ op: "pin_toggle", channel: m.channel, msgId: Number(m.id) });
+}
+
+function renderPinnedBanner(channel) {
+  const pins = S.pins.get(channel) || [];
+  if (!pins.length) return null;
+  const banner = el("section", { class: "pinned-banner" });
+  banner.append(el("button", {
+    class: "pinned-banner-head", type: "button",
+    "aria-expanded": S.pinsExpanded ? "true" : "false",
+    onclick: () => { S.pinsExpanded = !S.pinsExpanded; renderStream(); },
+  }, [el("span", {}, "📌 Pinned messages"), el("span", { class: "pinned-count" }, String(pins.length)), el("span", { class: "pinned-chevron" }, S.pinsExpanded ? "▴" : "▾")]));
+  if (S.pinsExpanded) {
+    const list = el("div", { class: "pinned-list" });
+    for (const p of pins) {
+      list.append(el("button", {
+        type: "button", class: "pinned-item",
+        title: "Jump to this message",
+        onclick: () => {
+          const loaded = (S.msgs.get(channel) || []).some((m) => String(m.id) === String(p.id));
+          if (loaded) jumpToMessage(channel, Number(p.id));
+          else toast("This pinned message is outside the currently loaded history.", 3500);
+        },
+      }, [el("strong", {}, p.username || "Message"), el("span", {}, `Message #${p.id} · pinned by ${p.pinnedByName || "a member"}`)]));
+    }
+    banner.append(list);
+  }
+  return banner;
+}
+
+function positionMessageActions(row) {
+  if (!row?.isConnected || !row.classList.contains("actions-visible")) return;
+  const bubble = row.querySelector(".bubble");
+  const actions = row.querySelector(".msg-actions");
+  const stream = $("messages");
+  if (!bubble || !actions || !stream) return;
+  const br = bubble.getBoundingClientRect();
+  const rr = row.getBoundingClientRect();
+  const sr = stream.getBoundingClientRect();
+  const width = actions.offsetWidth || 150;
+  const height = actions.offsetHeight || 38;
+  const gap = 10;
+  const incoming = !row.classList.contains("own");
+  const leftCandidate = incoming ? br.left - width - gap : br.right + gap;
+  const leftFits = incoming ? leftCandidate >= sr.left + 6 : leftCandidate + width <= sr.right - 6;
+  let left;
+  let top = br.top + (br.height - height) / 2;
+  if (leftFits) {
+    left = leftCandidate - rr.left;
+  } else {
+    // Reserve a row-local strip above the bubble so the fallback never covers chat text.
+    row.classList.add("actions-above");
+    const updatedBubble = bubble.getBoundingClientRect();
+    const updatedRow = row.getBoundingClientRect();
+    left = Math.max(6, Math.min(updatedBubble.left - updatedRow.left, updatedRow.width - width - 6));
+    top = Math.max(2, updatedBubble.top - updatedRow.top - height - 8);
+  }
+  actions.style.left = `${left}px`;
+  actions.style.right = "auto";
+  actions.style.top = `${top - rr.top + rr.top}px`;
+  // All coordinates are row-local; never use fixed positioning or document scroll offsets.
+}
+
+function messageMentionsMe(m) {
+  if (!S.me?.username || !m || m.kind === "system" || m.kind === "file") return Promise.resolve(false);
+  const inspect = async () => {
+    let text = String(m.text || "");
+    const peer = dmPeer(S.channels.get(m.channel));
+    if (peer && text.startsWith("e2e:v1:")) {
+      const decrypted = await E2EE.tryDecrypt(peer.id, peer.pubkey, text);
+      if (decrypted == null) return false;
+      text = decrypted;
+    }
+    const escaped = S.me.username.replace(/[.*+?^${}()|[\]\\]/g, "\\function toggleReaction(msgId, emoji) {
+");
+    return new RegExp(`(^|[^A-Za-z0-9._-])@${escaped}(?=$|[^A-Za-z0-9._-])`, "i").test(text);
+  };
+  return inspect().catch(() => false);
+}
+
+function updateMentionBadge() {
+  const badge = $("mentionJumpBtn");
+  if (!badge) return;
+  const id = S.mentions.get(S.active);
+  badge.classList.toggle("hidden", !id);
+  badge.setAttribute("aria-hidden", id ? "false" : "true");
+  badge.onclick = () => {
+    const targetId = S.mentions.get(S.active);
+    if (targetId == null) return;
+    const node = document.getElementById(`m-${S.active}-${targetId}`);
+    if (node) node.scrollIntoView({ behavior: "smooth", block: "center" });
+    S.mentions.delete(S.active);
+    updateMentionBadge();
+  };
 }
 
 function toggleReaction(msgId, emoji) {
@@ -1350,6 +1472,8 @@ async function renderStream() {
   box.innerHTML = "";
   const arr = S.msgs.get(S.active) || [];
   const ch = S.channels.get(S.active);
+  const pinnedBanner = renderPinnedBanner(S.active);
+  if (pinnedBanner) box.append(pinnedBanner);
 
   if (arr.length === 0) {
     box.append(renderEmptyState(ch));
@@ -1700,6 +1824,12 @@ async function renderMessage(m, { follow, peer, ch }) {
   const savedNow = isMessageSaved(m);
   const actions = el("div", { class: "msg-actions" }, [
     el("button", {
+      class: "ma-btn pin-btn" + (isMessagePinned(m) ? " pinned" : ""),
+      title: isMessagePinned(m) ? "Unpin message" : "Pin message",
+      "aria-label": isMessagePinned(m) ? "Unpin message" : "Pin message",
+      onclick: (ev) => { ev.stopPropagation(); toggleMessagePin(m); },
+    }, isMessagePinned(m) ? "📌" : "⌖"),
+    el("button", {
       class: "ma-btn bookmark-btn" + (savedNow ? " saved" : ""),
       title: savedNow ? "Remove bookmark" : "Save message",
       "aria-label": savedNow ? "Remove bookmark" : "Save message",
@@ -1718,7 +1848,6 @@ async function renderMessage(m, { follow, peer, ch }) {
       html: `<svg viewBox="0 0 24 24" width="16" height="16"><path d="M10 9V5l-7 7 7 7v-4c5 0 8 1.5 10 5-1-7-5-11-10-11z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>`,
     }),
   ]);
-  bubble.append(actions);
 
   // Tail only on the first bubble of a group.
   const classes = ["msg"];
@@ -1730,8 +1859,20 @@ async function renderMessage(m, { follow, peer, ch }) {
   const stack = el("div", { class: "msg-stack" });
   if (header) stack.append(header);
   stack.append(bubble);
-
-  return el("div", { class: classes.join(" "), id: `m-${m.channel}-${m.id}` }, [avatar, stack]);
+  const row = el("div", { class: classes.join(" "), id: `m-${m.channel}-${m.id}` }, [avatar, stack, actions]);
+  row.addEventListener("mouseenter", () => {
+    row.classList.add("actions-visible");
+    requestAnimationFrame(() => positionMessageActions(row));
+  });
+  row.addEventListener("focusin", () => {
+    row.classList.add("actions-visible");
+    requestAnimationFrame(() => positionMessageActions(row));
+  });
+  row.addEventListener("mouseleave", () => row.classList.remove("actions-visible"));
+  row.addEventListener("focusout", (ev) => {
+    if (!row.contains(ev.relatedTarget)) row.classList.remove("actions-visible");
+  });
+  return row;
 }
 
 // Compute tick state for an own message:
@@ -1881,6 +2022,7 @@ function isAtBottom(box) {
 // ── Channel switching ────────────────────────────────────────────────
 function switchChannel(id) {
   S.active = id;
+  updateMentionBadge();
   S.unread.set(id, 0);
   if (S.replyTo && S.replyTo.channelId !== id) clearReplyTo();
   else renderReplyPreview();
