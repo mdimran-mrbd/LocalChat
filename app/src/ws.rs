@@ -1312,6 +1312,28 @@ async fn handle_op(
             let _ = sink.send(Message::Text(resp.to_string())).await;
         }
 
+        "saved_list" => {
+            let saved = state.db.list_saved_messages(user_id.clone()).await
+                .map_err(|_| "could not load saved messages".to_string())?;
+            let out = json!({"ev":"saved_messages","items":saved});
+            let _ = sink.send(Message::Text(out.to_string())).await;
+        }
+
+        "saved_toggle" => {
+            let channel_id = v.get("channel").and_then(Value::as_str).ok_or("missing channel")?;
+            let msg_id = v.get("msgId").and_then(Value::as_u64).ok_or("missing msgId")?;
+            let ch = state.channels.get(channel_id).ok_or("no such channel")?;
+            if !can_send(&ch, &user_id) { return Err("not a member".into()); }
+            let exists = state.db.message_exists_in_channel(channel_id, msg_id).await
+                .map_err(|_| "could not verify message".to_string())?;
+            if !exists { return Err("message not found".into()); }
+            let saved = state.db.toggle_saved_message(user_id.clone(), channel_id, msg_id, now_secs()).await
+                .map_err(|_| "could not update saved messages".to_string())?;
+            let items = state.db.list_saved_messages(user_id.clone()).await.unwrap_or_default();
+            let out = json!({"ev":"saved_messages","items":items,"changed":{"channel":channel_id,"id":msg_id,"saved":saved}});
+            let _ = sink.send(Message::Text(out.to_string())).await;
+        }
+
         "search" => {
             let id = v
                 .get("channel")
