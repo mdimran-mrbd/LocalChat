@@ -815,7 +815,7 @@ impl Db {
                 .map_err(|_| rusqlite::Error::IntegralValueOutOfRange(1, i64::MAX))?;
             let changed = c.execute(
                 "UPDATE messages
-                    SET kind='system', text='This message was deleted.', deleted=1,
+                    SET text='This message was deleted.', deleted=1,
                         file_id=NULL, file_name=NULL, file_size=NULL, file_mime=NULL, file_url=NULL
                   WHERE channel_id=?1 AND id=?2 AND deleted=0",
                 params![channel, mid],
@@ -1157,41 +1157,49 @@ impl Db {
         let emoji_s = emoji.to_string();
         self.with(move |c| {
             let tx = c.transaction()?;
-            let exists: Option<i64> = tx
-                .query_row(
-                    "SELECT 1 FROM reactions
-                      WHERE message_id = ?1 AND user_id = ?2 AND emoji = ?3",
-                    params![message_id as i64, uid, emoji_s],
-                    |r| r.get(0),
-                )
-                .optional()?;
+            // Enforce one active emoji per user/message. Clear any previous
+            // emoji first and record those removals in the audit log.
+            let old_emojis: Vec<String> = {
+                let mut stmt = tx.prepare(
+                    "SELECT emoji FROM reactions
+                      WHERE message_id=?1 AND user_id=?2 AND emoji<>?3"
+                )?;
+                let rows = stmt.query_map(params![message_id as i64, uid, emoji_s], |r| r.get(0))?;
+                rows.collect::<rusqlite::Result<Vec<String>>>()?
+            };
+            for old in old_emojis {
+                tx.execute(
+                    "DELETE FROM reactions WHERE message_id=?1 AND user_id=?2 AND emoji=?3",
+                    params![message_id as i64, uid, old],
+                )?;
+                tx.execute(
+                    "INSERT INTO reaction_events(ts,message_id,channel_id,user_id,emoji,on_)
+                     VALUES (?1,?2,?3,?4,?5,0)",
+                    params![ts as i64, message_id as i64, cid, uid, old],
+                )?;
+            }
+            let exists: Option<i64> = tx.query_row(
+                "SELECT 1 FROM reactions WHERE message_id=?1 AND user_id=?2 AND emoji=?3",
+                params![message_id as i64, uid, emoji_s], |r| r.get(0),
+            ).optional()?;
             let now_on;
             if exists.is_some() {
                 tx.execute(
-                    "DELETE FROM reactions
-                      WHERE message_id = ?1 AND user_id = ?2 AND emoji = ?3",
+                    "DELETE FROM reactions WHERE message_id=?1 AND user_id=?2 AND emoji=?3",
                     params![message_id as i64, uid, emoji_s],
                 )?;
                 now_on = false;
             } else {
                 tx.execute(
-                    "INSERT INTO reactions(message_id, user_id, emoji, ts)
-                     VALUES (?1, ?2, ?3, ?4)",
+                    "INSERT INTO reactions(message_id,user_id,emoji,ts) VALUES (?1,?2,?3,?4)",
                     params![message_id as i64, uid, emoji_s, ts as i64],
                 )?;
                 now_on = true;
             }
             tx.execute(
-                "INSERT INTO reaction_events(ts, message_id, channel_id, user_id, emoji, on_)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                params![
-                    ts as i64,
-                    message_id as i64,
-                    cid,
-                    uid,
-                    emoji_s,
-                    now_on as i64,
-                ],
+                "INSERT INTO reaction_events(ts,message_id,channel_id,user_id,emoji,on_)
+                 VALUES (?1,?2,?3,?4,?5,?6)",
+                params![ts as i64, message_id as i64, cid, uid, emoji_s, now_on as i64],
             )?;
             tx.commit()?;
             Ok(now_on)
