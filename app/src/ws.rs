@@ -1327,7 +1327,7 @@ async fn handle_op(
             let exists = state.db.message_exists_in_channel(channel_id, msg_id).await
                 .map_err(|_| "could not verify message".to_string())?;
             if !exists { return Err("message not found".into()); }
-            let saved = state.db.toggle_saved_message(user_id.clone(), channel_id, msg_id, now_secs()).await
+            let saved = state.db.toggle_saved_message(user_id.clone(), channel_id, msg_id, now_secs() as i64).await
                 .map_err(|_| "could not update saved messages".to_string())?;
             let items = state.db.list_saved_messages(user_id.clone()).await.unwrap_or_default();
             let out = json!({"ev":"saved_messages","items":items,"changed":{"channel":channel_id,"id":msg_id,"saved":saved}});
