@@ -1303,11 +1303,13 @@ async fn handle_op(
             let out: Vec<Arc<WireMsg>> = from_db.into_iter().map(Arc::new).collect();
             let msgs: Vec<&WireMsg> = out.iter().map(|a| a.as_ref()).collect();
             let reactions = collect_reactions(state, &id.to_compact_string());
+            let pins = state.db.list_pinned_messages(id).await.unwrap_or_default();
             let resp = json!({
                 "ev":"history",
                 "channel":id,
                 "messages":msgs,
                 "reactions": reactions,
+                "pins": pins,
             });
             let _ = sink.send(Message::Text(resp.to_string())).await;
         }
@@ -1332,6 +1334,43 @@ async fn handle_op(
             let items = state.db.list_saved_messages(user_id.clone()).await.unwrap_or_default();
             let out = json!({"ev":"saved_messages","items":items,"changed":{"channel":channel_id,"id":msg_id,"saved":saved}});
             let _ = sink.send(Message::Text(out.to_string())).await;
+        }
+
+        "pin_toggle" => {
+            let channel_id = v.get("channel").and_then(Value::as_str).ok_or("missing channel")?;
+            let msg_id = v.get("msgId").and_then(Value::as_u64).ok_or("missing msgId")?;
+            let ch = state.channels.get(channel_id).ok_or("no such channel")?;
+            if !can_send(&ch, &user_id) { return Err("not a member".into()); }
+            let exists = state.db.message_exists_in_channel(channel_id, msg_id).await
+                .map_err(|_| "could not verify message".to_string())?;
+            if !exists { return Err("message not found".into()); }
+            let pinned = state.db.toggle_pinned_message(
+                channel_id, msg_id, user_id.clone(), now_secs() as i64
+            ).await.map_err(|_| "could not update pinned messages".to_string())?;
+            let pins = state.db.list_pinned_messages(channel_id).await.unwrap_or_default();
+            let ev = json!({
+                "ev":"pin_update",
+                "channel":channel_id,
+                "msgId":msg_id,
+                "userId":user_id.as_str(),
+                "pinned":pinned,
+                "pins":pins,
+            });
+            let _ = ch.tx.send(Arc::new(WireMsg {
+                id: 0,
+                channel: ch.id.clone(),
+                kind: MsgKind::System,
+                user_id: user_id.clone(),
+                username: CompactString::const_new("__pin"),
+                avatar: CompactString::const_new(""),
+                color: CompactString::const_new(""),
+                ts: now_secs(),
+                text: ev.to_string(),
+                file: None,
+                reply_to: None,
+                edited_at: None,
+                deleted: false,
+            }));
         }
 
         "search" => {
