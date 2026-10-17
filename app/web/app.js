@@ -369,6 +369,7 @@ const S = {
   hostname: "",
   sidebarTab: "mine",
   sidebarFilter: "",
+  searchChannel: null,
   replyTo: null,           // { channelId, msgId, username, preview }
 };
 
@@ -496,6 +497,7 @@ function handleEvent(e) {
     case "msg":          return onWireMsg(e.m);
     case "users":        return onUsers(e.users);
     case "history":      return onHistory(e);
+    case "search_results": return onSearchResults(e);
     case "react":        return onReact(e);
     case "ch_created":   return onChannelCreated(e.channel);
     case "ch_invited":   return onChannelInvited(e);
@@ -746,6 +748,67 @@ async function onHistory({ channel, messages, reactions }) {
   }
   S.reactions.set(channel, rmap);
   if (S.active === channel) await renderStream();
+}
+
+function openMessageSearch() {
+  const ch = S.channels.get(S.active);
+  if (!ch) return;
+  if (ch.kind === "dm") {
+    toast("Private messages are encrypted. Server search is disabled for DMs.", 3500);
+    return;
+  }
+  S.searchChannel = S.active;
+  $("messageSearchPanel").classList.remove("hidden");
+  $("messageSearchInput").value = "";
+  $("messageSearchStatus").textContent = "Search messages in this channel. At least 2 characters.";
+  $("messageSearchResults").replaceChildren();
+  $("messageSearchInput").focus();
+}
+
+function closeMessageSearch() {
+  $("messageSearchPanel").classList.add("hidden");
+  S.searchChannel = null;
+}
+
+function runMessageSearch(event) {
+  event.preventDefault();
+  const query = $("messageSearchInput").value.trim();
+  if (query.length < 2 || query.length > 100) {
+    $("messageSearchStatus").textContent = "Enter 2–100 characters to search.";
+    return;
+  }
+  const channel = S.active;
+  S.searchChannel = channel;
+  $("messageSearchStatus").textContent = "Searching…";
+  $("messageSearchResults").replaceChildren();
+  sendOp({ op: "search", channel, query });
+}
+
+function onSearchResults({ channel, query, messages }) {
+  if (channel !== S.active || channel !== S.searchChannel) return;
+  const status = $("messageSearchStatus");
+  const results = $("messageSearchResults");
+  results.replaceChildren();
+  const found = messages || [];
+  status.textContent = found.length
+    ? `${found.length} result${found.length === 1 ? "" : "s"} for “${query}” (up to 100 shown)`
+    : `No messages found for “${query}”.`;
+  for (const m of found) {
+    const item = document.createElement("article");
+    item.className = "message-search-result";
+    const heading = document.createElement("div");
+    heading.className = "message-search-result-heading";
+    const author = document.createElement("strong");
+    author.textContent = m.username || "System";
+    const date = document.createElement("time");
+    date.textContent = new Date((m.ts || 0) * 1000).toLocaleString();
+    heading.append(author, date);
+    const body = document.createElement("div");
+    body.className = "message-search-result-text";
+    body.textContent = m.text || (m.file?.originalName ? `File: ${m.file.originalName}` : "(attachment)");
+    item.append(heading, body);
+    results.append(item);
+  }
 }
 
 function onReact({ channel, msgId, userId, emoji, on }) {
