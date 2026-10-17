@@ -1612,7 +1612,15 @@ async function renderMessage(m, { follow, peer, ch }) {
   }
 
   // Hover action group (skips system messages because they returned early).
+  const savedNow = isMessageSaved(m);
   const actions = el("div", { class: "msg-actions" }, [
+    el("button", {
+      class: "ma-btn bookmark-btn" + (savedNow ? " saved" : ""),
+      title: savedNow ? "Remove bookmark" : "Save message",
+      "aria-label": savedNow ? "Remove bookmark" : "Save message",
+      textContent: savedNow ? "★" : "☆",
+      onclick: (ev) => { ev.stopPropagation(); toggleMessageBookmark(m, ev.currentTarget); },
+    }),
     el("button", {
       class: "ma-btn",
       title: "Add reaction",
@@ -1948,6 +1956,110 @@ async function sendMessage(rawText) {
 }
 
 // ── Reply-to ──────────────────────────────────────────────────────────
+
+/* ── Saved messages (bookmarks are private to this browser) ───────── */
+function getSavedMessages() {
+  try { return JSON.parse(lstore.get("bookmarks:v1") || "[]") || []; }
+  catch { return []; }
+}
+function saveSavedMessages(items) {
+  lstore.set("bookmarks:v1", JSON.stringify(items));
+}
+function isMessageSaved(message) {
+  return getSavedMessages().some((item) => item.channel === message.channel && String(item.id) === String(message.id));
+}
+function toggleMessageBookmark(message, button) {
+  if (!message || message.kind === "system") return;
+  const saved = getSavedMessages();
+  const index = saved.findIndex((item) => item.channel === message.channel && String(item.id) === String(message.id));
+  if (index >= 0) {
+    saved.splice(index, 1);
+    toast("Bookmark removed");
+  } else {
+    const channel = S.channels.get(message.channel);
+    const text = message.kind === "file"
+      ? "📎 " + (message.file?.originalName || message.file?.name || "Attachment")
+      : String(message.text || "");
+    saved.unshift({
+      channel: message.channel,
+      channelName: channel?.name || message.channel,
+      id: message.id,
+      username: message.username || "Unknown",
+      text: text.slice(0, 500),
+      ts: message.ts || message.timestamp || Math.floor(Date.now() / 1000),
+    });
+    toast("Message saved");
+  }
+  saveSavedMessages(saved);
+  if (button) {
+    const active = isMessageSaved(message);
+    button.classList.toggle("saved", active);
+    button.title = active ? "Remove bookmark" : "Save message";
+    button.setAttribute("aria-label", button.title);
+    button.textContent = active ? "★" : "☆";
+  }
+  updateSavedCount();
+}
+function updateSavedCount() {
+  const button = $("savedMessagesBtn");
+  if (!button) return;
+  const count = getSavedMessages().length;
+  button.textContent = count ? `Saved · ${count}` : "Saved";
+}
+function closeSavedMessages() {
+  $("savedMessagesOverlay")?.remove();
+}
+function openSavedMessages() {
+  closeSavedMessages();
+  const items = getSavedMessages();
+  const overlay = el("div", { id: "savedMessagesOverlay", class: "saved-overlay", role: "dialog", "aria-modal": "true", "aria-label": "Saved messages" });
+  const panel = el("section", { class: "saved-panel" });
+  const header = el("div", { class: "saved-panel-header" }, [
+    el("div", {}, [el("div", { class: "saved-panel-title" }, "Saved messages"), el("div", { class: "muted xs" }, "Only visible in this browser")]),
+    el("button", { class: "icon-btn", type: "button", title: "Close saved messages", "aria-label": "Close saved messages", onclick: closeSavedMessages }, "×"),
+  ]);
+  const list = el("div", { class: "saved-list" });
+  if (!items.length) {
+    list.append(el("div", { class: "saved-empty" }, "No saved messages yet. Use ☆ on any message to bookmark it."));
+  }
+  for (const item of items) {
+    const row = el("button", { class: "saved-item", type: "button", onclick: () => {
+      if (S.active !== item.channel) {
+        toast(`Open #${item.channelName} to view this saved message`, 3500);
+        return;
+      }
+      const node = document.getElementById(`m-${item.channel}-${item.id}`);
+      if (node) {
+        closeSavedMessages();
+        node.scrollIntoView({ behavior: "smooth", block: "center" });
+        node.classList.add("saved-jump-highlight");
+        setTimeout(() => node.classList.remove("saved-jump-highlight"), 1800);
+      } else {
+        toast("This message isn't in the currently loaded chat history", 3000);
+      }
+    } }, [
+      el("div", { class: "saved-item-top" }, [
+        el("strong", {}, item.username || "Message"),
+        el("span", { class: "saved-item-channel" }, "#" + (item.channelName || item.channel)),
+      ]),
+      el("div", { class: "saved-item-text" }, item.text || "(No text preview)"),
+      el("span", { class: "saved-item-date" }, new Date(Number(item.ts) * 1000).toLocaleString()),
+    ]);
+    list.append(row);
+  }
+  panel.append(header, list);
+  overlay.append(panel);
+  overlay.addEventListener("click", (event) => { if (event.target === overlay) closeSavedMessages(); });
+  document.addEventListener("keydown", function onEscape(event) {
+    if (event.key === "Escape") {
+      closeSavedMessages();
+      document.removeEventListener("keydown", onEscape);
+    }
+  });
+  document.body.append(overlay);
+  updateSavedCount();
+}
+
 function startReplyTo(m, plainText, fileRealName) {
   if (!m || m.kind === "system") return;
   const txt = (plainText != null ? plainText : (m.text || "")).toString();
