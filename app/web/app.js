@@ -944,12 +944,14 @@ function onReact({ channel, msgId, userId, emoji, on }) {
   if (!perCh) { perCh = new Map(); S.reactions.set(channel, perCh); }
   let perMsg = perCh.get(msgId);
   if (!perMsg) { perMsg = new Map(); perCh.set(msgId, perMsg); }
+  if (on) for (const [oldEmoji, oldUsers] of perMsg.entries()) {
+    if (oldEmoji !== emoji) { oldUsers.delete(userId); if (!oldUsers.size) perMsg.delete(oldEmoji); }
+  }
   let users = perMsg.get(emoji);
   if (!users) { users = new Set(); perMsg.set(emoji, users); }
-  if (on) users.add(userId);
-  else    users.delete(userId);
-  if (users.size === 0) perMsg.delete(emoji);
-  if (perMsg.size === 0) perCh.delete(msgId);
+  if (on) users.add(userId); else users.delete(userId);
+  if (!users.size) perMsg.delete(emoji);
+  if (!perMsg.size) perCh.delete(msgId);
   if (channel === S.active) renderStream();
 }
 
@@ -988,6 +990,43 @@ function renderPinnedBanner(channel) {
   return banner;
 }
 
+function positionMessageReaction(row) {
+  if (!row?.isConnected) return;
+  const bubble = row.querySelector(".bubble"), button = row.querySelector(".msg-hover-reaction");
+  if (!bubble || !button) return;
+  const br = bubble.getBoundingClientRect(), rr = row.getBoundingClientRect();
+  const width = button.offsetWidth || 34, height = button.offsetHeight || 34;
+  const left = row.classList.contains("own") ? br.left - rr.left - width - 10 : br.right - rr.left + 10;
+  button.style.left = `${left}px`;
+  button.style.top = `${br.top - rr.top + (br.height - height) / 2}px`;
+}
+function closeMessageMenu(row, menu, bubble) {
+  row?.classList.remove("menu-open");
+  if (!menu) return;
+  menu.classList.remove("menu-floating");
+  for (const prop of ["left","top","maxHeight","overflowY"]) menu.style[prop] = "";
+  menu.remove(); if (bubble) bubble.append(menu);
+}
+function toggleMessageMenu(row, menu, bubble, trigger) {
+  if (!row || !menu || !bubble) return;
+  if (row.classList.contains("menu-open")) { closeMessageMenu(row, menu, bubble); return; }
+  document.querySelectorAll(".msg.menu-open").forEach((other) => {
+    const otherMenu = other.querySelector(".msg-menu") || document.querySelector(".msg-menu.menu-floating");
+    closeMessageMenu(other, otherMenu, other.querySelector(".bubble"));
+  });
+  row.classList.add("menu-open"); menu.classList.add("menu-floating"); document.body.append(menu);
+  const tr = trigger.getBoundingClientRect(), sr = $("messages")?.getBoundingClientRect(), cr = $("sendForm")?.getBoundingClientRect();
+  const viewportTop = Math.max(8, sr?.top ?? 8);
+  const viewportBottom = Math.min(window.innerHeight - 8, sr?.bottom ?? window.innerHeight - 8, cr?.top ?? window.innerHeight - 8);
+  const maxHeight = Math.max(100, viewportBottom - viewportTop);
+  menu.style.maxHeight = `${maxHeight}px`; menu.style.overflowY = "auto";
+  const mr = menu.getBoundingClientRect(), h = Math.min(mr.height || 250, maxHeight);
+  const below = viewportBottom - tr.bottom - 6, above = tr.top - viewportTop - 6;
+  const top = below >= h ? tr.bottom + 6 : above >= h ? tr.top - h - 6 : Math.max(viewportTop, Math.min(tr.bottom + 6, viewportBottom - h));
+  const w = mr.width || 210;
+  const left = row.classList.contains("own") ? Math.max(8, Math.min(innerWidth - w - 8, tr.left)) : Math.max(8, Math.min(innerWidth - w - 8, tr.right - w));
+  menu.style.left = `${left}px`; menu.style.top = `${top}px`;
+}
 function positionMessageActions(row) {
   if (!row?.isConnected || !row.classList.contains("actions-visible")) return;
   row.classList.remove("actions-above", "actions-below");
@@ -1530,12 +1569,12 @@ async function renderStream() {
       prevDay = day; prev = null;
     }
 
-    const isSystem = m.kind === "system";
+    const isSystem = m.kind === "system" && !m.deleted;
     const isFollow = !isSystem
       && prev
       && prev.userId === m.userId
       && (m.ts - prev.ts) < 300 // 5 min
-      && prev.kind !== "system";
+      && (prev.kind !== "system" || prev.deleted);
 
     box.append(await renderMessage(m, { follow: isFollow, peer, ch }));
     prev = m;
@@ -1571,7 +1610,7 @@ function renderEmptyState(ch) {
 }
 
 async function renderMessage(m, { follow, peer, ch }) {
-  if (m.kind === "system") {
+  if (m.kind === "system" && !m.deleted) {
     return el("div", { class: "msg system" },
       el("div", { class: "bubble" }, el("span", { class: "text" }, m.text)),
     );
@@ -1581,10 +1620,10 @@ async function renderMessage(m, { follow, peer, ch }) {
   const isDm  = ch && ch.kind === "dm";
 
   // Decrypt DM ciphertext when possible.
-  let displayText = m.text || "";
+  let displayText = m.deleted ? "This message was deleted." : (m.text || "");
   let encrypted = false;
   let fileRealName = null;
-  if (peer && displayText.startsWith("e2e:v1:")) {
+  if (!m.deleted && peer && displayText.startsWith("e2e:v1:")) {
     const pt = await E2EE.tryDecrypt(peer.id, peer.pubkey, displayText);
     if (pt != null) { displayText = pt; encrypted = true; }
     else displayText = "🔒 (cannot decrypt — missing key)";
@@ -1682,7 +1721,7 @@ async function renderMessage(m, { follow, peer, ch }) {
     }
   }
 
-  if (m.kind === "file" && m.file) {
+  if (!m.deleted && m.kind === "file" && m.file) {
     const f = m.file;
     // Detect a DM E2EE envelope. When present, displayText is the JSON
     // metadata that tells us the real name/mime + the AES-GCM IV used
@@ -1879,19 +1918,17 @@ async function renderMessage(m, { follow, peer, ch }) {
     "aria-label": "Message actions",
     onclick: (ev) => {
       ev.stopPropagation();
-      const wasOpen = row?.classList.contains("menu-open");
-      document.querySelectorAll(".msg.menu-open").forEach((n) => n.classList.remove("menu-open"));
-      if (!wasOpen) row?.classList.add("menu-open");
+      toggleMessageMenu(row, menu, bubble, ev.currentTarget);
     },
     html: `<svg viewBox="0 0 24 24" width="16" height="16"><path d="m7 10 5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
   });
   const menu = el("div", { class: "msg-menu", role: "menu" }, [
-    el("button", { type: "button", class: "msg-menu-item", onclick: (ev) => { ev.stopPropagation(); row?.classList.remove("menu-open"); startReplyTo(m, displayText, fileRealName); } }, [svg("M10 9V5l-7 7 7 7v-4c5 0 8 1.5 10 5-1-7-5-11-10-11z", 16), "Reply"]),
-    el("button", { type: "button", class: "msg-menu-item", onclick: (ev) => { ev.stopPropagation(); row?.classList.remove("menu-open"); openForwardDialog(m, displayText, fileRealName, peer); } }, [svg("M14 5l7 7-7 7M21 12H9a6 6 0 0 0-6 6", 16), "Forward"]),
-    el("button", { type: "button", class: "msg-menu-item", onclick: (ev) => { ev.stopPropagation(); row?.classList.remove("menu-open"); toggleMessagePin(m); } }, [svg("M16 3l5 5-4 1-4 4-1 5-2-2-4 4-2-2 4-4-2-2 5-1 4-4z", 16), isMessagePinned(m) ? "Unpin" : "Pin"]),
-    el("button", { type: "button", class: "msg-menu-item", onclick: (ev) => { ev.stopPropagation(); row?.classList.remove("menu-open"); toggleMessageBookmark(m); } }, [svg("M6 4h12v17l-6-4-6 4z", 16), savedNow ? "Remove saved message" : "Save message"]),
-    el("button", { type: "button", class: "msg-menu-item", onclick: async (ev) => { ev.stopPropagation(); row?.classList.remove("menu-open"); try { await navigator.clipboard.writeText(displayText || fileRealName || ""); toast("Copied"); } catch { toast("Could not copy this message"); } } }, [svg("M8 8V4h12v12h-4M4 8h12v12H4z", 16), "Copy"]),
-    el("button", { type: "button", class: "msg-menu-item danger", disabled: !canDeleteMessage, title: canDeleteMessage ? "Delete for everyone" : "Only the sender or group admin can delete this message", onclick: (ev) => { ev.stopPropagation(); row?.classList.remove("menu-open"); if (canDeleteMessage && confirm("Delete this message for everyone? This cannot be undone.")) sendOp({ op: "delete_message", channel: m.channel, msgId: Number(m.id) }); } }, [svg("M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14M10 10v6M14 10v6", 16), "Delete for everyone"]),
+    el("button", { type: "button", class: "msg-menu-item", onclick: (ev) => { ev.stopPropagation(); closeMessageMenu(row, menu, bubble); startReplyTo(m, displayText, fileRealName); } }, [svg("M10 9V5l-7 7 7 7v-4c5 0 8 1.5 10 5-1-7-5-11-10-11z", 16), "Reply"]),
+    el("button", { type: "button", class: "msg-menu-item", onclick: (ev) => { ev.stopPropagation(); closeMessageMenu(row, menu, bubble); openForwardDialog(m, displayText, fileRealName, peer); } }, [svg("M14 5l7 7-7 7M21 12H9a6 6 0 0 0-6 6", 16), "Forward"]),
+    el("button", { type: "button", class: "msg-menu-item", onclick: (ev) => { ev.stopPropagation(); closeMessageMenu(row, menu, bubble); toggleMessagePin(m); } }, [svg("M16 3l5 5-4 1-4 4-1 5-2-2-4 4-2-2 4-4-2-2 5-1 4-4z", 16), isMessagePinned(m) ? "Unpin" : "Pin"]),
+    el("button", { type: "button", class: "msg-menu-item", onclick: (ev) => { ev.stopPropagation(); closeMessageMenu(row, menu, bubble); toggleMessageBookmark(m); } }, [svg("M6 4h12v17l-6-4-6 4z", 16), savedNow ? "Remove saved message" : "Save message"]),
+    el("button", { type: "button", class: "msg-menu-item", onclick: async (ev) => { ev.stopPropagation(); closeMessageMenu(row, menu, bubble); try { await navigator.clipboard.writeText(displayText || fileRealName || ""); toast("Copied"); } catch { toast("Could not copy this message"); } } }, [svg("M8 8V4h12v12h-4M4 8h12v12H4z", 16), "Copy"]),
+    el("button", { type: "button", class: "msg-menu-item danger", disabled: !canDeleteMessage, title: canDeleteMessage ? "Delete for everyone" : "Only the sender or group admin can delete this message", onclick: (ev) => { ev.stopPropagation(); closeMessageMenu(row, menu, bubble); if (canDeleteMessage && confirm("Delete this message for everyone? This cannot be undone.")) sendOp({ op: "delete_message", channel: m.channel, msgId: Number(m.id) }); } }, [svg("M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14M10 10v6M14 10v6", 16), "Delete for everyone"]),
   ]);
   // Tail only on the first bubble of a group.
   const classes = ["msg"];
@@ -1907,23 +1944,23 @@ async function renderMessage(m, { follow, peer, ch }) {
   const row = el("div", { class: classes.join(" "), id: `m-${m.channel}-${m.id}` }, [avatar, stack, quickReaction]);
   row.addEventListener("mouseenter", () => {
     row.classList.add("actions-visible");
-    requestAnimationFrame(() => positionMessageActions(row));
+    requestAnimationFrame(() => { positionMessageReaction(row); positionMessageActions(row); });
   });
   row.addEventListener("focusin", () => {
     row.classList.add("actions-visible");
-    requestAnimationFrame(() => positionMessageActions(row));
+    requestAnimationFrame(() => { positionMessageReaction(row); positionMessageActions(row); });
   });
   row.addEventListener("mouseleave", (ev) => {
-    if (!row.contains(ev.relatedTarget)) {
+    if (!row.contains(ev.relatedTarget) && !menu.contains(ev.relatedTarget)) {
       row.classList.remove("actions-visible");
       // Leave the menu open if keyboard focus is still within the row.
-      if (!row.contains(document.activeElement)) row.classList.remove("menu-open");
+      if (!row.contains(document.activeElement) && !menu.contains(document.activeElement)) closeMessageMenu(row, menu, bubble);
     }
   });
   row.addEventListener("focusout", (ev) => {
-    if (!row.contains(ev.relatedTarget)) {
+    if (!row.contains(ev.relatedTarget) && !menu.contains(ev.relatedTarget)) {
       row.classList.remove("actions-visible");
-      row.classList.remove("menu-open");
+      closeMessageMenu(row, menu, bubble);
     }
   });
   row.addEventListener("dblclick", (ev) => {
@@ -1931,6 +1968,7 @@ async function renderMessage(m, { follow, peer, ch }) {
     ev.preventDefault();
     startReplyTo(m, displayText, fileRealName);
   });
+  requestAnimationFrame(() => positionMessageReaction(row));
   return row;
 }
 
