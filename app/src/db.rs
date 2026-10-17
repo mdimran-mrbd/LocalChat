@@ -112,6 +112,15 @@ CREATE TABLE IF NOT EXISTS saved_messages (
 );
 CREATE INDEX IF NOT EXISTS idx_saved_messages_user ON saved_messages(user_id, saved_at DESC);
 
+CREATE TABLE IF NOT EXISTS pinned_messages (
+    channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+    message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+    pinned_by TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    pinned_at INTEGER NOT NULL,
+    PRIMARY KEY (channel_id, message_id)
+);
+CREATE INDEX IF NOT EXISTS idx_pinned_messages_channel ON pinned_messages(channel_id, pinned_at DESC);
+
 CREATE TABLE IF NOT EXISTS reactions (
     message_id  INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
     user_id     TEXT    NOT NULL REFERENCES users(id)    ON DELETE CASCADE,
@@ -931,6 +940,75 @@ fn row_to_message(r: &rusqlite::Row<'_>) -> rusqlite::Result<WireMsg> {
         edited_at: r.get::<_, Option<i64>>(10)?.map(|v| v as u64),
         deleted: r.get::<_, i64>(11)? != 0,
     })
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Pinned messages
+// ──────────────────────────────────────────────────────────────────────
+
+impl Db {
+    /// Pin or unpin a message in a channel. Returns true when pinned.
+    pub async fn toggle_pinned_message(
+        &self,
+        channel: &str,
+        message_id: u64,
+        user_id: UserId,
+        pinned_at: i64,
+    ) -> rusqlite::Result<bool> {
+        let cid = channel.to_string();
+        let uid = user_id.to_string();
+        self.with(move |c| {
+            let mid = i64::try_from(message_id)
+                .map_err(|_| rusqlite::Error::IntegralValueOutOfRange(1, i64::MAX))?;
+            let exists: bool = c.query_row(
+                "SELECT EXISTS(SELECT 1 FROM pinned_messages WHERE channel_id=?1 AND message_id=?2)",
+                params![cid, mid],
+                |r| r.get(0),
+            )?;
+            if exists {
+                c.execute(
+                    "DELETE FROM pinned_messages WHERE channel_id=?1 AND message_id=?2",
+                    params![cid, mid],
+                )?;
+                Ok(false)
+            } else {
+                c.execute(
+                    "INSERT INTO pinned_messages(channel_id,message_id,pinned_by,pinned_at) VALUES(?1,?2,?3,?4)",
+                    params![cid, mid, uid, pinned_at],
+                )?;
+                Ok(true)
+            }
+        }).await
+    }
+
+    /// Return safe pin metadata; message content is deliberately omitted.
+    pub async fn list_pinned_messages(&self, channel: &str) -> rusqlite::Result<Vec<serde_json::Value>> {
+        let cid = channel.to_string();
+        self.with(move |c| {
+            let mut stmt = c.prepare(
+                "SELECT p.message_id, p.pinned_by, COALESCE(u.username,''), p.pinned_at,
+                        COALESCE(m.username,''), COALESCE(m.ts, p.pinned_at)
+                   FROM pinned_messages p
+                   LEFT JOIN users u ON u.id=p.pinned_by
+                   LEFT JOIN messages m ON m.id=p.message_id AND m.channel_id=p.channel_id
+                  WHERE p.channel_id=?1
+                  ORDER BY p.pinned_at DESC LIMIT 100"
+            )?;
+            let rows = stmt.query_map(params![cid], |r| {
+                Ok(serde_json::json!({
+                    "id": r.get::<_, i64>(0)?,
+                    "pinnedBy": r.get::<_, String>(1)?,
+                    "pinnedByName": r.get::<_, String>(2)?,
+                    "pinnedAt": r.get::<_, i64>(3)?,
+                    "username": r.get::<_, String>(4)?,
+                    "ts": r.get::<_, i64>(5)?
+                }))
+            })?;
+            let mut out = Vec::new();
+            for row in rows { out.push(row?); }
+            Ok(out)
+        }).await
+    }
 }
 
 // ──────────────────────────────────────────────────────────────────────
