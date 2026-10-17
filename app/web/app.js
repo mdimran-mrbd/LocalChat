@@ -506,6 +506,12 @@ function updateBrowserNotificationButton() {
   button.classList.toggle("active", enabled);
   button.title = enabled ? "Disable browser notifications" : "Enable browser notifications";
   button.setAttribute("aria-label", button.title);
+  button.setAttribute("aria-pressed", String(enabled));
+  // Make the state visible at a glance: crossed-out bell when disabled,
+  // regular bell when enabled. Keep the button's shape and sizing unchanged.
+  button.innerHTML = enabled
+    ? '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg>'
+    : '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/><path d="m3 3 18 18"/></svg>';
 }
 
 async function toggleBrowserNotifications() {
