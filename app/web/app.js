@@ -2341,10 +2341,6 @@ function openForwardDialog(message, displayText, fileRealName, sourcePeer) {
     toast("This encrypted message cannot be decrypted here, so it cannot be forwarded.", 4000);
     return;
   }
-  if (message.kind === "file") {
-    toast("Forwarding attachments is not supported yet. You can forward text messages now.", 4000);
-    return;
-  }
   const overlay = el("div", { class: "forward-overlay" });
   const panel = el("section", { class: "forward-panel", role: "dialog", "aria-modal": "true", "aria-label": "Forward message" });
   const search = el("input", { class: "forward-search", type: "search", placeholder: "Search people and groups…" });
@@ -2362,6 +2358,35 @@ function openForwardDialog(message, displayText, fileRealName, sourcePeer) {
     for (const ch of filtered) {
       const title = ch.kind === "lobby" ? "# general" : (ch.kind === "dm" ? (ch.name || "Private chat") : ch.name || "Group");
       list.append(el("button", { type: "button", class: "forward-target", onclick: async () => {
+        if (message.kind === "file") {
+          try {
+            if (!message.file?.filename) throw new Error("Attachment metadata is unavailable");
+            const response = await fetch("/uploads/" + encodeURIComponent(message.file.filename));
+            if (!response.ok) throw new Error("The original attachment is unavailable");
+            let bytes = new Uint8Array(await response.arrayBuffer());
+            let name = fileRealName || message.file.originalName || "forwarded-file";
+            let mime = message.file.mimeType || "application/octet-stream";
+            if (String(message.text || "").startsWith("e2e:v1:")) {
+              if (!sourcePeer?.pubkey || !E2EE.available) throw new Error("The encrypted attachment cannot be decrypted here");
+              const envelopeText = await E2EE.tryDecrypt(sourcePeer.id, sourcePeer.pubkey, message.text);
+              if (!envelopeText) throw new Error("The attachment metadata could not be decrypted");
+              const envelope = JSON.parse(envelopeText);
+              if (!envelope || envelope.kind !== "file" || !envelope.iv) throw new Error("Invalid encrypted attachment metadata");
+              const plain = await E2EE.decryptBytesFrom(sourcePeer.id, sourcePeer.pubkey, unb64(envelope.iv), bytes);
+              if (!plain) throw new Error("The attachment could not be decrypted");
+              bytes = plain;
+              name = envelope.name || name;
+              mime = envelope.mime || mime;
+            }
+            const forwardedFile = new File([bytes], name, { type: mime });
+            await uploadFile(forwardedFile, ch.id);
+            close();
+            toast("Attachment forwarded");
+          } catch (err) {
+            toast("Could not forward attachment: " + (err.message || "unknown error"), 4000);
+          }
+          return;
+        }
         let text = String(displayText || "");
         if (ch.kind === "dm") {
           const destPeer = dmPeer(ch);
@@ -2936,7 +2961,7 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape" && _emojiOp
 window.addEventListener("blur", () => { if (_emojiOpen) closeEmoji(); });
 
 // ── Paste image / drag-drop ──────────────────────────────────────────
-async function uploadFile(f) {
+async function uploadFile(f, targetChannel = S.active) {
   // The atomic /api/upload handler authenticates via the per-WS
   // session token from the welcome envelope. If we haven't received
   // it yet (page just loaded, WS still connecting), wait briefly so
@@ -2952,7 +2977,7 @@ async function uploadFile(f) {
       return;
     }
   }
-  const ch = S.channels.get(S.active);
+  const ch = S.channels.get(targetChannel);
   const peer = ch ? dmPeer(ch) : null;
   const isDmEncrypted = ch?.kind === "dm" && peer?.pubkey && E2EE.available;
 
@@ -3003,7 +3028,7 @@ async function uploadFile(f) {
   // could be lost on refresh. The client_id makes retries idempotent.
   const form = new FormData();
   form.append("file", blobToUpload, uploadName);
-  form.append("channel", S.active);
+  form.append("channel", targetChannel);
   if (envelopeWire) form.append("text", envelopeWire);
   if (S.session) form.append("session", S.session);
   const clientId = (crypto.randomUUID && crypto.randomUUID()) ||
