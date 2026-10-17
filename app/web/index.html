@@ -207,8 +207,8 @@
           <span class="badge-lock hidden" id="e2eeBadge" title="End-to-end encrypted" aria-label="End-to-end encrypted">
             <svg viewBox="0 0 24 24" width="14" height="14"><path d="M6 10V7a6 6 0 0112 0v3M5 10h14v10H5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
           </span>
-          <button id="savedMessagesBtn" class="btn btn-ghost btn-sm" title="View saved messages" onclick="openSavedMessages()">Saved</button>
-          <button id="messageSearchBtn" class="btn btn-ghost btn-sm" title="Search this channel's messages" onclick="openMessageSearch()">Search</button>
+          <button id="savedMessagesBtn" class="icon-btn ch-tool-btn" title="View saved messages" aria-label="View saved messages" onclick="openSavedMessages()"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/></svg><span id="savedMessagesCount" class="saved-count hidden"></span></button>
+          <button id="messageSearchBtn" class="icon-btn ch-tool-btn" title="Search this channel's messages" aria-label="Search this channel's messages" onclick="openMessageSearch()"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg></button>
           <form id="messageSearchBar" class="message-search-bar hidden" onsubmit="runMessageSearch(event)" role="search" aria-label="Search channel messages">
             <input id="messageSearchInput" type="search" placeholder="Search messages…" minlength="2" maxlength="100" autocomplete="off" aria-label="Search messages" onkeydown="handleMessageSearchKeydown(event)" />
             <button type="button" class="search-nav-btn" title="Previous match (Shift+Enter)" aria-label="Previous match" onclick="navigateMessageSearch('previous')">↑</button>
