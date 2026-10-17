@@ -490,6 +490,81 @@ function setStatus(kind, label) {
   pill.querySelector(".txt").textContent = label;
 }
 
+// ── Browser notifications (only while LocalChat is open) ──────────────
+const BROWSER_NOTIFICATIONS_KEY = "localchat-browser-notifications";
+
+function browserNotificationsEnabled() {
+  try { return localStorage.getItem(BROWSER_NOTIFICATIONS_KEY) === "1"; }
+  catch { return false; }
+}
+
+function updateBrowserNotificationButton() {
+  const button = $("browserNotificationsBtn");
+  if (!button) return;
+  const enabled = browserNotificationsEnabled() &&
+    typeof Notification !== "undefined" && Notification.permission === "granted";
+  button.classList.toggle("active", enabled);
+  button.title = enabled ? "Disable browser notifications" : "Enable browser notifications";
+  button.setAttribute("aria-label", button.title);
+}
+
+async function toggleBrowserNotifications() {
+  if (!("Notification" in window)) {
+    toast("This browser does not support desktop notifications.", 3500);
+    return;
+  }
+  if (browserNotificationsEnabled()) {
+    try { localStorage.setItem(BROWSER_NOTIFICATIONS_KEY, "0"); } catch {}
+    updateBrowserNotificationButton();
+    toast("Browser notifications disabled.");
+    return;
+  }
+  if (Notification.permission === "denied") {
+    toast("Notifications are blocked by your browser. Allow them in site settings, then try again.", 5000);
+    return;
+  }
+  let permission = Notification.permission;
+  if (permission === "default") {
+    try { permission = await Notification.requestPermission(); }
+    catch { permission = "denied"; }
+  }
+  if (permission !== "granted") {
+    toast("Notification permission was not granted.", 3500);
+    updateBrowserNotificationButton();
+    return;
+  }
+  try { localStorage.setItem(BROWSER_NOTIFICATIONS_KEY, "1"); } catch {}
+  updateBrowserNotificationButton();
+  toast("Browser notifications enabled. They appear for messages outside your current chat or when this tab is in the background.");
+}
+
+function notifyIncomingMessage(m) {
+  if (!browserNotificationsEnabled() || typeof Notification === "undefined" ||
+      Notification.permission !== "granted") return;
+  if (!document.hidden && document.hasFocus() && m.channel === S.active) return;
+  try {
+    const channel = S.channels.get(m.channel);
+    const isDm = channel && channel.kind === "dm";
+    // Never include message text or decrypted DM content in system notifications.
+    const title = isDm ? "New direct message" : `New message in #${channel?.name || "channel"}`;
+    const sender = m.username || "Someone";
+    const notification = new Notification(title, {
+      body: `From ${sender}. Open LocalChat to view it.`,
+      tag: `localchat-${m.channel}`,
+      renotify: true
+    });
+    notification.onclick = () => {
+      try { window.focus(); } catch {}
+      if (S.channels.has(m.channel)) switchChannel(m.channel);
+      notification.close();
+    };
+  } catch (error) {
+    console.debug("[notifications] unable to show browser notification", error);
+  }
+}
+
+Object.assign(window, { toggleBrowserNotifications });
+
 // ── Event dispatch ───────────────────────────────────────────────────
 function handleEvent(e) {
   switch (e.ev) {
@@ -714,12 +789,14 @@ async function onWireMsg(m) {
   arr.push(m);
   S.msgs.set(m.channel, arr);
 
+  const isMine = S.me && (m.userId === S.me.id || m.username === S.me.username);
+  if (!isMine && m.kind !== "system") notifyIncomingMessage(m);
+
   if (m.channel !== S.active) {
     S.unread.set(m.channel, (S.unread.get(m.channel) || 0) + 1);
     renderChannels();
   } else {
     // Force-scroll if the new message is from us, or if we're already near bottom.
-    const isMine = S.me && (m.userId === S.me.id || m.username === S.me.username);
     if (isMine) $("messages").dataset.activeChannel = "__force";
     await renderStream();
     if (!isMine) scheduleReadReceipt();
@@ -2388,6 +2465,7 @@ document.addEventListener("click", (e) => {
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") $("sidebar")?.classList.remove("open");
 });
+updateBrowserNotificationButton();
 // Re-confirm read state when the tab becomes visible again.
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) scheduleReadReceipt();
