@@ -1312,6 +1312,39 @@ async fn handle_op(
             let _ = sink.send(Message::Text(resp.to_string())).await;
         }
 
+        "search" => {
+            let id = v
+                .get("channel")
+                .and_then(Value::as_str)
+                .ok_or("missing channel")?;
+            let query = v
+                .get("query")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .trim();
+            if query.chars().count() < 2 || query.chars().count() > 100 {
+                return Err("Search must be between 2 and 100 characters.".into());
+            }
+            let ch = state.channels.get(id).ok_or("no such channel")?;
+            if !can_send(&ch, &user_id) {
+                return Err("not a member".into());
+            }
+            // DM content is end-to-end encrypted. Never attempt server-side
+            // plaintext search in DMs; users can search locally once history is loaded.
+            if matches!(ch.kind, ChannelKind::Dm) {
+                return Err("Private messages cannot be searched on the server.".into());
+            }
+            let matches = state.db.search_messages(id, query, 100).await
+                .map_err(|_| "message search failed".to_string())?;
+            let out = json!({
+                "ev": "search_results",
+                "channel": id,
+                "query": query,
+                "messages": matches,
+            });
+            let _ = sink.send(Message::Text(out.to_string())).await;
+        }
+
         "react" => {
             let channel_id = v
                 .get("channel")
