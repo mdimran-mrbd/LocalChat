@@ -778,6 +778,32 @@ impl Db {
         .await
     }
 
+    /// Search visible channel history by message text or attached file name.
+    /// Results are newest first and capped by the caller.
+    pub async fn search_messages(&self, channel: &str, query: &str, limit: usize) -> rusqlite::Result<Vec<WireMsg>> {
+        let cid = channel.to_string();
+        let needle = format!("%{}%", query);
+        self.with(move |c| {
+            let mut stmt = c.prepare(
+                "SELECT id, channel_id, user_id, username, avatar, color,
+                        kind, ts, text, reply_to, edited_at, deleted,
+                        file_id, file_name, file_size, file_mime, file_url
+                   FROM messages
+                  WHERE channel_id = ?1
+                    AND deleted = 0
+                    AND (text LIKE ?2 COLLATE NOCASE
+                         OR COALESCE(file_name, '') LIKE ?2 COLLATE NOCASE)
+                  ORDER BY id DESC
+                  LIMIT ?3",
+            )?;
+            let rows = stmt.query_map(params![cid, needle, limit as i64], row_to_message)?;
+            let mut out: Vec<WireMsg> = Vec::new();
+            for row in rows { out.push(row?); }
+            Ok(out)
+        })
+        .await
+    }
+
     /// Highest message id ever assigned. Used at boot to seed the
     /// monotonic counter.
     pub async fn max_message_id(&self) -> rusqlite::Result<u64> {
