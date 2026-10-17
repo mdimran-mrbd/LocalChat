@@ -498,6 +498,7 @@ function handleEvent(e) {
     case "users":        return onUsers(e.users);
     case "history":      return onHistory(e);
     case "search_results": return onSearchResults(e);
+    case "saved_messages": return onSavedMessages(e);
     case "react":        return onReact(e);
     case "ch_created":   return onChannelCreated(e.channel);
     case "ch_invited":   return onChannelInvited(e);
@@ -635,6 +636,7 @@ function onWelcome(e) {
   renderChannels();
   renderMembers();
   switchChannel(e.lobby || "pub:general");
+  sendOp({ op: "saved_list" });
   S.lobby = e.lobby || "pub:general";
   if (e.mustChangePassword) {
     setTimeout(() => openChangePasswordModal({ forced: true }), 200);
@@ -1956,72 +1958,53 @@ async function sendMessage(rawText) {
 
 // ── Reply-to ──────────────────────────────────────────────────────────
 
-/* ── Saved messages (bookmarks are private to this browser) ───────── */
-function getSavedMessages() {
-  try { return JSON.parse(lstore.get("bookmarks:v1") || "[]") || []; }
-  catch { return []; }
-}
-function saveSavedMessages(items) {
-  lstore.set("bookmarks:v1", JSON.stringify(items));
-}
+/* ── Saved messages: synced through the authenticated server account ── */
+let savedMessages = [];
+function getSavedMessages() { return savedMessages; }
 function isMessageSaved(message) {
-  return getSavedMessages().some((item) => item.channel === message.channel && String(item.id) === String(message.id));
+  return savedMessages.some((item) => item.channel === message.channel && String(item.id) === String(message.id));
 }
 function toggleMessageBookmark(message, button) {
   if (!message || message.kind === "system") return;
-  const saved = getSavedMessages();
-  const index = saved.findIndex((item) => item.channel === message.channel && String(item.id) === String(message.id));
-  if (index >= 0) {
-    saved.splice(index, 1);
-    toast("Bookmark removed");
-  } else {
-    const channel = S.channels.get(message.channel);
-    const text = message.kind === "file"
-      ? "📎 " + (message.file?.originalName || message.file?.name || "Attachment")
-      : String(message.text || "");
-    saved.unshift({
-      channel: message.channel,
-      channelName: channel?.name || message.channel,
-      id: message.id,
-      username: message.username || "Unknown",
-      text: text.slice(0, 500),
-      ts: message.ts || message.timestamp || Math.floor(Date.now() / 1000),
-    });
-    toast("Message saved");
-  }
-  saveSavedMessages(saved);
-  if (button) {
-    const active = isMessageSaved(message);
-    button.classList.toggle("saved", active);
-    button.title = active ? "Remove bookmark" : "Save message";
-    button.setAttribute("aria-label", button.title);
-    button.textContent = active ? "★" : "☆";
-  }
-  updateSavedCount();
+  sendOp({ op: "saved_toggle", channel: message.channel, msgId: Number(message.id) });
+  if (button) button.disabled = true;
 }
 function updateSavedCount() {
   const button = $("savedMessagesBtn");
   if (!button) return;
-  const count = getSavedMessages().length;
-  button.textContent = count ? `Saved · ${count}` : "Saved";
+  button.textContent = savedMessages.length ? `Saved · ${savedMessages.length}` : "Saved";
 }
-function closeSavedMessages() {
-  $("savedMessagesOverlay")?.remove();
+function onSavedMessages(e) {
+  savedMessages = Array.isArray(e.items) ? e.items : [];
+  updateSavedCount();
+  document.querySelectorAll("#messages .bookmark-btn").forEach((button) => {
+    const node = button.closest(".msg");
+    if (!node) return;
+    const parts = node.id.match(/^m-(.+)-(\d+)$/);
+    if (!parts) return;
+    const message = { channel: parts[1], id: parts[2] };
+    const active = isMessageSaved(message);
+    button.disabled = false;
+    button.classList.toggle("saved", active);
+    button.title = active ? "Remove bookmark" : "Save message";
+    button.setAttribute("aria-label", button.title);
+    button.textContent = active ? "★" : "☆";
+  });
+  if (!$("savedMessagesOverlay")) return;
+  renderSavedMessages();
 }
-function openSavedMessages() {
-  closeSavedMessages();
-  const items = getSavedMessages();
-  const overlay = el("div", { id: "savedMessagesOverlay", class: "saved-overlay", role: "dialog", "aria-modal": "true", "aria-label": "Saved messages" });
-  const panel = el("section", { class: "saved-panel" });
-  const header = el("div", { class: "saved-panel-header" }, [
-    el("div", {}, [el("div", { class: "saved-panel-title" }, "Saved messages"), el("div", { class: "muted xs" }, "Only visible in this browser")]),
-    el("button", { class: "icon-btn", type: "button", title: "Close saved messages", "aria-label": "Close saved messages", onclick: closeSavedMessages }, "×"),
-  ]);
-  const list = el("div", { class: "saved-list" });
-  if (!items.length) {
+function closeSavedMessages() { $("savedMessagesOverlay")?.remove(); }
+function renderSavedMessages() {
+  const overlay = $("savedMessagesOverlay");
+  if (!overlay) return;
+  const list = overlay.querySelector(".saved-list");
+  if (!list) return;
+  list.replaceChildren();
+  if (!savedMessages.length) {
     list.append(el("div", { class: "saved-empty" }, "No saved messages yet. Use ☆ on any message to bookmark it."));
+    return;
   }
-  for (const item of items) {
+  for (const item of savedMessages) {
     const row = el("button", { class: "saved-item", type: "button", onclick: () => {
       if (S.active !== item.channel) {
         toast(`Open #${item.channelName} to view this saved message`, 3500);
@@ -2046,17 +2029,24 @@ function openSavedMessages() {
     ]);
     list.append(row);
   }
-  panel.append(header, list);
-  overlay.append(panel);
+}
+function openSavedMessages() {
+  closeSavedMessages();
+  const overlay = el("div", { id: "savedMessagesOverlay", class: "saved-overlay", role: "dialog", "aria-modal": "true", "aria-label": "Saved messages" });
+  const panel = el("section", { class: "saved-panel" });
+  const header = el("div", { class: "saved-panel-header" }, [
+    el("div", {}, [el("div", { class: "saved-panel-title" }, "Saved messages"), el("div", { class: "muted xs" }, "Synced to your LocalChat account")]),
+    el("button", { class: "icon-btn", type: "button", title: "Close saved messages", "aria-label": "Close saved messages", onclick: closeSavedMessages }, "×"),
+  ]);
+  const list = el("div", { class: "saved-list" });
+  panel.append(header, list); overlay.append(panel);
   overlay.addEventListener("click", (event) => { if (event.target === overlay) closeSavedMessages(); });
   document.addEventListener("keydown", function onEscape(event) {
-    if (event.key === "Escape") {
-      closeSavedMessages();
-      document.removeEventListener("keydown", onEscape);
-    }
+    if (event.key === "Escape") { closeSavedMessages(); document.removeEventListener("keydown", onEscape); }
   });
   document.body.append(overlay);
-  updateSavedCount();
+  renderSavedMessages();
+  sendOp({ op: "saved_list" });
 }
 
 function startReplyTo(m, plainText, fileRealName) {
