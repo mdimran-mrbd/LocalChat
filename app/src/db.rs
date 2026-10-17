@@ -954,15 +954,15 @@ impl Db {
         self.with(move |c| {
             let exists: bool = c.query_row(
                 "SELECT EXISTS(SELECT 1 FROM saved_messages WHERE user_id=?1 AND channel_id=?2 AND message_id=?3)",
-                params![uid, channel, message_id as i64], |r| r.get(0)
+                params![uid, channel, i64::try_from(message_id).map_err(|_| rusqlite::Error::IntegralValueOutOfRange(2, i64::MAX))?], |r| r.get(0)
             )?;
             if exists {
                 c.execute("DELETE FROM saved_messages WHERE user_id=?1 AND channel_id=?2 AND message_id=?3",
-                    params![uid, channel, message_id as i64])?;
+                    params![uid, channel, i64::try_from(message_id).map_err(|_| rusqlite::Error::IntegralValueOutOfRange(2, i64::MAX))?])?;
                 Ok(false)
             } else {
                 c.execute("INSERT INTO saved_messages(user_id, channel_id, message_id, saved_at) VALUES (?1,?2,?3,?4)",
-                    params![uid, channel, message_id as i64, saved_at])?;
+                    params![uid, channel, i64::try_from(message_id).map_err(|_| rusqlite::Error::IntegralValueOutOfRange(2, i64::MAX))?, saved_at])?;
                 Ok(true)
             }
         }).await
