@@ -1336,6 +1336,46 @@ async fn handle_op(
             let _ = sink.send(Message::Text(out.to_string())).await;
         }
 
+        "delete_message" => {
+            let channel_id = v.get("channel").and_then(Value::as_str).ok_or("missing channel")?;
+            let msg_id = v.get("msgId").and_then(Value::as_u64).ok_or("missing msgId")?;
+            let ch = state.channels.get(channel_id).ok_or("no such channel")?;
+            if !can_send(&ch, &user_id) { return Err("not a member".into()); }
+            let author = state.db.message_author_id(channel_id, msg_id).await
+                .map_err(|_| "could not verify message".to_string())?
+                .ok_or("message not found or already deleted")?;
+            let is_author = author == user_id.as_str();
+            let is_group_admin = ch.kind == ChannelKind::Group && ch.created_by == user_id;
+            if !is_author && !is_group_admin {
+                return Err("you can delete only your own messages; only the group admin can delete other members' messages".into());
+            }
+            let deleted = state.db.delete_message_for_everyone(channel_id, msg_id).await
+                .map_err(|_| "could not delete message".to_string())?
+                .ok_or("message not found or already deleted")?;
+            let pins = state.db.list_pinned_messages(channel_id).await.unwrap_or_default();
+            let payload = json!({
+                "channel": channel_id,
+                "msgId": msg_id,
+                "message": deleted,
+                "pins": pins
+            });
+            let _ = ch.tx.send(Arc::new(WireMsg {
+                id: 0,
+                channel: ch.id.clone(),
+                kind: MsgKind::System,
+                user_id: user_id.clone(),
+                username: CompactString::const_new("__msg_deleted"),
+                avatar: CompactString::const_new(""),
+                color: CompactString::const_new(""),
+                ts: now_secs(),
+                text: payload.to_string(),
+                file: None,
+                reply_to: None,
+                edited_at: None,
+                deleted: false,
+            }));
+        }
+
         "pin_toggle" => {
             let channel_id = v.get("channel").and_then(Value::as_str).ok_or("missing channel")?;
             let msg_id = v.get("msgId").and_then(Value::as_u64).ok_or("missing msgId")?;
