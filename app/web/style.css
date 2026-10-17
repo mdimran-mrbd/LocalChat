@@ -1385,20 +1385,27 @@ input:focus, textarea:focus {
 .bubble .reaction .r-count:empty,
 .bubble .reaction:has(.r-count:only-child) .r-count { display: none; }
 
-/* Hover action group (react / reply), floating beside the bubble */
+/* Hover actions sit just above the bubble, never over message text. */
 .bubble .msg-actions {
   position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
+  top: -17px;
+  right: 4px;
+  transform: none;
   display: flex;
-  gap: 6px;
+  gap: 5px;
+  padding: 2px 4px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-1);
+  box-shadow: 0 2px 8px rgba(0,0,0,.16);
   opacity: 0;
   pointer-events: none;
   transition: opacity 120ms;
+  z-index: 3;
 }
-.msg:not(.own) .bubble .msg-actions { right: -82px; }
-.msg.own       .bubble .msg-actions { left:  -82px; flex-direction: row-reverse; }
-.msg:hover .bubble .msg-actions { opacity: 1; pointer-events: auto; }
+.msg.own .bubble .msg-actions { right: 4px; left: auto; flex-direction: row; }
+.msg:hover .bubble .msg-actions,
+.msg:focus-within .bubble .msg-actions { opacity: 1; pointer-events: auto; }
 
 .bubble .ma-btn {
   width: 32px; height: 32px;
@@ -2502,7 +2509,18 @@ html, body.admin-shell { height: 100%; overflow: hidden; }
 .saved-item-text { margin: 7px 0; overflow-wrap: anywhere; font-size: 13px; }
 .saved-empty { padding: 30px 16px; text-align: center; color: var(--fg-2); font-size: 13px; }
 .saved-jump-highlight .bubble { outline: 3px solid #d97706; outline-offset: 3px; }
+/* Compact header tools remain visible on narrow/mobile browsers. */
+.ch-tool-btn { position: relative; flex: 0 0 38px; width: 38px; min-width: 38px; padding: 0; }
+.saved-count {
+  position: absolute; top: -3px; right: -3px;
+  min-width: 15px; height: 15px; padding: 0 3px;
+  display: grid; place-items: center;
+  border-radius: 9px; background: var(--brand); color: white;
+  font-size: 9px; line-height: 1; font-weight: 700;
+}
 @media (max-width: 600px) {
-  #savedMessagesBtn { padding-inline: 7px; }
+  .ch-actions { gap: 3px; }
+  .ch-tool-btn { flex-basis: 32px; width: 32px; min-width: 32px; height: 32px; }
+  .ch-tool-btn svg { width: 18px; height: 18px; }
   .saved-overlay { padding: 10px; }
 }
