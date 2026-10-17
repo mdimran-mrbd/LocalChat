@@ -2576,3 +2576,136 @@ html, body.admin-shell { height: 100%; overflow: hidden; }
   cursor: pointer;
 }
 .mention-jump:hover { filter: brightness(1.08); transform: translateY(-1px); }
+
+
+/* ── WhatsApp-style message hover controls ─────────────────────────── */
+.msg.actions-visible { padding-top: 0; }
+.msg.actions-visible.actions-below { padding-bottom: 0; }
+.msg .msg-hover-reaction {
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  margin: auto 3px;
+  display: grid;
+  place-items: center;
+  align-self: center;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--bg-1);
+  color: var(--fg-2);
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(.92);
+  transition: opacity 120ms, transform 120ms, background 120ms;
+  cursor: pointer;
+}
+.msg.actions-visible .msg-hover-reaction,
+.msg:focus-within .msg-hover-reaction {
+  opacity: 1;
+  pointer-events: auto;
+  transform: scale(1);
+}
+.msg .msg-hover-reaction:hover { background: var(--bg-2); color: var(--fg-0); }
+[data-theme="light"] .msg .msg-hover-reaction { background: #fff; color: #54656f; border-color: #e9edef; }
+[data-theme="light"] .msg .msg-hover-reaction:hover { background: #f0f2f5; color: #111b21; }
+
+.msg .bubble { padding-right: 34px; }
+.msg.own .bubble { padding-right: 10px; padding-left: 34px; }
+.msg .msg-menu-trigger {
+  position: absolute;
+  z-index: 5;
+  top: 4px;
+  right: 4px;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--fg-2);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 100ms, background 100ms;
+  cursor: pointer;
+}
+.msg.own .msg-menu-trigger { right: auto; left: 4px; }
+.msg.actions-visible .msg-menu-trigger,
+.msg:focus-within .msg-menu-trigger,
+.msg.menu-open .msg-menu-trigger { opacity: 1; pointer-events: auto; }
+.msg .msg-menu-trigger:hover,
+.msg.menu-open .msg-menu-trigger { background: var(--bg-3); color: var(--fg-0); }
+.msg .msg-menu {
+  position: absolute;
+  z-index: 30;
+  top: 30px;
+  right: 2px;
+  min-width: 190px;
+  display: none;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-1);
+  box-shadow: var(--shadow-lg);
+}
+.msg.own .msg-menu { right: auto; left: 2px; }
+.msg.menu-open .msg-menu { display: flex; flex-direction: column; }
+.msg .msg-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 35px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg-0);
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.msg .msg-menu-item:hover { background: var(--bg-hover); }
+.msg .msg-menu-item.danger { color: var(--danger); }
+[data-theme="light"] .msg .msg-menu-item:hover { background: #f0f2f5; }
+@media (hover: none) {
+  .msg .msg-hover-reaction,
+  .msg .msg-menu-trigger { opacity: 1; pointer-events: auto; transform: none; }
+}
+.forward-overlay {
+  position: fixed; inset: 0; z-index: 100;
+  display: grid; place-items: center;
+  padding: 16px;
+  background: rgba(0,0,0,.48);
+}
+.forward-panel {
+  display: flex; flex-direction: column; gap: 12px;
+  width: min(440px, 100%); max-height: min(620px, 88vh);
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg-1);
+  color: var(--fg-0);
+  box-shadow: var(--shadow-lg);
+}
+.forward-head { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.forward-close {
+  width:30px; height:30px; border-radius:50%; background:var(--bg-2);
+  color:var(--fg-0); font-size:20px; cursor:pointer;
+}
+.forward-search {
+  width:100%; padding:10px 12px; border:1px solid var(--border);
+  border-radius:9px; background:var(--bg-0); color:var(--fg-0); outline:none;
+}
+.forward-list { display:flex; flex-direction:column; gap:4px; overflow:auto; min-height:80px; }
+.forward-target {
+  display:flex; align-items:center; gap:10px; width:100%; padding:10px;
+  border:0; border-radius:8px; background:transparent; color:var(--fg-0);
+  text-align:left; cursor:pointer;
+}
+.forward-target:hover { background:var(--bg-hover); }
+.forward-target-icon { width:30px; height:30px; display:grid; place-items:center; border-radius:50%; background:var(--brand-soft); color:var(--brand); }
+.forward-target-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.forward-target-kind,.forward-empty { color:var(--fg-2); font-size:12px; }
+.forward-empty { padding:16px; text-align:center; }
