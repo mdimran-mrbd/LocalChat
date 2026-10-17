@@ -750,65 +750,71 @@ async function onHistory({ channel, messages, reactions }) {
   if (S.active === channel) await renderStream();
 }
 
+let messageSearchMatches = [];
+let messageSearchIndex = -1;
+let messageSearchQuery = "";
+
 function openMessageSearch() {
   const ch = S.channels.get(S.active);
   if (!ch) return;
-  if (ch.kind === "dm") {
-    toast("Private messages are encrypted. Server search is disabled for DMs.", 3500);
-    return;
-  }
+  if (ch.kind === "dm") { toast("Private messages are encrypted. Server search is disabled for DMs.", 3500); return; }
   S.searchChannel = S.active;
-  $("messageSearchPanel").classList.remove("hidden");
-  $("messageSearchInput").value = "";
-  $("messageSearchStatus").textContent = "Search messages in this channel. At least 2 characters.";
-  $("messageSearchResults").replaceChildren();
+  messageSearchMatches = []; messageSearchIndex = -1; messageSearchQuery = "";
+  $("messageSearchBtn").classList.add("hidden");
+  $("messageSearchBar").classList.remove("hidden");
+  $("messageSearchInput").value = ""; $("messageSearchCount").textContent = "0/0";
   $("messageSearchInput").focus();
 }
 
 function closeMessageSearch() {
-  $("messageSearchPanel").classList.add("hidden");
-  S.searchChannel = null;
+  $("messageSearchBar").classList.add("hidden"); $("messageSearchBtn").classList.remove("hidden");
+  S.searchChannel = null; messageSearchMatches = []; messageSearchIndex = -1; messageSearchQuery = "";
+  document.querySelectorAll("#messages .msg.search-match, #messages .msg.search-current").forEach((node) => node.classList.remove("search-match", "search-current"));
+  $("messageSearchInput").value = ""; $("messageSearchCount").textContent = "0/0";
+}
+
+function handleMessageSearchKeydown(event) {
+  if (event.key === "Escape") { event.preventDefault(); closeMessageSearch(); return; }
+  if (event.key === "Enter") {
+    event.preventDefault();
+    if (messageSearchMatches.length && $("messageSearchInput").value.trim() === messageSearchQuery) navigateMessageSearch(event.shiftKey ? "previous" : "next");
+    else runMessageSearch();
+  }
 }
 
 function runMessageSearch(event) {
-  event.preventDefault();
+  if (event) event.preventDefault();
   const query = $("messageSearchInput").value.trim();
-  if (query.length < 2 || query.length > 100) {
-    $("messageSearchStatus").textContent = "Enter 2–100 characters to search.";
-    return;
-  }
-  const channel = S.active;
-  S.searchChannel = channel;
-  $("messageSearchStatus").textContent = "Searching…";
-  $("messageSearchResults").replaceChildren();
-  sendOp({ op: "search", channel, query });
+  if (query.length < 2 || query.length > 100) { $("messageSearchCount").textContent = query.length ? "—/—" : "0/0"; return; }
+  S.searchChannel = S.active; messageSearchQuery = query; messageSearchMatches = []; messageSearchIndex = -1;
+  $("messageSearchCount").textContent = "…";
+  document.querySelectorAll("#messages .msg.search-match, #messages .msg.search-current").forEach((node) => node.classList.remove("search-match", "search-current"));
+  sendOp({ op: "search", channel: S.active, query });
 }
 
-function onSearchResults({ channel, query, messages }) {
-  if (channel !== S.active || channel !== S.searchChannel) return;
-  const status = $("messageSearchStatus");
-  const results = $("messageSearchResults");
-  results.replaceChildren();
+async function onSearchResults({ channel, query, messages }) {
+  if (channel !== S.active || channel !== S.searchChannel || query !== messageSearchQuery) return;
   const found = messages || [];
-  status.textContent = found.length
-    ? `${found.length} result${found.length === 1 ? "" : "s"} for “${query}” (up to 100 shown)`
-    : `No messages found for “${query}”.`;
-  for (const m of found) {
-    const item = document.createElement("article");
-    item.className = "message-search-result";
-    const heading = document.createElement("div");
-    heading.className = "message-search-result-heading";
-    const author = document.createElement("strong");
-    author.textContent = m.username || "System";
-    const date = document.createElement("time");
-    date.textContent = new Date((m.ts || 0) * 1000).toLocaleString();
-    heading.append(author, date);
-    const body = document.createElement("div");
-    body.className = "message-search-result-text";
-    body.textContent = m.text || (m.file?.originalName ? `File: ${m.file.originalName}` : "(attachment)");
-    item.append(heading, body);
-    results.append(item);
-  }
+  messageSearchMatches = found.map((m) => String(m.id)).filter(Boolean); messageSearchIndex = -1;
+  const existing = S.msgs.get(channel) || [];
+  const byId = new Map(existing.map((m) => [String(m.id), m]));
+  for (const m of found) byId.set(String(m.id), m);
+  S.msgs.set(channel, [...byId.values()].sort((a, b) => Number(a.id) - Number(b.id)));
+  $("messageSearchCount").textContent = `0/${messageSearchMatches.length}`;
+  if (!messageSearchMatches.length) { document.querySelectorAll("#messages .msg.search-match, #messages .msg.search-current").forEach((node) => node.classList.remove("search-match", "search-current")); return; }
+  await renderStream(); navigateMessageSearch(0);
+}
+
+function navigateMessageSearch(direction) {
+  if (!messageSearchMatches.length) return;
+  if (direction === "next") messageSearchIndex = (messageSearchIndex + 1) % messageSearchMatches.length;
+  else if (direction === "previous") messageSearchIndex = messageSearchIndex <= 0 ? messageSearchMatches.length - 1 : messageSearchIndex - 1;
+  else messageSearchIndex = Math.max(0, Math.min(direction, messageSearchMatches.length - 1));
+  document.querySelectorAll("#messages .msg.search-match, #messages .msg.search-current").forEach((node) => node.classList.remove("search-match", "search-current"));
+  messageSearchMatches.forEach((id, index) => { const node = document.getElementById(`m-${S.active}-${id}`); if (node) { node.classList.add("search-match"); if (index === messageSearchIndex) node.classList.add("search-current"); } });
+  const current = document.getElementById(`m-${S.active}-${messageSearchMatches[messageSearchIndex]}`);
+  if (current) current.scrollIntoView({ behavior: "smooth", block: "center" });
+  $("messageSearchCount").textContent = `${messageSearchIndex + 1}/${messageSearchMatches.length}`;
 }
 
 function onReact({ channel, msgId, userId, emoji, on }) {
@@ -1289,6 +1295,11 @@ async function renderStream() {
     prev = m;
   }
   updateHeader();
+  if (messageSearchMatches.length && S.searchChannel === S.active) {
+    messageSearchMatches.forEach((id) => { const node = document.getElementById(`m-${S.active}-${id}`); if (node) node.classList.add("search-match"); });
+    const currentId = messageSearchMatches[messageSearchIndex];
+    if (currentId != null) document.getElementById(`m-${S.active}-${currentId}`)?.classList.add("search-current");
+  }
   if (atBottom) {
     // Snap to bottom now and after layout / image loads settle.
     const snap = () => { box.scrollTop = box.scrollHeight; };
