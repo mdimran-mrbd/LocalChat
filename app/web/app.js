@@ -2337,6 +2337,10 @@ function openSavedMessages() {
 
 function openForwardDialog(message, displayText, fileRealName, sourcePeer) {
   if (!message || message.kind === "system" || message.deleted) return;
+  if (String(message.text || "").startsWith("e2e:v1:") && String(displayText || "").startsWith("🔒 (cannot decrypt")) {
+    toast("This encrypted message cannot be decrypted here, so it cannot be forwarded.", 4000);
+    return;
+  }
   if (message.kind === "file") {
     toast("Forwarding attachments is not supported yet. You can forward text messages now.", 4000);
     return;
