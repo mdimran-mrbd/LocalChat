@@ -974,7 +974,7 @@ function renderPinnedBanner(channel) {
 
 function positionMessageActions(row) {
   if (!row?.isConnected || !row.classList.contains("actions-visible")) return;
-  row.classList.remove("actions-above");
+  row.classList.remove("actions-above", "actions-below");
   const bubble = row.querySelector(".bubble");
   const actions = row.querySelector(".msg-actions");
   const stream = $("messages");
