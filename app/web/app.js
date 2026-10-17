@@ -770,7 +770,7 @@ async function onWireMsg(m) {
       const arr = S.msgs.get(channel) || [];
       const at = arr.findIndex((x) => String(x.id) === String(payload.msgId));
       if (at >= 0) arr[at] = payload.message;
-      else if (payload.message) arr.push(payload.message);
+      arr.sort((a, b) => Number(a.id) - Number(b.id));
       S.msgs.set(channel, arr);
       S.pins.set(channel, Array.isArray(payload.pins) ? payload.pins : []);
       savedMessages = savedMessages.filter((item) => !(item.channel === channel && String(item.id) === String(payload.msgId)));
@@ -1862,7 +1862,7 @@ async function renderMessage(m, { follow, peer, ch }) {
 
   // WhatsApp-style hover controls: reaction stays outside the bubble; arrow lives inside it.
   const savedNow = isMessageSaved(m);
-  const canDeleteMessage = isOwn || (ch?.kind === "group" && ch.createdBy === S.me?.id);
+  const canDeleteMessage = isOwn || ch?.kind === "group";
   const quickReaction = el("button", {
     type: "button",
     class: "msg-hover-reaction",
