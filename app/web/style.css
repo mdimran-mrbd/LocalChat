@@ -2609,8 +2609,8 @@ html, body.admin-shell { height: 100%; overflow: hidden; }
 [data-theme="light"] .msg .msg-hover-reaction { background: #fff; color: #54656f; border-color: #e9edef; }
 [data-theme="light"] .msg .msg-hover-reaction:hover { background: #f0f2f5; color: #111b21; }
 
-.msg .bubble { padding-right: 34px; }
-.msg.own .bubble { padding-right: 10px; padding-left: 34px; }
+.msg:not(.system) .bubble { padding-right: 34px; }
+.msg.own:not(.system) .bubble { padding-right: 10px; padding-left: 34px; }
 .msg .msg-menu-trigger {
   position: absolute;
   z-index: 5;
