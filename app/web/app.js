@@ -974,6 +974,7 @@ function renderPinnedBanner(channel) {
 
 function positionMessageActions(row) {
   if (!row?.isConnected || !row.classList.contains("actions-visible")) return;
+  row.classList.remove("actions-above");
   const bubble = row.querySelector(".bubble");
   const actions = row.querySelector(".msg-actions");
   const stream = $("messages");
@@ -987,12 +988,16 @@ function positionMessageActions(row) {
   const incoming = !row.classList.contains("own");
   const leftCandidate = incoming ? br.left - width - gap : br.right + gap;
   const leftFits = incoming ? leftCandidate >= sr.left + 6 : leftCandidate + width <= sr.right - 6;
+  const sideTop = br.top + (br.height - height) / 2;
+  const verticalFits = sideTop >= sr.top + 6 && sideTop + height <= sr.bottom - 6;
   let left;
-  let top = br.top + (br.height - height) / 2;
-  if (leftFits) {
+  let top;
+  if (leftFits && verticalFits) {
     left = leftCandidate - rr.left;
+    top = sideTop - rr.top;
   } else {
-    // Reserve a row-local strip above the bubble so the fallback never covers chat text.
+    // The row reserves 42px above its bubble while hovered. Put the toolbar
+    // in that strip rather than allowing it to cover any neighbouring text.
     row.classList.add("actions-above");
     const updatedBubble = bubble.getBoundingClientRect();
     const updatedRow = row.getBoundingClientRect();
@@ -1001,9 +1006,19 @@ function positionMessageActions(row) {
   }
   actions.style.left = `${left}px`;
   actions.style.right = "auto";
+  actions.style.top = `${top}px`;
+}
+  actions.style.left = `${left}px`;
+  actions.style.right = "auto";
   actions.style.top = `${top - rr.top}px`;
   // All coordinates are row-local; never use fixed positioning or document scroll offsets.
 }
+
+function repositionVisibleMessageActions() {
+  document.querySelectorAll("#messages .msg.actions-visible").forEach(positionMessageActions);
+}
+window.addEventListener("resize", repositionVisibleMessageActions);
+$("messages")?.addEventListener("scroll", repositionVisibleMessageActions, { passive: true });
 
 function messageMentionsMe(m) {
   if (!S.me?.username || !m || m.kind === "system" || m.kind === "file") return Promise.resolve(false);
