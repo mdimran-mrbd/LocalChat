@@ -1862,6 +1862,7 @@ async function renderMessage(m, { follow, peer, ch }) {
 
   // WhatsApp-style hover controls: reaction stays outside the bubble; arrow lives inside it.
   const savedNow = isMessageSaved(m);
+  const canDeleteMessage = isOwn || (ch?.kind === "group" && ch.createdBy === S.me?.id);
   const quickReaction = el("button", {
     type: "button",
     class: "msg-hover-reaction",
@@ -1890,7 +1891,7 @@ async function renderMessage(m, { follow, peer, ch }) {
     el("button", { type: "button", class: "msg-menu-item", onclick: (ev) => { ev.stopPropagation(); row?.classList.remove("menu-open"); toggleMessagePin(m); } }, [svg("M16 3l5 5-4 1-4 4-1 5-2-2-4 4-2-2 4-4-2-2 5-1 4-4z", 16), isMessagePinned(m) ? "Unpin" : "Pin"]),
     el("button", { type: "button", class: "msg-menu-item", onclick: (ev) => { ev.stopPropagation(); row?.classList.remove("menu-open"); toggleMessageBookmark(m); } }, [svg("M6 4h12v17l-6-4-6 4z", 16), savedNow ? "Remove saved message" : "Save message"]),
     el("button", { type: "button", class: "msg-menu-item", onclick: async (ev) => { ev.stopPropagation(); row?.classList.remove("menu-open"); try { await navigator.clipboard.writeText(displayText || fileRealName || ""); toast("Copied"); } catch { toast("Could not copy this message"); } } }, [svg("M8 8V4h12v12h-4M4 8h12v12H4z", 16), "Copy"]),
-    el("button", { type: "button", class: "msg-menu-item danger", onclick: (ev) => { ev.stopPropagation(); row?.classList.remove("menu-open"); if (confirm("Delete this message for everyone? This cannot be undone.")) sendOp({ op: "delete_message", channel: m.channel, msgId: Number(m.id) }); } }, [svg("M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14M10 10v6M14 10v6", 16), "Delete for everyone"]),
+    el("button", { type: "button", class: "msg-menu-item danger", disabled: !canDeleteMessage, title: canDeleteMessage ? "Delete for everyone" : "Only the sender or group admin can delete this message", onclick: (ev) => { ev.stopPropagation(); row?.classList.remove("menu-open"); if (canDeleteMessage && confirm("Delete this message for everyone? This cannot be undone.")) sendOp({ op: "delete_message", channel: m.channel, msgId: Number(m.id) }); } }, [svg("M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14M10 10v6M14 10v6", 16), "Delete for everyone"]),
   ]);
   // Tail only on the first bubble of a group.
   const classes = ["msg"];
