@@ -1341,17 +1341,29 @@ async fn handle_op(
             let msg_id = v.get("msgId").and_then(Value::as_u64).ok_or("missing msgId")?;
             let ch = state.channels.get(channel_id).ok_or("no such channel")?;
             if !can_send(&ch, &user_id) { return Err("not a member".into()); }
-            let author = state.db.message_author_id(channel_id, msg_id).await
+            let author = state.db.message_author_username(channel_id, msg_id).await
                 .map_err(|_| "could not verify message".to_string())?
                 .ok_or("message not found or already deleted")?;
-            let is_author = author == user_id.as_str();
-            let is_group_admin = ch.kind == ChannelKind::Group && ch.created_by == user_id;
+            let current_username = state.users.get(&user_id).map(|u| u.username.to_string()).unwrap_or_default();
+            let is_author = author.eq_ignore_ascii_case(&current_username);
+            let creator_username = state.known_users.get(&ch.created_by).map(|u| u.username.to_string()).unwrap_or_default();
+            let is_group_admin = ch.kind == ChannelKind::Group && !creator_username.is_empty() && creator_username.eq_ignore_ascii_case(&current_username);
             if !is_author && !is_group_admin {
                 return Err("you can delete only your own messages; only the group admin can delete other members' messages".into());
             }
+            let attachment_url = state.db.message_attachment_filename(channel_id, msg_id).await
+                .map_err(|_| "could not inspect attachment".to_string())?;
             let deleted = state.db.delete_message_for_everyone(channel_id, msg_id).await
                 .map_err(|_| "could not delete message".to_string())?
                 .ok_or("message not found or already deleted")?;
+            // Remove the underlying upload so an old direct URL cannot retrieve deleted media.
+            if let Some(url) = attachment_url {
+                if let Some(name) = url.rsplit('/').next() {
+                    if !name.is_empty() && std::path::Path::new(name).file_name().and_then(|n| n.to_str()) == Some(name) {
+                        let _ = tokio::fs::remove_file(state.uploads_dir.join(name)).await;
+                    }
+                }
+            }
             let pins = state.db.list_pinned_messages(channel_id).await.unwrap_or_default();
             let payload = json!({
                 "channel": channel_id,
