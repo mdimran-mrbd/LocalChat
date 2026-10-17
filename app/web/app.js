@@ -1016,7 +1016,6 @@ function messageMentionsMe(m) {
       text = decrypted;
     }
     const escaped = S.me.username.replace(/[^A-Za-z0-9._-]/g, (ch) => "\\" + ch);
-");
     return new RegExp(`(^|[^A-Za-z0-9._-])@${escaped}(?=$|[^A-Za-z0-9._-])`, "i").test(text);
   };
   return inspect().catch(() => false);
