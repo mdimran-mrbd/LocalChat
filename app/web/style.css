@@ -2406,3 +2406,53 @@ html, body.admin-shell { height: 100%; overflow: hidden; }
   .admin-shell .ad-main { padding: 16px 14px 60px; }
   .admin-shell .ad-search { width: 100%; }
 }
+
+
+/* ── Message search ─────────────────────────────────────────────── */
+.message-search-panel {
+  flex: 0 0 auto;
+  max-height: 42%;
+  overflow-y: auto;
+  padding: 10px 6%;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-1);
+}
+.message-search-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.message-search-form input {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-0);
+  color: var(--fg-0);
+  font: inherit;
+}
+.message-search-form input:focus { outline: none; border-color: var(--brand); }
+#messageSearchStatus { margin: 8px 0 4px; }
+.message-search-results { display: flex; flex-direction: column; gap: 6px; }
+.message-search-result {
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-0);
+  overflow-wrap: anywhere;
+}
+.message-search-result-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.message-search-result-heading time { color: var(--muted); font-size: 11px; }
+.message-search-result-text { white-space: pre-wrap; font-size: 13px; }
+@media (max-width: 560px) {
+  .message-search-form { flex-wrap: wrap; }
+  .message-search-form input { flex-basis: 100%; }
+  .message-search-panel { padding: 10px 12px; max-height: 45%; }
+}
