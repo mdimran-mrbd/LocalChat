@@ -2718,3 +2718,32 @@ html, body.admin-shell { height: 100%; overflow: hidden; }
   width: max-content; max-width: min(260px, calc(100vw - 16px));
   box-sizing: border-box; z-index: 100;
 }
+
+
+/* The menu is portalled to <body> while open, so restate its child styling. */
+.msg-menu.menu-floating {
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-1);
+  color: var(--fg-0);
+  box-shadow: var(--shadow-lg);
+}
+.msg-menu.menu-floating .msg-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 35px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg-0);
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.msg-menu.menu-floating .msg-menu-item:hover { background: var(--bg-hover); }
+.msg-menu.menu-floating .msg-menu-item.danger { color: var(--danger); }
+[data-theme="light"] .msg-menu.menu-floating .msg-menu-item:hover { background: #f0f2f5; }
