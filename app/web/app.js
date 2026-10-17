@@ -1018,7 +1018,7 @@ function toggleMessageMenu(row, menu, bubble, trigger) {
   const tr = trigger.getBoundingClientRect(), sr = $("messages")?.getBoundingClientRect(), cr = $("sendForm")?.getBoundingClientRect();
   const viewportTop = Math.max(8, sr?.top ?? 8);
   const viewportBottom = Math.min(window.innerHeight - 8, sr?.bottom ?? window.innerHeight - 8, cr?.top ?? window.innerHeight - 8);
-  const maxHeight = Math.max(100, viewportBottom - viewportTop);
+  const maxHeight = Math.max(1, viewportBottom - viewportTop);
   menu.style.maxHeight = `${maxHeight}px`; menu.style.overflowY = "auto";
   const mr = menu.getBoundingClientRect(), h = Math.min(mr.height || 250, maxHeight);
   const below = viewportBottom - tr.bottom - 6, above = tr.top - viewportTop - 6;
@@ -1077,6 +1077,7 @@ function positionMessageActions(row) {
 }
 
 function repositionVisibleMessageActions() {
+  document.querySelectorAll("#messages .msg").forEach(positionMessageReaction);
   document.querySelectorAll("#messages .msg.actions-visible").forEach(positionMessageActions);
 }
 window.addEventListener("resize", repositionVisibleMessageActions);
