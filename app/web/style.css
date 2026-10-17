@@ -1385,15 +1385,16 @@ input:focus, textarea:focus {
 .bubble .reaction .r-count:empty,
 .bubble .reaction:has(.r-count:only-child) .r-count { display: none; }
 
-/* Hover actions sit just above the bubble, never over message text. */
-.bubble .msg-actions {
+/* Message action toolbar is a sibling of the bubble, positioned by JS
+   within the message row. Hover reserves vertical room so it cannot cover
+   neighbouring messages; horizontal placement stays outside the bubble. */
+.msg.actions-visible { padding-top: 42px; }
+.msg .msg-actions {
   position: absolute;
-  top: -17px;
-  right: 4px;
-  transform: none;
   display: flex;
-  gap: 5px;
-  padding: 2px 4px;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 4px;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--bg-1);
@@ -1402,32 +1403,29 @@ input:focus, textarea:focus {
   pointer-events: none;
   transition: opacity 120ms;
   z-index: 3;
+  white-space: nowrap;
 }
-.msg.own .bubble .msg-actions { right: 4px; left: auto; flex-direction: row; }
-.msg:hover .bubble .msg-actions,
-.msg:focus-within .bubble .msg-actions { opacity: 1; pointer-events: auto; }
-
-.bubble .ma-btn {
-  width: 32px; height: 32px;
+.msg.actions-visible .msg-actions { opacity: 1; pointer-events: auto; }
+.msg .ma-btn {
+  flex: 0 0 30px;
+  width: 30px; height: 30px;
   display: grid; place-items: center;
   border-radius: 50%;
   background: var(--bg-1);
   color: var(--fg-2);
-  box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+  box-shadow: none;
   cursor: pointer;
   transition: color 100ms, background 100ms, transform 100ms;
 }
-.bubble .ma-btn:hover {
+.msg .ma-btn:hover {
   color: var(--fg-0);
   background: var(--bg-2);
-  transform: scale(1.08);
+  transform: scale(1.06);
 }
-[data-theme="light"] .bubble .ma-btn {
-  background: #fff;
-  color: #54656f;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.18);
-}
-[data-theme="light"] .bubble .ma-btn:hover { color: #111b21; background: #f0f2f5; }
+.msg .ma-btn.pinned { color: var(--brand); }
+[data-theme="light"] .msg .ma-btn { background: #fff; color: #54656f; }
+[data-theme="light"] .msg .ma-btn:hover { color: #111b21; background: #f0f2f5; }
+[data-theme="light"] .msg .ma-btn.pinned { color: var(--brand); }
 
 /* Popover */
 .reaction-pop {
@@ -2524,3 +2522,56 @@ html, body.admin-shell { height: 100%; overflow: hidden; }
   .ch-tool-btn svg { width: 18px; height: 18px; }
   .saved-overlay { padding: 10px; }
 }
+
+/* Pinned-message strip */
+.pinned-banner {
+  flex: 0 0 auto;
+  margin: 0 auto 10px;
+  width: min(100%, 720px);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--brand);
+  border-radius: 10px;
+  background: var(--bg-1);
+  box-shadow: 0 1px 3px rgba(0,0,0,.08);
+  overflow: hidden;
+}
+.pinned-banner-head {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 8px 12px;
+  color: var(--fg-0); background: transparent;
+  text-align: left; cursor: pointer;
+  font-size: 12px; font-weight: 650;
+}
+.pinned-count {
+  display: inline-grid; place-items: center;
+  min-width: 20px; height: 20px; padding: 0 5px;
+  border-radius: 999px; background: var(--brand-soft); color: var(--brand);
+}
+.pinned-chevron { margin-left: auto; color: var(--fg-2); }
+.pinned-list { display: flex; flex-direction: column; border-top: 1px solid var(--border); }
+.pinned-item {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  padding: 8px 12px; background: transparent; color: var(--fg-0);
+  text-align: left; cursor: pointer; border-bottom: 1px solid var(--border);
+}
+.pinned-item:last-child { border-bottom: 0; }
+.pinned-item:hover { background: var(--bg-2); }
+.pinned-item strong { font-size: 12px; }
+.pinned-item span { font-size: 11px; color: var(--fg-2); }
+
+/* Jump to the latest @mention in the current conversation. */
+.mention-jump {
+  position: absolute;
+  right: 16px;
+  bottom: calc(100% + 10px);
+  z-index: 8;
+  width: 40px; height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--brand);
+  color: #fff;
+  font-size: 21px; font-weight: 750;
+  box-shadow: 0 3px 10px rgba(0,0,0,.22);
+  cursor: pointer;
+}
+.mention-jump:hover { filter: brightness(1.08); transform: translateY(-1px); }
