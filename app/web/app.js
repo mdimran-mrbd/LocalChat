@@ -763,6 +763,22 @@ async function onWireMsg(m) {
     try { onPinUpdate(JSON.parse(m.text)); } catch {}
     return;
   }
+  if (m.username === "__msg_deleted") {
+    try {
+      const payload = JSON.parse(m.text);
+      const channel = payload.channel || m.channel;
+      const arr = S.msgs.get(channel) || [];
+      const at = arr.findIndex((x) => String(x.id) === String(payload.msgId));
+      if (at >= 0) arr[at] = payload.message;
+      else if (payload.message) arr.push(payload.message);
+      S.msgs.set(channel, arr);
+      S.pins.set(channel, Array.isArray(payload.pins) ? payload.pins : []);
+      savedMessages = savedMessages.filter((item) => !(item.channel === channel && String(item.id) === String(payload.msgId)));
+      if (channel === S.active) renderStream();
+      updateSavedCount();
+    } catch (err) { console.warn("message deletion update failed", err); }
+    return;
+  }
   if (m.username === "__read") {
     try { onRead(JSON.parse(m.text)); } catch {}
     return;
@@ -1602,7 +1618,10 @@ async function renderMessage(m, { follow, peer, ch }) {
     if (orig) {
       quoteName = orig.username || quoteName;
       quoteColor = orig.color || quoteColor;
-      let t = orig.text || "";
+      if (orig.deleted) {
+        quoteText = "This message was deleted.";
+      }
+      let t = orig.deleted ? "This message was deleted." : (orig.text || "");
       if (peer && t.startsWith("e2e:v1:")) {
         const pt = await E2EE.tryDecrypt(peer.id, peer.pubkey, t);
         t = pt != null ? pt : "🔒 (encrypted)";
@@ -1841,35 +1860,38 @@ async function renderMessage(m, { follow, peer, ch }) {
     bubble.append(bar);
   }
 
-  // Hover action group (skips system messages because they returned early).
+  // WhatsApp-style hover controls: reaction stays outside the bubble; arrow lives inside it.
   const savedNow = isMessageSaved(m);
-  const actions = el("div", { class: "msg-actions" }, [
-    el("button", {
-      class: "ma-btn pin-btn" + (isMessagePinned(m) ? " pinned" : ""),
-      title: isMessagePinned(m) ? "Unpin message" : "Pin message",
-      "aria-label": isMessagePinned(m) ? "Unpin message" : "Pin message",
-      onclick: (ev) => { ev.stopPropagation(); toggleMessagePin(m); },
-    }, isMessagePinned(m) ? "📌" : "📍"),
-    el("button", {
-      class: "ma-btn bookmark-btn" + (savedNow ? " saved" : ""),
-      title: savedNow ? "Remove bookmark" : "Save message",
-      "aria-label": savedNow ? "Remove bookmark" : "Save message",
-      onclick: (ev) => { ev.stopPropagation(); toggleMessageBookmark(m, ev.currentTarget); },
-    }, savedNow ? "★" : "☆"),
-    el("button", {
-      class: "ma-btn",
-      title: "Add reaction",
-      onclick: (ev) => { ev.stopPropagation(); openReactionPicker(ev.currentTarget, m.id); },
-      html: `<svg viewBox="0 0 24 24" width="16" height="16"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="9" cy="10.5" r="1.1" fill="currentColor"/><circle cx="15" cy="10.5" r="1.1" fill="currentColor"/><path d="M8.5 14.2c.8 1.3 2.1 2.1 3.5 2.1s2.7-.8 3.5-2.1" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`,
-    }),
-    el("button", {
-      class: "ma-btn",
-      title: "Reply",
-      onclick: (ev) => { ev.stopPropagation(); startReplyTo(m, displayText, fileRealName); },
-      html: `<svg viewBox="0 0 24 24" width="16" height="16"><path d="M10 9V5l-7 7 7 7v-4c5 0 8 1.5 10 5-1-7-5-11-10-11z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>`,
-    }),
-  ]);
+  const quickReaction = el("button", {
+    type: "button",
+    class: "msg-hover-reaction",
+    title: "React",
+    "aria-label": "React to message",
+    onclick: (ev) => { ev.stopPropagation(); openReactionPicker(ev.currentTarget, m.id); },
+    html: `<svg viewBox="0 0 24 24" width="19" height="19"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="9" cy="10.5" r="1.1" fill="currentColor"/><circle cx="15" cy="10.5" r="1.1" fill="currentColor"/><path d="M8.5 14.2c.8 1.3 2.1 2.1 3.5 2.1s2.7-.8 3.5-2.1" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`,
+  });
 
+  const menuTrigger = el("button", {
+    type: "button",
+    class: "msg-menu-trigger",
+    title: "Message actions",
+    "aria-label": "Message actions",
+    onclick: (ev) => {
+      ev.stopPropagation();
+      const wasOpen = row?.classList.contains("menu-open");
+      document.querySelectorAll(".msg.menu-open").forEach((n) => n.classList.remove("menu-open"));
+      if (!wasOpen) row?.classList.add("menu-open");
+    },
+    html: `<svg viewBox="0 0 24 24" width="16" height="16"><path d="m7 10 5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  });
+  const menu = el("div", { class: "msg-menu", role: "menu" }, [
+    el("button", { type: "button", class: "msg-menu-item", onclick: (ev) => { ev.stopPropagation(); row?.classList.remove("menu-open"); startReplyTo(m, displayText, fileRealName); } }, [svg("M10 9V5l-7 7 7 7v-4c5 0 8 1.5 10 5-1-7-5-11-10-11z", 16), "Reply"]),
+    el("button", { type: "button", class: "msg-menu-item", onclick: (ev) => { ev.stopPropagation(); row?.classList.remove("menu-open"); openForwardDialog(m, displayText, fileRealName, peer); } }, [svg("M14 5l7 7-7 7M21 12H9a6 6 0 0 0-6 6", 16), "Forward"]),
+    el("button", { type: "button", class: "msg-menu-item", onclick: (ev) => { ev.stopPropagation(); row?.classList.remove("menu-open"); toggleMessagePin(m); } }, [svg("M16 3l5 5-4 1-4 4-1 5-2-2-4 4-2-2 4-4-2-2 5-1 4-4z", 16), isMessagePinned(m) ? "Unpin" : "Pin"]),
+    el("button", { type: "button", class: "msg-menu-item", onclick: (ev) => { ev.stopPropagation(); row?.classList.remove("menu-open"); toggleMessageBookmark(m); } }, [svg("M6 4h12v17l-6-4-6 4z", 16), savedNow ? "Remove saved message" : "Save message"]),
+    el("button", { type: "button", class: "msg-menu-item", onclick: async (ev) => { ev.stopPropagation(); row?.classList.remove("menu-open"); try { await navigator.clipboard.writeText(displayText || fileRealName || ""); toast("Copied"); } catch { toast("Could not copy this message"); } } }, [svg("M8 8V4h12v12h-4M4 8h12v12H4z", 16), "Copy"]),
+    el("button", { type: "button", class: "msg-menu-item danger", onclick: (ev) => { ev.stopPropagation(); row?.classList.remove("menu-open"); if (confirm("Delete this message for everyone? This cannot be undone.")) sendOp({ op: "delete_message", channel: m.channel, msgId: Number(m.id) }); } }, [svg("M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14M10 10v6M14 10v6", 16), "Delete for everyone"]),
+  ]);
   // Tail only on the first bubble of a group.
   const classes = ["msg"];
   if (isOwn) classes.push("own");
@@ -1877,10 +1899,11 @@ async function renderMessage(m, { follow, peer, ch }) {
   if (follow) classes.push("follow");
   else        classes.push("has-tail");
 
+  bubble.append(menuTrigger, menu);
   const stack = el("div", { class: "msg-stack" });
   if (header) stack.append(header);
   stack.append(bubble);
-  const row = el("div", { class: classes.join(" "), id: `m-${m.channel}-${m.id}` }, [avatar, stack, actions]);
+  const row = el("div", { class: classes.join(" "), id: `m-${m.channel}-${m.id}` }, [avatar, stack, quickReaction]);
   row.addEventListener("mouseenter", () => {
     row.classList.add("actions-visible");
     requestAnimationFrame(() => positionMessageActions(row));
@@ -1889,9 +1912,23 @@ async function renderMessage(m, { follow, peer, ch }) {
     row.classList.add("actions-visible");
     requestAnimationFrame(() => positionMessageActions(row));
   });
-  row.addEventListener("mouseleave", () => row.classList.remove("actions-visible"));
+  row.addEventListener("mouseleave", (ev) => {
+    if (!row.contains(ev.relatedTarget)) {
+      row.classList.remove("actions-visible");
+      // Leave the menu open if keyboard focus is still within the row.
+      if (!row.contains(document.activeElement)) row.classList.remove("menu-open");
+    }
+  });
   row.addEventListener("focusout", (ev) => {
-    if (!row.contains(ev.relatedTarget)) row.classList.remove("actions-visible");
+    if (!row.contains(ev.relatedTarget)) {
+      row.classList.remove("actions-visible");
+      row.classList.remove("menu-open");
+    }
+  });
+  row.addEventListener("dblclick", (ev) => {
+    if (ev.target.closest("button, a, input, textarea, video, audio, .bubble, .msg-hover-reaction, .msg-menu")) return;
+    ev.preventDefault();
+    startReplyTo(m, displayText, fileRealName);
   });
   return row;
 }
@@ -2295,6 +2332,60 @@ function openSavedMessages() {
   document.body.append(overlay);
   renderSavedMessages();
   sendOp({ op: "saved_list" });
+}
+
+function openForwardDialog(message, displayText, fileRealName, sourcePeer) {
+  if (!message || message.kind === "system" || message.deleted) return;
+  if (message.kind === "file") {
+    toast("Forwarding attachments is not supported yet. You can forward text messages now.", 4000);
+    return;
+  }
+  const overlay = el("div", { class: "forward-overlay" });
+  const panel = el("section", { class: "forward-panel", role: "dialog", "aria-modal": "true", "aria-label": "Forward message" });
+  const search = el("input", { class: "forward-search", type: "search", placeholder: "Search people and groups…" });
+  const list = el("div", { class: "forward-list" });
+  const close = () => overlay.remove();
+  const targets = [...S.channels.values()].filter((ch) => ch.id !== message.channel && (ch.kind === "dm" || ch.kind === "group" || ch.kind === "lobby"));
+  const draw = () => {
+    list.replaceChildren();
+    const q = search.value.trim().toLowerCase();
+    const filtered = targets.filter((ch) => {
+      const title = ch.kind === "lobby" ? "general" : (ch.name || ch.id);
+      return title.toLowerCase().includes(q) || ch.id.toLowerCase().includes(q);
+    });
+    if (!filtered.length) list.append(el("div", { class: "forward-empty" }, "No matching conversations"));
+    for (const ch of filtered) {
+      const title = ch.kind === "lobby" ? "# general" : (ch.kind === "dm" ? (ch.name || "Private chat") : ch.name || "Group");
+      list.append(el("button", { type: "button", class: "forward-target", onclick: async () => {
+        let text = String(displayText || "");
+        if (ch.kind === "dm") {
+          const destPeer = dmPeer(ch);
+          if (destPeer?.pubkey && E2EE.available) {
+            try { text = await E2EE.encryptFor(destPeer.id, destPeer.pubkey, "↪ Forwarded\n" + text); }
+            catch { toast("Could not encrypt this forwarded message for the recipient"); return; }
+          } else if (text.startsWith("e2e:v1:")) {
+            toast("This private message could not be decrypted for forwarding"); return;
+          } else {
+            text = "↪ Forwarded\n" + text;
+          }
+        } else {
+          text = "↪ Forwarded\n" + text;
+        }
+        if (text.length > 4096) { toast("This message is too long to forward"); return; }
+        sendOp({ op: "send", channel: ch.id, text });
+        close();
+        toast("Message forwarded");
+      } }, [el("span", { class: "forward-target-icon" }, ch.kind === "dm" ? "●" : "#"), el("span", { class: "forward-target-name" }, title), el("span", { class: "forward-target-kind" }, ch.kind === "dm" ? "Direct message" : ch.kind === "group" ? "Group" : "Public")]));
+    }
+  };
+  panel.append(el("div", { class: "forward-head" }, [el("strong", {}, "Forward message"), el("button", { type: "button", class: "forward-close", "aria-label": "Close", onclick: close }, "×")]), search, list);
+  overlay.append(panel);
+  overlay.addEventListener("click", (ev) => { if (ev.target === overlay) close(); });
+  search.addEventListener("input", draw);
+  document.addEventListener("keydown", function esc(ev) { if (ev.key === "Escape" && overlay.isConnected) { close(); document.removeEventListener("keydown", esc); } });
+  document.body.append(overlay);
+  draw();
+  search.focus();
 }
 
 function startReplyTo(m, plainText, fileRealName) {
