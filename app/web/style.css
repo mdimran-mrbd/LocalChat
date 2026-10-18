@@ -2747,3 +2747,50 @@ html, body.admin-shell { height: 100%; overflow: hidden; }
 .msg-menu.menu-floating .msg-menu-item:hover { background: var(--bg-hover); }
 .msg-menu.menu-floating .msg-menu-item.danger { color: var(--danger); }
 [data-theme="light"] .msg-menu.menu-floating .msg-menu-item:hover { background: #f0f2f5; }
+
+
+/* @mention autocomplete picker above the composer. */
+.mention-picker {
+  position: absolute;
+  left: 16px;
+  bottom: calc(100% - 4px);
+  z-index: 40;
+  width: min(320px, calc(100% - 32px));
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-1);
+  color: var(--fg-0);
+  box-shadow: var(--shadow-lg);
+}
+.mention-picker.hidden { display: none; }
+.mention-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 42px;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.mention-option:hover, .mention-option.active { background: var(--bg-hover); }
+.mention-option-avatar {
+  display: grid;
+  place-items: center;
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  color: white;
+  font-size: 11px;
+  font-weight: 700;
+}
+.mention-option-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.mention-option-status { color: var(--fg-2); font-size: 11px; }
