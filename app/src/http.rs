@@ -562,10 +562,23 @@ async fn serve_asset(
 // replacing the running binary. The user must explicitly click "Update now".
 async fn install_update(
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
+    headers: HeaderMap,
 ) -> axum::response::Response {
     if !addr.ip().is_loopback() {
         return (StatusCode::FORBIDDEN, Json(json!({
             "error": "Updates can only be started from the host computer."
+        }))).into_response();
+    }
+    // Require a same-origin request from the host's own browser. This stops
+    // a remote LAN participant or an unrelated website from triggering a restart.
+    let origin = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok()).unwrap_or("");
+    let trusted_origin = origin == "https://localhost"
+        || origin.starts_with("https://localhost:")
+        || origin == "https://127.0.0.1"
+        || origin.starts_with("https://127.0.0.1:");
+    if !trusted_origin {
+        return (StatusCode::FORBIDDEN, Json(json!({
+            "error": "Open LocalChat on the host computer to start an update."
         }))).into_response();
     }
 
