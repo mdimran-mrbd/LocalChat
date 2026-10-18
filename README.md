@@ -31,7 +31,7 @@ people share a network but not necessarily the internet:
 
 - **One binary, no install.** Drop `LocalChat.exe` on a desktop. Double-click.
   That's the whole setup.
-- **LAN-first and private.** Chat works without internet. When the host has internet, the host browser checks GitHub Releases for updates; no chat messages or user data are sent.
+- **LAN-first and private.** Chat works without internet. When the host has internet, the host browser can check GitHub Releases for updates after the host opts in; installing an update always requires confirmation. No chat messages or user data are sent.
 - **No accounts.** Pick a name, you're in. Identity is bound to a per-browser
   key so usernames can't be impersonated.
 - **End-to-end encrypted DMs.** The host process literally cannot read direct
