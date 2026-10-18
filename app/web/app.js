@@ -98,6 +98,10 @@ function compareVersions(a, b) {
 }
 
 async function checkForUpdates(currentVersion, currentBuild) {
+  // Update checks are opt-in. Installing/restarting always requires a separate click.
+  try {
+    if (localStorage.getItem("localchat-update-checks") !== "yes") return;
+  } catch { return; }
   // Only the host's own browser may offer the host executable update.
   // Other users joining over the LAN must never see an action that restarts the server.
   if (!["localhost", "127.0.0.1"].includes(location.hostname.toLowerCase())) return;
@@ -121,6 +125,27 @@ async function checkForUpdates(currentVersion, currentBuild) {
   } catch {
     // Offline / rate-limited checks are intentionally silent; chat still works.
   }
+}
+
+// Update checks are explicitly opt-in; the install action remains separately user-confirmed.
+const updateChecksOptIn = $("updateChecksOptIn");
+if (updateChecksOptIn) {
+  try { updateChecksOptIn.checked = localStorage.getItem("localchat-update-checks") === "yes"; } catch {}
+  updateChecksOptIn.addEventListener("change", async () => {
+    try {
+      if (updateChecksOptIn.checked) {
+        localStorage.setItem("localchat-update-checks", "yes");
+        const info = await fetch("/api/info").then((r) => r.json());
+        await checkForUpdates(info && info.version, info && info.build);
+      } else {
+        localStorage.removeItem("localchat-update-checks");
+        $("updateBanner").classList.add("hidden");
+        $("updateStatus").textContent = "";
+      }
+    } catch {
+      // An unavailable update service never interrupts chat.
+    }
+  });
 }
 
 $("updateNowBtn").addEventListener("click", async () => {
