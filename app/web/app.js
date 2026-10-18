@@ -2531,7 +2531,7 @@ function closeMentionPicker() {
 function getMentionToken() {
   const caret = msgInput.selectionStart ?? msgInput.value.length;
   const before = msgInput.value.slice(0, caret);
-  const match = before.match(/(^|\\s)@([A-Za-z0-9._-]*)$/);
+  const match = before.match(/(^|\s)@([A-Za-z0-9._-]*)$/);
   if (!match) return null;
   return { start: caret - match[2].length - 1, end: caret, query: match[2] };
 }
