@@ -4,7 +4,7 @@
 
 **A private, zero-install team chat that runs on your own Wi-Fi.**
 
-One ~5 MB binary. No accounts. No cloud. No telemetry.
+One ~5 MB binary. No accounts. No chat cloud. No telemetry.
 Double-click. Share the LAN URL. Done.
 
 [![Build](../../actions/workflows/build.yml/badge.svg)](../../actions/workflows/build.yml)
@@ -31,7 +31,7 @@ people share a network but not necessarily the internet:
 
 - **One binary, no install.** Drop `LocalChat.exe` on a desktop. Double-click.
   That's the whole setup.
-- **Air-gapped friendly.** Zero outbound traffic. Works on a router with no WAN.
+- **LAN-first and private.** Chat works without internet. When the host has internet, the host browser checks GitHub Releases for updates; no chat messages or user data are sent.
 - **No accounts.** Pick a name, you're in. Identity is bound to a per-browser
   key so usernames can't be impersonated.
 - **End-to-end encrypted DMs.** The host process literally cannot read direct
@@ -53,7 +53,7 @@ people share a network but not necessarily the internet:
 | 🛡️ **Admin dashboard** | Live metrics, kick/ban, broadcast, settings. |
 | 🌗 **Light & dark themes** | Polished, mobile-friendly UI. |
 | 🔁 **Auto-reconnect** | Survives sleep, Wi-Fi roams, network blips. |
-| 🚫 **No telemetry** | Not a single outbound request. |
+| 🚫 **No telemetry** | No analytics or chat-data uploads. Update checks contact GitHub Releases from the host browser only. |
 
 ## 60-second quick start
 
