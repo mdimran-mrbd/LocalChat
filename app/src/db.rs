@@ -103,6 +103,24 @@ CREATE INDEX IF NOT EXISTS idx_messages_user       ON messages(user_id);
 -- in Db::open() so it can run *after* the ALTER TABLE that adds the
 -- column on legacy installs.
 
+CREATE TABLE IF NOT EXISTS saved_messages (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    channel_id TEXT NOT NULL,
+    message_id INTEGER NOT NULL,
+    saved_at INTEGER NOT NULL,
+    PRIMARY KEY (user_id, channel_id, message_id)
+);
+CREATE INDEX IF NOT EXISTS idx_saved_messages_user ON saved_messages(user_id, saved_at DESC);
+
+CREATE TABLE IF NOT EXISTS pinned_messages (
+    channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+    message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+    pinned_by TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    pinned_at INTEGER NOT NULL,
+    PRIMARY KEY (channel_id, message_id)
+);
+CREATE INDEX IF NOT EXISTS idx_pinned_messages_channel ON pinned_messages(channel_id, pinned_at DESC);
+
 CREATE TABLE IF NOT EXISTS reactions (
     message_id  INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
     user_id     TEXT    NOT NULL REFERENCES users(id)    ON DELETE CASCADE,
@@ -778,6 +796,95 @@ impl Db {
         .await
     }
 
+    /// Search visible channel history by message text or attached file name.
+    /// Results are newest first and capped by the caller.
+    pub async fn message_exists_in_channel(&self, channel: &str, message_id: u64) -> rusqlite::Result<bool> {
+        let channel = channel.to_string();
+        self.with(move |c| c.query_row(
+            "SELECT EXISTS(SELECT 1 FROM messages WHERE channel_id=?1 AND id=?2)",
+            params![channel, message_id as i64], |r| r.get(0)
+        )).await
+    }
+
+    /// Soft-delete a message for everyone while retaining its position in history.
+    /// The original text and attachment metadata are removed from the database.
+    pub async fn delete_message_for_everyone(&self, channel: &str, message_id: u64) -> rusqlite::Result<Option<WireMsg>> {
+        let channel = channel.to_string();
+        self.with(move |c| {
+            let mid = i64::try_from(message_id)
+                .map_err(|_| rusqlite::Error::IntegralValueOutOfRange(1, i64::MAX))?;
+            let changed = c.execute(
+                "UPDATE messages
+                    SET text='This message was deleted.', deleted=1,
+                        file_id=NULL, file_name=NULL, file_size=NULL, file_mime=NULL, file_url=NULL
+                  WHERE channel_id=?1 AND id=?2 AND deleted=0",
+                params![channel, mid],
+            )?;
+            if changed == 0 { return Ok(None); }
+            c.execute("DELETE FROM pinned_messages WHERE channel_id=?1 AND message_id=?2", params![channel, mid])?;
+            c.execute("DELETE FROM saved_messages WHERE channel_id=?1 AND message_id=?2", params![channel, mid])?;
+            c.query_row(
+                "SELECT id, channel_id, user_id, username, avatar, color,
+                        kind, ts, text, reply_to, edited_at, deleted,
+                        file_id, file_name, file_size, file_mime, file_url
+                   FROM messages WHERE channel_id=?1 AND id=?2",
+                params![channel, mid], row_to_message
+            ).optional()
+        }).await
+    }
+
+    /// Return the author ID for permission checks before deletion/forwarding.
+    pub async fn message_author_id(&self, channel: &str, message_id: u64) -> rusqlite::Result<Option<String>> {
+        let channel = channel.to_string();
+        self.with(move |c| c.query_row(
+            "SELECT user_id FROM messages WHERE channel_id=?1 AND id=?2 AND deleted=0",
+            params![channel, message_id as i64],
+            |r| r.get::<_, Option<String>>(0)
+        ).optional().map(|v| v.flatten())).await
+    }
+
+    /// Stable author identity for permission checks across reconnects.
+    pub async fn message_author_username(&self, channel: &str, message_id: u64) -> rusqlite::Result<Option<String>> {
+        let channel = channel.to_string();
+        self.with(move |c| c.query_row(
+            "SELECT username FROM messages WHERE channel_id=?1 AND id=?2 AND deleted=0",
+            params![channel, message_id as i64], |r| r.get::<_, String>(0)
+        ).optional()).await
+    }
+
+    /// Return the stored upload filename before its reference is cleared.
+    pub async fn message_attachment_filename(&self, channel: &str, message_id: u64) -> rusqlite::Result<Option<String>> {
+        let channel = channel.to_string();
+        self.with(move |c| c.query_row(
+            "SELECT file_url FROM messages WHERE channel_id=?1 AND id=?2 AND deleted=0",
+            params![channel, message_id as i64], |r| r.get::<_, Option<String>>(0)
+        ).optional().map(|v| v.flatten())).await
+    }
+
+    pub async fn search_messages(&self, channel: &str, query: &str, limit: usize) -> rusqlite::Result<Vec<WireMsg>> {
+        let cid = channel.to_string();
+        let needle = format!("%{}%", query);
+        self.with(move |c| {
+            let mut stmt = c.prepare(
+                "SELECT id, channel_id, user_id, username, avatar, color,
+                        kind, ts, text, reply_to, edited_at, deleted,
+                        file_id, file_name, file_size, file_mime, file_url
+                   FROM messages
+                  WHERE channel_id = ?1
+                    AND deleted = 0
+                    AND (text LIKE ?2 COLLATE NOCASE
+                         OR COALESCE(file_name, '') LIKE ?2 COLLATE NOCASE)
+                  ORDER BY id DESC
+                  LIMIT ?3",
+            )?;
+            let rows = stmt.query_map(params![cid, needle, limit as i64], row_to_message)?;
+            let mut out: Vec<WireMsg> = Vec::new();
+            for row in rows { out.push(row?); }
+            Ok(out)
+        })
+        .await
+    }
+
     /// Highest message id ever assigned. Used at boot to seed the
     /// monotonic counter.
     pub async fn max_message_id(&self) -> rusqlite::Result<u64> {
@@ -891,6 +998,75 @@ fn row_to_message(r: &rusqlite::Row<'_>) -> rusqlite::Result<WireMsg> {
 }
 
 // ──────────────────────────────────────────────────────────────────────
+// Pinned messages
+// ──────────────────────────────────────────────────────────────────────
+
+impl Db {
+    /// Pin or unpin a message in a channel. Returns true when pinned.
+    pub async fn toggle_pinned_message(
+        &self,
+        channel: &str,
+        message_id: u64,
+        user_id: UserId,
+        pinned_at: i64,
+    ) -> rusqlite::Result<bool> {
+        let cid = channel.to_string();
+        let uid = user_id.to_string();
+        self.with(move |c| {
+            let mid = i64::try_from(message_id)
+                .map_err(|_| rusqlite::Error::IntegralValueOutOfRange(1, i64::MAX))?;
+            let exists: bool = c.query_row(
+                "SELECT EXISTS(SELECT 1 FROM pinned_messages WHERE channel_id=?1 AND message_id=?2)",
+                params![cid, mid],
+                |r| r.get(0),
+            )?;
+            if exists {
+                c.execute(
+                    "DELETE FROM pinned_messages WHERE channel_id=?1 AND message_id=?2",
+                    params![cid, mid],
+                )?;
+                Ok(false)
+            } else {
+                c.execute(
+                    "INSERT INTO pinned_messages(channel_id,message_id,pinned_by,pinned_at) VALUES(?1,?2,?3,?4)",
+                    params![cid, mid, uid, pinned_at],
+                )?;
+                Ok(true)
+            }
+        }).await
+    }
+
+    /// Return safe pin metadata; message content is deliberately omitted.
+    pub async fn list_pinned_messages(&self, channel: &str) -> rusqlite::Result<Vec<serde_json::Value>> {
+        let cid = channel.to_string();
+        self.with(move |c| {
+            let mut stmt = c.prepare(
+                "SELECT p.message_id, p.pinned_by, COALESCE(u.username,''), p.pinned_at,
+                        COALESCE(m.username,''), COALESCE(m.ts, p.pinned_at)
+                   FROM pinned_messages p
+                   LEFT JOIN users u ON u.id=p.pinned_by
+                   LEFT JOIN messages m ON m.id=p.message_id AND m.channel_id=p.channel_id
+                  WHERE p.channel_id=?1
+                  ORDER BY p.pinned_at DESC LIMIT 100"
+            )?;
+            let rows = stmt.query_map(params![cid], |r| {
+                Ok(serde_json::json!({
+                    "id": r.get::<_, i64>(0)?,
+                    "pinnedBy": r.get::<_, String>(1)?,
+                    "pinnedByName": r.get::<_, String>(2)?,
+                    "pinnedAt": r.get::<_, i64>(3)?,
+                    "username": r.get::<_, String>(4)?,
+                    "ts": r.get::<_, i64>(5)?
+                }))
+            })?;
+            let mut out = Vec::new();
+            for row in rows { out.push(row?); }
+            Ok(out)
+        }).await
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────
 // Reactions
 // ──────────────────────────────────────────────────────────────────────
 
@@ -904,6 +1080,70 @@ pub struct ReactionRow {
 
 impl Db {
     /// Toggle a reaction. Returns true if it ended up "on" (added).
+    /// Save or unsave a message for one authenticated user.
+    pub async fn toggle_saved_message(&self, user_id: UserId, channel: &str, message_id: u64, saved_at: i64) -> rusqlite::Result<bool> {
+        let uid = user_id.to_string();
+        let channel = channel.to_string();
+        self.with(move |c| {
+            let exists: bool = c.query_row(
+                "SELECT EXISTS(SELECT 1 FROM saved_messages WHERE user_id=?1 AND channel_id=?2 AND message_id=?3)",
+                params![uid, channel, i64::try_from(message_id).map_err(|_| rusqlite::Error::IntegralValueOutOfRange(2, i64::MAX))?], |r| r.get(0)
+            )?;
+            if exists {
+                c.execute("DELETE FROM saved_messages WHERE user_id=?1 AND channel_id=?2 AND message_id=?3",
+                    params![uid, channel, i64::try_from(message_id).map_err(|_| rusqlite::Error::IntegralValueOutOfRange(2, i64::MAX))?])?;
+                Ok(false)
+            } else {
+                c.execute("INSERT INTO saved_messages(user_id, channel_id, message_id, saved_at) VALUES (?1,?2,?3,?4)",
+                    params![uid, channel, i64::try_from(message_id).map_err(|_| rusqlite::Error::IntegralValueOutOfRange(2, i64::MAX))?, saved_at])?;
+                Ok(true)
+            }
+        }).await
+    }
+
+    /// List the authenticated user's saved messages with a safe preview.
+    pub async fn list_saved_messages(&self, user_id: UserId) -> rusqlite::Result<Vec<serde_json::Value>> {
+        let uid = user_id.to_string();
+        self.with(move |c| {
+            let mut stmt = c.prepare(
+                "SELECT s.channel_id, COALESCE(ch.name, s.channel_id), s.message_id,
+                        COALESCE(m.username, ''), COALESCE(m.text, ''), COALESCE(m.file_name, ''),
+                        COALESCE(m.ts, s.saved_at), s.saved_at, COALESCE(m.kind, 'text')
+                   FROM saved_messages s
+                   LEFT JOIN channels ch ON ch.id=s.channel_id
+                   LEFT JOIN messages m ON m.id=s.message_id AND m.channel_id=s.channel_id
+                  WHERE s.user_id=?1
+                  ORDER BY s.saved_at DESC LIMIT 500"
+            )?;
+            let rows = stmt.query_map(params![uid], |r| {
+                let kind: String = r.get(8)?;
+                let text: String = r.get(4)?;
+                let file_name: String = r.get(5)?;
+                Ok(serde_json::json!({
+                    "channel": r.get::<_, String>(0)?,
+                    "channelName": r.get::<_, String>(1)?,
+                    "id": r.get::<_, i64>(2)?,
+                    "username": r.get::<_, String>(3)?,
+                    "text": if kind == "file" { format!("📎 {}", file_name) } else { text },
+                    "ts": r.get::<_, i64>(6)?,
+                    "savedAt": r.get::<_, i64>(7)?
+                }))
+            })?;
+            let mut out = Vec::new();
+            for row in rows { out.push(row?); }
+            Ok(out)
+        }).await
+    }
+
+    pub async fn is_message_saved(&self, user_id: UserId, channel: &str, message_id: u64) -> rusqlite::Result<bool> {
+        let uid = user_id.to_string();
+        let channel = channel.to_string();
+        self.with(move |c| c.query_row(
+            "SELECT EXISTS(SELECT 1 FROM saved_messages WHERE user_id=?1 AND channel_id=?2 AND message_id=?3)",
+            params![uid, channel, message_id as i64], |r| r.get(0)
+        )).await
+    }
+
     pub async fn toggle_reaction(
         &self,
         channel: &str,
@@ -917,41 +1157,49 @@ impl Db {
         let emoji_s = emoji.to_string();
         self.with(move |c| {
             let tx = c.transaction()?;
-            let exists: Option<i64> = tx
-                .query_row(
-                    "SELECT 1 FROM reactions
-                      WHERE message_id = ?1 AND user_id = ?2 AND emoji = ?3",
-                    params![message_id as i64, uid, emoji_s],
-                    |r| r.get(0),
-                )
-                .optional()?;
+            // Enforce one active emoji per user/message. Clear any previous
+            // emoji first and record those removals in the audit log.
+            let old_emojis: Vec<String> = {
+                let mut stmt = tx.prepare(
+                    "SELECT emoji FROM reactions
+                      WHERE message_id=?1 AND user_id=?2 AND emoji<>?3"
+                )?;
+                let rows = stmt.query_map(params![message_id as i64, uid, emoji_s], |r| r.get(0))?;
+                rows.collect::<rusqlite::Result<Vec<String>>>()?
+            };
+            for old in old_emojis {
+                tx.execute(
+                    "DELETE FROM reactions WHERE message_id=?1 AND user_id=?2 AND emoji=?3",
+                    params![message_id as i64, uid, old],
+                )?;
+                tx.execute(
+                    "INSERT INTO reaction_events(ts,message_id,channel_id,user_id,emoji,on_)
+                     VALUES (?1,?2,?3,?4,?5,0)",
+                    params![ts as i64, message_id as i64, cid, uid, old],
+                )?;
+            }
+            let exists: Option<i64> = tx.query_row(
+                "SELECT 1 FROM reactions WHERE message_id=?1 AND user_id=?2 AND emoji=?3",
+                params![message_id as i64, uid, emoji_s], |r| r.get(0),
+            ).optional()?;
             let now_on;
             if exists.is_some() {
                 tx.execute(
-                    "DELETE FROM reactions
-                      WHERE message_id = ?1 AND user_id = ?2 AND emoji = ?3",
+                    "DELETE FROM reactions WHERE message_id=?1 AND user_id=?2 AND emoji=?3",
                     params![message_id as i64, uid, emoji_s],
                 )?;
                 now_on = false;
             } else {
                 tx.execute(
-                    "INSERT INTO reactions(message_id, user_id, emoji, ts)
-                     VALUES (?1, ?2, ?3, ?4)",
+                    "INSERT INTO reactions(message_id,user_id,emoji,ts) VALUES (?1,?2,?3,?4)",
                     params![message_id as i64, uid, emoji_s, ts as i64],
                 )?;
                 now_on = true;
             }
             tx.execute(
-                "INSERT INTO reaction_events(ts, message_id, channel_id, user_id, emoji, on_)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                params![
-                    ts as i64,
-                    message_id as i64,
-                    cid,
-                    uid,
-                    emoji_s,
-                    now_on as i64,
-                ],
+                "INSERT INTO reaction_events(ts,message_id,channel_id,user_id,emoji,on_)
+                 VALUES (?1,?2,?3,?4,?5,?6)",
+                params![ts as i64, message_id as i64, cid, uid, emoji_s, now_on as i64],
             )?;
             tx.commit()?;
             Ok(now_on)

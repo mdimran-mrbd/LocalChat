@@ -23,6 +23,7 @@ jobs:
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
       version: ${{ steps.meta.outputs.version }}
+      build: ${{ steps.meta.outputs.build }}
     steps:
       - name: Checkout (full history + tags)
         uses: actions/checkout@v4
@@ -40,7 +41,14 @@ jobs:
             git fetch --tags --force >/dev/null 2>&1 || true
             LATEST=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -n1)
             if [[ -z "$LATEST" ]]; then
-              TAG="v0.1.0"
+              # On a repository's first official tag, honor the package version
+              # already set for the intended release instead of guessing 0.1.0.
+              PACKAGE_VERSION="$(sed -n 's/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' app/Cargo.toml | head -n1)"
+              if [[ -z "$PACKAGE_VERSION" ]]; then
+                echo "Could not read package version from app/Cargo.toml" >&2
+                exit 1
+              fi
+              TAG="v$PACKAGE_VERSION"
             else
               IFS='.' read -r MA MI PA <<< "${LATEST#v}"
               TAG="v${MA}.${MI}.$((PA + 1))"
@@ -50,6 +58,9 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           # Bare semver (no leading 'v') for embedding in the binary.
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          BUILD_NUMBER="$(tr -d '[:space:]' < app/BUILD_NUMBER)"
+          if ! [[ "$BUILD_NUMBER" =~ ^[0-9]+$ ]]; then echo "Invalid app/BUILD_NUMBER" >&2; exit 1; fi
+          echo "build=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
 
   build:
     name: Windows x64
@@ -79,6 +90,7 @@ jobs:
           # /api/info reports the same version as the GitHub release
           # tag, not the stale Cargo.toml value.
           LOCALCHAT_VERSION: ${{ needs.version.outputs.version }}
+          LOCALCHAT_BUILD: ${{ needs.version.outputs.build }}
         run: |
           cargo build --release --target x86_64-pc-windows-msvc --features tray
 
@@ -123,11 +135,18 @@ jobs:
           find artifacts -type f -exec cp {} release/ \;
           ls -la release
 
+      - name: Create SHA-256 checksum
+        shell: bash
+        run: |
+          cd release
+          sha256sum LocalChat.exe > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
       - name: Create / update Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.version.outputs.tag }}
-          name: ${{ needs.version.outputs.tag }}
+          name: LocalChat ${{ needs.version.outputs.version }} — Build ${{ needs.version.outputs.build }}
           target_commitish: ${{ github.sha }}
           files: release/*
           generate_release_notes: true

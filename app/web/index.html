@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-title" content="LocalChat" />
   <meta name="application-name" content="LocalChat" />
   <meta name="description" content="LocalChat — a self-contained LAN instant messenger with channels, direct messages, and file sharing. No accounts, no internet, no telemetry." />
-  <meta name="author" content="LocalChat" />
+  <meta name="author" content="Md. Imran Islam" />
   <meta name="keywords" content="LocalChat, LAN chat, local chat, intranet messenger, offline chat, self-hosted chat, file sharing, WebSocket chat" />
   <meta name="robots" content="noindex, nofollow" />
   <meta name="referrer" content="no-referrer" />
@@ -25,7 +25,7 @@
   <meta name="twitter:description" content="Self-contained LAN instant messenger with channels, DMs, and file sharing." />
   <title>LocalChat</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='32' y2='32' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='0' stop-color='%236366f1'/%3E%3Cstop offset='1' stop-color='%238b5cf6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='8' fill='url(%23g)'/%3E%3Cpath d='M8 10a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3h-5l-4 3v-3h-1a3 3 0 0 1-3-3z' fill='white'/%3E%3Ccircle cx='13' cy='13.5' r='1.3' fill='%236366f1'/%3E%3Ccircle cx='16' cy='13.5' r='1.3' fill='%236366f1'/%3E%3Ccircle cx='19' cy='13.5' r='1.3' fill='%236366f1'/%3E%3Ccircle cx='24' cy='8' r='3' fill='%2322c55e' stroke='white' stroke-width='1.5'/%3E%3C/svg%3E"/>
-  <link rel="stylesheet" href="/style.css?v=20260420d"/>
+  <link rel="stylesheet" href="/style.css?v=20261018m"/>
   <script>
     // Migrate old LanChat keys -> LocalChat (one-shot).
     (function () {
@@ -207,6 +207,16 @@
           <span class="badge-lock hidden" id="e2eeBadge" title="End-to-end encrypted" aria-label="End-to-end encrypted">
             <svg viewBox="0 0 24 24" width="14" height="14"><path d="M6 10V7a6 6 0 0112 0v3M5 10h14v10H5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
           </span>
+          <button id="browserNotificationsBtn" class="icon-btn ch-tool-btn" title="Enable browser notifications" aria-label="Enable browser notifications" onclick="toggleBrowserNotifications()"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg></button>
+          <button id="savedMessagesBtn" class="icon-btn ch-tool-btn" title="View saved messages" aria-label="View saved messages" onclick="openSavedMessages()"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/></svg><span id="savedMessagesCount" class="saved-count hidden"></span></button>
+          <button id="messageSearchBtn" class="icon-btn ch-tool-btn" title="Search this channel's messages" aria-label="Search this channel's messages" onclick="openMessageSearch()"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg></button>
+          <form id="messageSearchBar" class="message-search-bar hidden" onsubmit="runMessageSearch(event)" role="search" aria-label="Search channel messages">
+            <input id="messageSearchInput" type="search" placeholder="Search messages…" minlength="2" maxlength="100" autocomplete="off" aria-label="Search messages" onkeydown="handleMessageSearchKeydown(event)" />
+            <button type="button" class="search-nav-btn" title="Previous match (Shift+Enter)" aria-label="Previous match" onclick="navigateMessageSearch('previous')">↑</button>
+            <button type="button" class="search-nav-btn" title="Next match (Enter)" aria-label="Next match" onclick="navigateMessageSearch('next')">↓</button>
+            <span id="messageSearchCount" class="search-match-count" aria-live="polite">0/0</span>
+            <button type="button" class="search-nav-btn search-close-btn" title="Close search (Esc)" aria-label="Close search" onclick="closeMessageSearch()">×</button>
+          </form>
           <button id="joinBtn" class="btn btn-primary btn-sm hidden" title="Join this channel" onclick="joinCurrentChannel()">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4M10 17l5-5-5-5M15 12H3"/></svg>
             <span>Join</span>
@@ -226,6 +236,8 @@
 
       <div id="messages" class="chat-stream" role="log" aria-live="polite"></div>
 
+
+
       <div id="typing" class="typing-row"></div>
 
       <form id="sendForm" class="composer" autocomplete="off">
@@ -241,6 +253,7 @@
             <svg viewBox="0 0 24 24" width="14" height="14"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
           </button>
         </div>
+        <button type="button" id="mentionJumpBtn" class="mention-jump hidden" title="Jump to latest @mention" aria-label="Jump to latest @mention" aria-hidden="true">@</button>
         <textarea id="msgInput" rows="1" placeholder="Type a message" maxlength="4000"></textarea>
         <button type="button" class="emoji-btn" id="emojiBtn" title="Emoji" aria-label="Emoji">
           <span aria-hidden="true">😊</span>
@@ -388,8 +401,16 @@
 
         <div class="about-rows">
           <div class="about-row">
+            <span class="muted xs">Version / build</span>
+            <span id="appVersionLabel">Checking…</span>
+          </div>
+          <div class="about-row">
             <span class="muted xs">Author</span>
-            <span><strong>Bipul Raman</strong></span>
+            <span><strong>Md. Imran Islam</strong></span>
+          </div>
+          <div class="about-row">
+            <span class="muted xs">Original credit</span>
+            <span><a href="https://github.com/BipulRaman" target="_blank" rel="noopener noreferrer">Bipul Raman</a> · <a href="https://github.com/BipulRaman/LocalChat" target="_blank" rel="noopener noreferrer">upstream project</a></span>
           </div>
           <div class="about-row">
             <span class="muted xs">License</span>
@@ -397,17 +418,44 @@
           </div>
           <div class="about-row">
             <span class="muted xs">Source</span>
-            <span><a href="https://github.com/BipulRaman/LocalChat" target="_blank" rel="noopener noreferrer">github.com/BipulRaman/LocalChat</a></span>
+            <span><a href="https://github.com/mdimran-mrbd/LocalChat" target="_blank" rel="noopener noreferrer">github.com/mdimran-mrbd/LocalChat</a></span>
           </div>
         </div>
 
+        <section aria-labelledby="updateConsentTitle" style="margin-top:14px;padding:10px;background:var(--bg-2);border-radius:8px;">
+          <label for="updateChecksOptIn" style="display:flex;gap:9px;align-items:flex-start;font-size:13px;font-weight:600;">
+            <input id="updateChecksOptIn" type="checkbox" style="margin-top:3px;"/>
+            <span id="updateConsentTitle">Check for updates (optional)</span>
+          </label>
+          <p class="muted xs" style="margin:5px 0 0 25px;">When enabled, this app checks GitHub Releases from the host browser and shows an update notice. Nothing installs or restarts until you choose <strong>Update now</strong>. No chat messages or personal data are sent.</p>
+        </section>
+        <details style="margin-top:12px;">
+          <summary style="cursor:pointer;font-size:13px;font-weight:600;">What's new — Version 2.0.1 · Build 1</summary>
+          <div class="sm" style="padding:8px 0 0 4px;line-height:1.55;">
+            <strong>Messaging and navigation</strong>
+            <ul style="margin:4px 0 8px;padding-left:20px;">
+              <li>Search channel message history, navigate matches, and highlight results.</li>
+              <li>Pin and unpin important channel messages.</li>
+              <li>Jump to messages that mention you.</li>
+              <li>Keep replies, reactions, and saved-message bookmarks.</li>
+              <li>Improve message action toolbar positioning on different screen sizes.</li>
+            </ul>
+            <strong>Updates and reliability</strong>
+            <ul style="margin:4px 0 0;padding-left:20px;">
+              <li>Optional update checks with an explicit, user-controlled install action.</li>
+              <li>Verify downloaded Windows updates with SHA-256 before applying them.</li>
+              <li>Keep original LocalChat attribution and MIT licensing.</li>
+            </ul>
+          </div>
+        </details>
+
         <p class="muted xs about-copy">
-          © 2026 Bipul Raman. Released under the MIT License.
-          Free to use, modify and share — attribution appreciated.
+          © 2026 Md. Imran Islam. Based on the original LocalChat by <a href="https://github.com/BipulRaman" target="_blank" rel="noopener noreferrer">Bipul Raman</a>.
+          Released under the MIT License.
         </p>
       </div>
       <footer class="modal-foot">
-        <a class="btn btn-ghost" href="https://github.com/BipulRaman/LocalChat" target="_blank" rel="noopener noreferrer">
+        <a class="btn btn-ghost" href="https://github.com/mdimran-mrbd/LocalChat" target="_blank" rel="noopener noreferrer">
           <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.1.79-.25.79-.56 0-.28-.01-1.01-.02-1.99-3.2.7-3.87-1.54-3.87-1.54-.52-1.32-1.27-1.67-1.27-1.67-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.02 1.75 2.69 1.24 3.35.95.1-.74.4-1.24.73-1.53-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.18-3.1-.12-.29-.51-1.46.11-3.04 0 0 .96-.31 3.16 1.18a10.95 10.95 0 0 1 5.76 0c2.2-1.49 3.16-1.18 3.16-1.18.62 1.58.23 2.75.11 3.04.74.81 1.18 1.84 1.18 3.1 0 4.42-2.69 5.39-5.26 5.68.41.36.78 1.06.78 2.13 0 1.54-.01 2.78-.01 3.16 0 .31.21.67.8.55C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5z"/></svg>
           View on GitHub
         </a>
@@ -449,6 +497,16 @@
         <button type="button" class="btn btn-danger" id="cfOk" onclick="closeConfirm(true)">Delete</button>
       </footer>
     </div>
+  </div>
+
+  <!-- ═══════════════════ UPDATE NOTICE (host browser only) ═══════════════════ -->
+  <div id="updateBanner" class="update-banner hidden" role="status" aria-live="polite">
+    <div class="update-banner-copy">
+      <strong>LocalChat update available</strong>
+      <span>Version <span id="updateVersion"></span> is ready. Your chat data will be preserved.</span>
+      <span id="updateStatus" class="update-status"></span>
+    </div>
+    <button id="updateNowBtn" type="button" class="btn btn-primary btn-sm">Update now</button>
   </div>
 
   <!-- ═══════════════════ TOAST ═══════════════════ -->
@@ -503,6 +561,6 @@
     <audio id="remoteAudio" autoplay></audio>
   </div>
 
-  <script src="/app.js?v=20260420d"></script>
+  <script src="/app.js?v=20261018o"></script>
 </body>
 </html>

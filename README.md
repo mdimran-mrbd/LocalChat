@@ -4,11 +4,11 @@
 
 **A private, zero-install team chat that runs on your own Wi-Fi.**
 
-One ~5 MB binary. No accounts. No cloud. No telemetry.
+One ~5 MB binary. No accounts. No chat cloud. No telemetry.
 Double-click. Share the LAN URL. Done.
 
 [![Build](../../actions/workflows/build.yml/badge.svg)](../../actions/workflows/build.yml)
-[![Release](https://img.shields.io/github/v/release/BipulRaman/LocalChat?label=download)](../../releases/latest)
+[![Release](https://img.shields.io/github/v/release/mdimran-mrbd/LocalChat?label=download)](../../releases/latest)
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Platform: Windows](https://img.shields.io/badge/platform-Windows-informational)
 
@@ -31,7 +31,7 @@ people share a network but not necessarily the internet:
 
 - **One binary, no install.** Drop `LocalChat.exe` on a desktop. Double-click.
   That's the whole setup.
-- **Air-gapped friendly.** Zero outbound traffic. Works on a router with no WAN.
+- **LAN-first and private.** Chat works without internet. When the host has internet, the host browser can check GitHub Releases for updates after the host opts in; installing an update always requires confirmation. No chat messages or user data are sent.
 - **No accounts.** Pick a name, you're in. Identity is bound to a per-browser
   key so usernames can't be impersonated.
 - **End-to-end encrypted DMs.** The host process literally cannot read direct
@@ -53,7 +53,7 @@ people share a network but not necessarily the internet:
 | 🛡️ **Admin dashboard** | Live metrics, kick/ban, broadcast, settings. |
 | 🌗 **Light & dark themes** | Polished, mobile-friendly UI. |
 | 🔁 **Auto-reconnect** | Survives sleep, Wi-Fi roams, network blips. |
-| 🚫 **No telemetry** | Not a single outbound request. |
+| 🚫 **No telemetry** | No analytics or chat-data uploads. Update checks contact GitHub Releases from the host browser only. |
 
 ## 60-second quick start
 
@@ -114,7 +114,7 @@ cargo run --release                          # tray + browser auto-open
 cargo build --release --features tray        # produces target/release/localchat.exe
 ```
 
-CI publishes a single `LocalChat.exe` when you push a tag (`git tag v2.0.0 && git push origin v2.0.0`).
+CI publishes a single `LocalChat.exe` when you push a tag (`git tag v2.0.0 && git push origin v2.0.0`). Official release build numbering is maintained in [`app/BUILD_NUMBER`](app/BUILD_NUMBER), starting at Build 1; increment it for each official release. GitHub Actions run numbers are separate and are not product build numbers.
 
 > 🛠️ **Hacking on the internals?** See [`DESIGN.md`](DESIGN.md) for the full
 > architecture — concurrency model, persistence layout, E2EE protocol, wire
@@ -130,6 +130,14 @@ CI publishes a single `LocalChat.exe` when you push a tag (`git tag v2.0.0 && gi
 - [ ] Searchable history
 
 PRs welcome.
+
+## Project ownership and credits
+
+**Maintainer:** [Md. Imran Islam](https://github.com/mdimran-mrbd)  
+**Source code for this build:** [mdimran-mrbd/LocalChat](https://github.com/mdimran-mrbd/LocalChat)
+
+This project is based on the original LocalChat created by [Bipul Raman](https://github.com/BipulRaman).  
+Original upstream repository: [BipulRaman/LocalChat](https://github.com/BipulRaman/LocalChat).
 
 ## License
 

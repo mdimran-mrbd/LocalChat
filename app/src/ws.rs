@@ -1303,13 +1303,159 @@ async fn handle_op(
             let out: Vec<Arc<WireMsg>> = from_db.into_iter().map(Arc::new).collect();
             let msgs: Vec<&WireMsg> = out.iter().map(|a| a.as_ref()).collect();
             let reactions = collect_reactions(state, &id.to_compact_string());
+            let pins = state.db.list_pinned_messages(id).await.unwrap_or_default();
             let resp = json!({
                 "ev":"history",
                 "channel":id,
                 "messages":msgs,
                 "reactions": reactions,
+                "pins": pins,
             });
             let _ = sink.send(Message::Text(resp.to_string())).await;
+        }
+
+        "saved_list" => {
+            let saved = state.db.list_saved_messages(user_id.clone()).await
+                .map_err(|_| "could not load saved messages".to_string())?;
+            let out = json!({"ev":"saved_messages","items":saved});
+            let _ = sink.send(Message::Text(out.to_string())).await;
+        }
+
+        "saved_toggle" => {
+            let channel_id = v.get("channel").and_then(Value::as_str).ok_or("missing channel")?;
+            let msg_id = v.get("msgId").and_then(Value::as_u64).ok_or("missing msgId")?;
+            let ch = state.channels.get(channel_id).ok_or("no such channel")?;
+            if !can_send(&ch, &user_id) { return Err("not a member".into()); }
+            let exists = state.db.message_exists_in_channel(channel_id, msg_id).await
+                .map_err(|_| "could not verify message".to_string())?;
+            if !exists { return Err("message not found".into()); }
+            let saved = state.db.toggle_saved_message(user_id.clone(), channel_id, msg_id, now_secs() as i64).await
+                .map_err(|_| "could not update saved messages".to_string())?;
+            let items = state.db.list_saved_messages(user_id.clone()).await.unwrap_or_default();
+            let out = json!({"ev":"saved_messages","items":items,"changed":{"channel":channel_id,"id":msg_id,"saved":saved}});
+            let _ = sink.send(Message::Text(out.to_string())).await;
+        }
+
+        "delete_message" => {
+            let channel_id = v.get("channel").and_then(Value::as_str).ok_or("missing channel")?;
+            let msg_id = v.get("msgId").and_then(Value::as_u64).ok_or("missing msgId")?;
+            let ch = state.channels.get(channel_id).ok_or("no such channel")?;
+            if !can_send(&ch, &user_id) { return Err("not a member".into()); }
+            let author = state.db.message_author_username(channel_id, msg_id).await
+                .map_err(|_| "could not verify message".to_string())?
+                .ok_or("message not found or already deleted")?;
+            let current_username = state.users.get(&user_id).map(|u| u.username.to_string()).unwrap_or_default();
+            let is_author = author.eq_ignore_ascii_case(&current_username);
+            let creator_username = state.known_users.get(&ch.created_by).map(|u| u.username.to_string()).unwrap_or_default();
+            let is_group_admin = ch.kind == ChannelKind::Group && !creator_username.is_empty() && creator_username.eq_ignore_ascii_case(&current_username);
+            if !is_author && !is_group_admin {
+                return Err("you can delete only your own messages; only the group admin can delete other members' messages".into());
+            }
+            let attachment_url = state.db.message_attachment_filename(channel_id, msg_id).await
+                .map_err(|_| "could not inspect attachment".to_string())?;
+            let deleted = state.db.delete_message_for_everyone(channel_id, msg_id).await
+                .map_err(|_| "could not delete message".to_string())?
+                .ok_or("message not found or already deleted")?;
+            // Remove the underlying upload so an old direct URL cannot retrieve deleted media.
+            if let Some(url) = attachment_url {
+                if let Some(name) = url.rsplit('/').next() {
+                    if !name.is_empty() && std::path::Path::new(name).file_name().and_then(|n| n.to_str()) == Some(name) {
+                        let _ = tokio::fs::remove_file(state.uploads_dir.join(name)).await;
+                    }
+                }
+            }
+            let pins = state.db.list_pinned_messages(channel_id).await.unwrap_or_default();
+            let payload = json!({
+                "channel": channel_id,
+                "msgId": msg_id,
+                "message": deleted,
+                "pins": pins
+            });
+            let _ = ch.tx.send(Arc::new(WireMsg {
+                id: 0,
+                channel: ch.id.clone(),
+                kind: MsgKind::System,
+                user_id: user_id.clone(),
+                username: CompactString::const_new("__msg_deleted"),
+                avatar: CompactString::const_new(""),
+                color: CompactString::const_new(""),
+                ts: now_secs(),
+                text: payload.to_string(),
+                file: None,
+                reply_to: None,
+                edited_at: None,
+                deleted: false,
+            }));
+        }
+
+        "pin_toggle" => {
+            let channel_id = v.get("channel").and_then(Value::as_str).ok_or("missing channel")?;
+            let msg_id = v.get("msgId").and_then(Value::as_u64).ok_or("missing msgId")?;
+            let ch = state.channels.get(channel_id).ok_or("no such channel")?;
+            if !can_send(&ch, &user_id) { return Err("not a member".into()); }
+            let exists = state.db.message_exists_in_channel(channel_id, msg_id).await
+                .map_err(|_| "could not verify message".to_string())?;
+            if !exists { return Err("message not found".into()); }
+            let pinned = state.db.toggle_pinned_message(
+                channel_id, msg_id, user_id.clone(), now_secs() as i64
+            ).await.map_err(|_| "could not update pinned messages".to_string())?;
+            let pins = state.db.list_pinned_messages(channel_id).await.unwrap_or_default();
+            let ev = json!({
+                "ev":"pin_update",
+                "channel":channel_id,
+                "msgId":msg_id,
+                "userId":user_id.as_str(),
+                "pinned":pinned,
+                "pins":pins,
+            });
+            let _ = ch.tx.send(Arc::new(WireMsg {
+                id: 0,
+                channel: ch.id.clone(),
+                kind: MsgKind::System,
+                user_id: user_id.clone(),
+                username: CompactString::const_new("__pin"),
+                avatar: CompactString::const_new(""),
+                color: CompactString::const_new(""),
+                ts: now_secs(),
+                text: ev.to_string(),
+                file: None,
+                reply_to: None,
+                edited_at: None,
+                deleted: false,
+            }));
+        }
+
+        "search" => {
+            let id = v
+                .get("channel")
+                .and_then(Value::as_str)
+                .ok_or("missing channel")?;
+            let query = v
+                .get("query")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .trim();
+            if query.chars().count() < 2 || query.chars().count() > 100 {
+                return Err("Search must be between 2 and 100 characters.".into());
+            }
+            let ch = state.channels.get(id).ok_or("no such channel")?;
+            if !can_send(&ch, &user_id) {
+                return Err("not a member".into());
+            }
+            // DM content is end-to-end encrypted. Never attempt server-side
+            // plaintext search in DMs; users can search locally once history is loaded.
+            if matches!(ch.kind, ChannelKind::Dm) {
+                return Err("Private messages cannot be searched on the server.".into());
+            }
+            let matches = state.db.search_messages(id, query, 100).await
+                .map_err(|_| "message search failed".to_string())?;
+            let out = json!({
+                "ev": "search_results",
+                "channel": id,
+                "query": query,
+                "messages": matches,
+            });
+            let _ = sink.send(Message::Text(out.to_string())).await;
         }
 
         "react" => {
@@ -1334,6 +1480,24 @@ async fn handle_op(
 
             let key = (channel_id.clone(), msg_id);
             let entry = state.reactions.entry(key).or_default();
+            // Remove this user's prior emoji(s) for this message before toggling
+            // the selected one. Other users' reactions are left untouched.
+            let old_emojis: Vec<CompactString> = entry.iter()
+                .filter_map(|item| {
+                    if item.key() != &emoji && item.value().contains(&user_id) {
+                        Some(item.key().clone())
+                    } else { None }
+                })
+                .collect();
+            for old in old_emojis {
+                if let Some(mut users) = entry.get_mut(&old) {
+                    users.retain(|u| u != &user_id);
+                    if users.is_empty() {
+                        drop(users);
+                        entry.remove(&old);
+                    }
+                }
+            }
             let mut on = true;
             {
                 let mut users = entry.entry(emoji.clone()).or_default();

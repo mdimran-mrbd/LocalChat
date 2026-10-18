@@ -45,6 +45,7 @@ pub async fn serve(
     let app = Router::new()
         .route("/ws", get(ws_upgrade))
         .route("/api/info", get(info))
+        .route("/api/update/install", post(install_update))
         .route("/api/share", get(share))
         .route(
             "/api/upload",
@@ -144,10 +145,12 @@ async fn info(State(state): State<Arc<AppState>>) -> impl IntoResponse {
         .map(|v| v.trim_start_matches('v'))
         .filter(|v| !v.is_empty())
         .unwrap_or(env!("CARGO_PKG_VERSION"));
+    let build = option_env!("LOCALCHAT_BUILD").unwrap_or("dev");
     Json(json!({
         "addresses": crate::net::lan_addresses(),
         "hostname": hostname(),
         "version": version,
+        "build": build,
         "server_id": state.server_id,
         "data_dir": state.app_root.display().to_string(),
         "uploads_dir": state.uploads_dir.display().to_string(),
@@ -548,6 +551,152 @@ async fn serve_asset(
                     .unwrap()
             } else {
                 (StatusCode::NOT_FOUND, "not found").into_response()
+            }
+        }
+    }
+}
+
+
+// ── User-confirmed self-update (Windows host only) ────────────────────
+// The update endpoint is loopback-only: LAN chat participants must never
+// be able to replace the host's executable. The helper downloads only the
+// latest release from this repository and verifies SHA256SUMS.txt before
+// replacing the running binary. The user must explicitly click "Update now".
+async fn install_update(
+    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
+    headers: HeaderMap,
+) -> axum::response::Response {
+    if !addr.ip().is_loopback() {
+        return (StatusCode::FORBIDDEN, Json(json!({
+            "error": "Updates can only be started from the host computer."
+        }))).into_response();
+    }
+    // Require a same-origin request from the host's own browser. This stops
+    // a remote LAN participant or an unrelated website from triggering a restart.
+    let origin = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok()).unwrap_or("");
+    let trusted_origin = origin == "https://localhost"
+        || origin.starts_with("https://localhost:")
+        || origin == "https://127.0.0.1"
+        || origin.starts_with("https://127.0.0.1:");
+    if !trusted_origin {
+        return (StatusCode::FORBIDDEN, Json(json!({
+            "error": "Open LocalChat on the host computer to start an update."
+        }))).into_response();
+    }
+
+    #[cfg(not(windows))]
+    {
+        return (StatusCode::NOT_IMPLEMENTED, Json(json!({
+            "error": "The automatic updater currently supports Windows only."
+        }))).into_response();
+    }
+
+    #[cfg(windows)]
+    {
+        use std::process::Command;
+
+        let current_exe = match std::env::current_exe() {
+            Ok(path) => path,
+            Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
+                "error": "Could not locate the running LocalChat executable."
+            }))).into_response(),
+        };
+        let script_path = std::env::temp_dir().join(format!(
+            "localchat-update-{}.ps1", std::process::id()
+        ));
+        let script = r##"param([string]$CurrentExe, [int]$ParentPid)
+$ErrorActionPreference = 'Stop'
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+$repo = 'mdimran-mrbd/LocalChat'
+$releaseUri = "https://api.github.com/repos/$repo/releases/latest"
+$headers = @{ 'User-Agent' = 'LocalChat-Updater'; 'Accept' = 'application/vnd.github+json' }
+$tempExe = "$CurrentExe.update-$ParentPid"
+$tempSum = "$CurrentExe.sha256-$ParentPid"
+$backup = "$CurrentExe.previous"
+$scriptFile = $MyInvocation.MyCommand.Path
+$stoppedApp = $false
+try {
+  $release = Invoke-RestMethod -Uri $releaseUri -Headers $headers -TimeoutSec 30
+  $exeAsset = $release.assets | Where-Object { $_.name -eq 'LocalChat.exe' } | Select-Object -First 1
+  $sumAsset = $release.assets | Where-Object { $_.name -eq 'SHA256SUMS.txt' } | Select-Object -First 1
+  if (-not $exeAsset -or -not $sumAsset) { throw 'The latest release is missing the executable or checksum manifest.' }
+  Invoke-WebRequest -Uri $exeAsset.browser_download_url -OutFile $tempExe -Headers $headers -TimeoutSec 120
+  Invoke-WebRequest -Uri $sumAsset.browser_download_url -OutFile $tempSum -Headers $headers -TimeoutSec 30
+  $line = Get-Content -LiteralPath $tempSum | Where-Object { $_ -match '^\s*[A-Fa-f0-9]{64}\s+\*?LocalChat\.exe\s*$' } | Select-Object -First 1
+  if (-not $line -or $line -notmatch '^\s*([A-Fa-f0-9]{64})\s+\*?LocalChat\.exe\s*$') { throw 'The release checksum manifest is invalid.' }
+  $expected = $Matches[1].ToUpperInvariant()
+  $actual = (Get-FileHash -LiteralPath $tempExe -Algorithm SHA256).Hash.ToUpperInvariant()
+  if ($actual -ne $expected) { throw 'The downloaded executable failed SHA-256 verification.' }
+  # Keep the current server running throughout download and verification.
+  # Stop it only once the replacement is verified and ready to install.
+  Stop-Process -Id $ParentPid -Force -ErrorAction SilentlyContinue
+  $stoppedApp = $true
+  $stopDeadline = (Get-Date).AddSeconds(15)
+  while (Get-Process -Id $ParentPid -ErrorAction SilentlyContinue) {
+    if ((Get-Date) -gt $stopDeadline) { throw 'Could not stop LocalChat to finish the update.' }
+    Start-Sleep -Milliseconds 400
+  }
+  if (Test-Path -LiteralPath $backup) { Remove-Item -LiteralPath $backup -Force }
+  Move-Item -LiteralPath $CurrentExe -Destination $backup
+  try {
+    Move-Item -LiteralPath $tempExe -Destination $CurrentExe
+    $started = Start-Process -FilePath $CurrentExe -PassThru
+    Start-Sleep -Seconds 3
+    $started.Refresh()
+    if ($started.HasExited) { throw 'The updated executable exited immediately; restoring the previous build.' }
+    Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue
+  } catch {
+    if (Test-Path -LiteralPath $CurrentExe) { Remove-Item -LiteralPath $CurrentExe -Force -ErrorAction SilentlyContinue }
+    if (Test-Path -LiteralPath $backup) { Move-Item -LiteralPath $backup -Destination $CurrentExe -Force }
+    if (Test-Path -LiteralPath $CurrentExe) { Start-Process -FilePath $CurrentExe }
+    throw
+  }
+} catch {
+  # Keep a local diagnostic for the user; never install an unverified file.
+  try { Set-Content -LiteralPath "$CurrentExe.update-error.txt" -Value $_.Exception.Message -Encoding UTF8 } catch {}
+  if (Test-Path -LiteralPath $tempExe) { Remove-Item -LiteralPath $tempExe -Force -ErrorAction SilentlyContinue }
+  # If installation had begun, restore service after the old process exits.
+  # A download/checksum failure happens before shutdown, so leave the app running.
+  if ($stoppedApp) {
+    $stopDeadline = (Get-Date).AddSeconds(15)
+    while (Get-Process -Id $ParentPid -ErrorAction SilentlyContinue) {
+      if ((Get-Date) -gt $stopDeadline) { break }
+      Start-Sleep -Milliseconds 400
+    }
+    $parentStillRunning = Get-Process -Id $ParentPid -ErrorAction SilentlyContinue
+    $running = Get-Process -Name ([IO.Path]::GetFileNameWithoutExtension($CurrentExe)) -ErrorAction SilentlyContinue
+    if (-not $parentStillRunning -and -not $running -and (Test-Path -LiteralPath $CurrentExe)) {
+      try { Start-Process -FilePath $CurrentExe } catch {}
+    }
+  }
+} finally {
+  if (Test-Path -LiteralPath $tempSum) { Remove-Item -LiteralPath $tempSum -Force -ErrorAction SilentlyContinue }
+  if (Test-Path -LiteralPath $scriptFile) { Remove-Item -LiteralPath $scriptFile -Force -ErrorAction SilentlyContinue }
+}
+"##;
+        if let Err(_) = std::fs::write(&script_path, script) {
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
+                "error": "Could not prepare the updater helper."
+            }))).into_response();
+        }
+        let spawn_result = Command::new("powershell.exe")
+            .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File"])
+            .arg(&script_path)
+            .arg(&current_exe)
+            .arg(std::process::id().to_string())
+            .spawn();
+        match spawn_result {
+            Ok(_) => {
+                (StatusCode::OK, Json(json!({
+                    "status": "starting",
+                    "message": "The update will be downloaded and verified first. LocalChat will close only when the replacement is ready."
+                }))).into_response()
+            }
+            Err(_) => {
+                let _ = std::fs::remove_file(&script_path);
+                (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
+                    "error": "Could not start the Windows updater."
+                }))).into_response()
             }
         }
     }

@@ -87,6 +87,91 @@ function toast(msg, ms = 2500) {
   toast._t = setTimeout(() => t.classList.add("hidden"), ms);
 }
 
+function compareVersions(a, b) {
+  const left = String(a || "0").replace(/^v/i, "").split(".").map((n) => parseInt(n, 10) || 0);
+  const right = String(b || "0").replace(/^v/i, "").split(".").map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < 3; i++) {
+    const diff = (left[i] || 0) - (right[i] || 0);
+    if (diff) return diff > 0 ? 1 : -1;
+  }
+  return 0;
+}
+
+async function checkForUpdates(currentVersion, currentBuild) {
+  // Update checks are opt-in. Installing/restarting always requires a separate click.
+  try {
+    if (localStorage.getItem("localchat-update-checks") !== "yes") return;
+  } catch { return; }
+  // Only the host's own browser may offer the host executable update.
+  // Other users joining over the LAN must never see an action that restarts the server.
+  if (!["localhost", "127.0.0.1"].includes(location.hostname.toLowerCase())) return;
+  try {
+    const response = await fetch("https://api.github.com/repos/mdimran-mrbd/LocalChat/releases/latest", {
+      headers: { Accept: "application/vnd.github+json" }
+    });
+    if (!response.ok) return;
+    const release = await response.json();
+    const latest = String(release.tag_name || "").replace(/^v/i, "");
+    const versionOrder = compareVersions(latest, currentVersion);
+    const isDevelopmentBuild = String(currentBuild || "dev") === "dev";
+    // Allow a dev/test binary to move to the first official release even
+    // when its Cargo package version already matches that release.
+    if (!latest || versionOrder < 0 || (versionOrder === 0 && !isDevelopmentBuild)) return;
+    const assets = Array.isArray(release.assets) ? release.assets : [];
+    if (!assets.some((a) => a.name === "LocalChat.exe") ||
+        !assets.some((a) => a.name === "SHA256SUMS.txt")) return;
+    $("updateVersion").textContent = latest;
+    $("updateBanner").classList.remove("hidden");
+  } catch {
+    // Offline / rate-limited checks are intentionally silent; chat still works.
+  }
+}
+
+// Update checks are explicitly opt-in; the install action remains separately user-confirmed.
+const updateChecksOptIn = $("updateChecksOptIn");
+if (updateChecksOptIn) {
+  try { updateChecksOptIn.checked = localStorage.getItem("localchat-update-checks") === "yes"; } catch {}
+  updateChecksOptIn.addEventListener("change", async () => {
+    try {
+      if (updateChecksOptIn.checked) {
+        localStorage.setItem("localchat-update-checks", "yes");
+        const info = await fetch("/api/info").then((r) => r.json());
+        await checkForUpdates(info && info.version, info && info.build);
+      } else {
+        localStorage.removeItem("localchat-update-checks");
+        $("updateBanner").classList.add("hidden");
+        $("updateStatus").textContent = "";
+      }
+    } catch {
+      // An unavailable update service never interrupts chat.
+    }
+  });
+}
+
+$("updateNowBtn").addEventListener("click", async () => {
+  const button = $("updateNowBtn");
+  const status = $("updateStatus");
+  button.disabled = true;
+  button.textContent = "Preparing…";
+  status.textContent = "Downloading and verifying the release. LocalChat will restart.";
+  try {
+    const response = await fetch("/api/update/install", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-LocalChat-Update": "1" },
+      body: "{}"
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || "Could not start the update.");
+    button.textContent = "Restarting…";
+    status.textContent = "Update requested. LocalChat will close, verify the download, and restart if successful.";
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = "Update now";
+    status.textContent = "";
+    toast(error.message || "Update could not be started. You can download the release manually.");
+  }
+});
+
 // ── Per-server localStorage namespace ────────────────────────────────
 // Every LocalChat database stamps a stable `server_id` (UUID) at first
 // creation and returns it from /api/info. We keep ONE localStorage
@@ -359,6 +444,9 @@ const S = {
   channels: new Map(),     // id → meta
   msgs: new Map(),         // channelId → array of wire messages (raw)
   reactions: new Map(),    // channelId → Map<msgId, Map<emoji, Set<userId>>>
+  pins: new Map(),         // channelId → pinned-message metadata array
+  pinsExpanded: false,
+  mentions: new Map(),      // channelId → latest message ID mentioning me
   readMarks: new Map(),    // channelId → Map<userId, latestReadMsgId>
   unread: new Map(),       // channelId → count
   typing: new Map(),       // channelId → Map<userId, { username, until }>
@@ -369,6 +457,7 @@ const S = {
   hostname: "",
   sidebarTab: "mine",
   sidebarFilter: "",
+  searchChannel: null,
   replyTo: null,           // { channelId, msgId, username, preview }
 };
 
@@ -382,6 +471,13 @@ const S = {
     const info = await fetch("/api/info").then((r) => r.json());
     bindServerId(info && info.server_id ? info.server_id : `origin:${location.host}`);
     S.hostname = (info && info.hostname) || "";
+    const versionLabel = $("appVersionLabel");
+    if (versionLabel) {
+      const version = (info && info.version) || "unknown";
+      const build = (info && info.build) || "dev";
+      versionLabel.textContent = `Version ${version} · Build ${build}`;
+    }
+    void checkForUpdates(info && info.version, info && info.build);
   } catch {
     bindServerId(`origin:${location.host}`);
   }
@@ -489,6 +585,87 @@ function setStatus(kind, label) {
   pill.querySelector(".txt").textContent = label;
 }
 
+// ── Browser notifications (only while LocalChat is open) ──────────────
+const BROWSER_NOTIFICATIONS_KEY = "localchat-browser-notifications";
+
+function browserNotificationsEnabled() {
+  try { return localStorage.getItem(BROWSER_NOTIFICATIONS_KEY) === "1"; }
+  catch { return false; }
+}
+
+function updateBrowserNotificationButton() {
+  const button = $("browserNotificationsBtn");
+  if (!button) return;
+  const enabled = browserNotificationsEnabled() &&
+    typeof Notification !== "undefined" && Notification.permission === "granted";
+  button.classList.toggle("active", enabled);
+  button.title = enabled ? "Disable browser notifications" : "Enable browser notifications";
+  button.setAttribute("aria-label", button.title);
+  button.setAttribute("aria-pressed", String(enabled));
+  // Make the state visible at a glance: crossed-out bell when disabled,
+  // regular bell when enabled. Keep the button's shape and sizing unchanged.
+  button.innerHTML = enabled
+    ? '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg>'
+    : '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/><path d="m3 3 18 18"/></svg>';
+}
+
+async function toggleBrowserNotifications() {
+  if (!("Notification" in window)) {
+    toast("This browser does not support desktop notifications.", 3500);
+    return;
+  }
+  if (browserNotificationsEnabled()) {
+    try { localStorage.setItem(BROWSER_NOTIFICATIONS_KEY, "0"); } catch {}
+    updateBrowserNotificationButton();
+    toast("Browser notifications disabled.");
+    return;
+  }
+  if (Notification.permission === "denied") {
+    toast("Notifications are blocked by your browser. Allow them in site settings, then try again.", 5000);
+    return;
+  }
+  let permission = Notification.permission;
+  if (permission === "default") {
+    try { permission = await Notification.requestPermission(); }
+    catch { permission = "denied"; }
+  }
+  if (permission !== "granted") {
+    toast("Notification permission was not granted.", 3500);
+    updateBrowserNotificationButton();
+    return;
+  }
+  try { localStorage.setItem(BROWSER_NOTIFICATIONS_KEY, "1"); } catch {}
+  updateBrowserNotificationButton();
+  toast("Browser notifications enabled. They appear for messages outside your current chat or when this tab is in the background.");
+}
+
+function notifyIncomingMessage(m) {
+  if (!browserNotificationsEnabled() || typeof Notification === "undefined" ||
+      Notification.permission !== "granted") return;
+  if (!document.hidden && document.hasFocus() && m.channel === S.active) return;
+  try {
+    const channel = S.channels.get(m.channel);
+    const isDm = channel && channel.kind === "dm";
+    // Never include message text or decrypted DM content in system notifications.
+    const title = isDm ? "New direct message" : `New message in #${channel?.name || "channel"}`;
+    const sender = m.username || "Someone";
+    const notification = new Notification(title, {
+      body: `From ${sender}. Open LocalChat to view it.`,
+      tag: `localchat-${m.channel}`,
+      renotify: true
+    });
+    notification.onclick = () => {
+      try { window.focus(); } catch {}
+      if (S.channels.has(m.channel)) switchChannel(m.channel);
+      notification.close();
+    };
+  } catch (error) {
+    console.debug("[notifications] unable to show browser notification", error);
+  }
+}
+
+Object.assign(window, { toggleBrowserNotifications });
+
 // ── Event dispatch ───────────────────────────────────────────────────
 function handleEvent(e) {
   switch (e.ev) {
@@ -496,7 +673,10 @@ function handleEvent(e) {
     case "msg":          return onWireMsg(e.m);
     case "users":        return onUsers(e.users);
     case "history":      return onHistory(e);
+    case "search_results": return onSearchResults(e);
+    case "saved_messages": return onSavedMessages(e);
     case "react":        return onReact(e);
+    case "pin_update":   return onPinUpdate(e);
     case "ch_created":   return onChannelCreated(e.channel);
     case "ch_invited":   return onChannelInvited(e);
     case "ch_deleted":   return onChannelDeleted(e.channel);
@@ -633,6 +813,7 @@ function onWelcome(e) {
   renderChannels();
   renderMembers();
   switchChannel(e.lobby || "pub:general");
+  sendOp({ op: "saved_list" });
   S.lobby = e.lobby || "pub:general";
   if (e.mustChangePassword) {
     setTimeout(() => openChangePasswordModal({ forced: true }), 200);
@@ -668,6 +849,26 @@ async function onWireMsg(m) {
   }
   if (m.username === "__react") {
     try { onReact(JSON.parse(m.text)); } catch {}
+    return;
+  }
+  if (m.username === "__pin") {
+    try { onPinUpdate(JSON.parse(m.text)); } catch {}
+    return;
+  }
+  if (m.username === "__msg_deleted") {
+    try {
+      const payload = JSON.parse(m.text);
+      const channel = payload.channel || m.channel;
+      const arr = S.msgs.get(channel) || [];
+      const at = arr.findIndex((x) => String(x.id) === String(payload.msgId));
+      if (at >= 0) arr[at] = payload.message;
+      arr.sort((a, b) => Number(a.id) - Number(b.id));
+      S.msgs.set(channel, arr);
+      S.pins.set(channel, Array.isArray(payload.pins) ? payload.pins : []);
+      savedMessages = savedMessages.filter((item) => !(item.channel === channel && String(item.id) === String(payload.msgId)));
+      if (channel === S.active) renderStream();
+      updateSavedCount();
+    } catch (err) { console.warn("message deletion update failed", err); }
     return;
   }
   if (m.username === "__read") {
@@ -710,19 +911,27 @@ async function onWireMsg(m) {
   arr.push(m);
   S.msgs.set(m.channel, arr);
 
+  const isMine = S.me && (m.userId === S.me.id || m.username === S.me.username);
+  if (!isMine && m.kind !== "system") {
+    notifyIncomingMessage(m);
+    if (await messageMentionsMe(m)) {
+      S.mentions.set(m.channel, String(m.id));
+      updateMentionBadge();
+    }
+  }
+
   if (m.channel !== S.active) {
     S.unread.set(m.channel, (S.unread.get(m.channel) || 0) + 1);
     renderChannels();
   } else {
     // Force-scroll if the new message is from us, or if we're already near bottom.
-    const isMine = S.me && (m.userId === S.me.id || m.username === S.me.username);
     if (isMine) $("messages").dataset.activeChannel = "__force";
     await renderStream();
     if (!isMine) scheduleReadReceipt();
   }
 }
 
-async function onHistory({ channel, messages, reactions }) {
+async function onHistory({ channel, messages, reactions, pins }) {
   const filtered = (messages || []).filter((m) =>
     !(m.kind === "system" && /\b(joined|left) the chat\b/.test(m.text || ""))
   );
@@ -745,7 +954,81 @@ async function onHistory({ channel, messages, reactions }) {
     }
   }
   S.reactions.set(channel, rmap);
-  if (S.active === channel) await renderStream();
+  S.pins.set(channel, Array.isArray(pins) ? pins : []);
+  if (S.active === channel) { await renderStream(); updateMentionBadge(); }
+}
+
+let messageSearchMatches = [];
+let messageSearchIndex = -1;
+let messageSearchQuery = "";
+
+function openMessageSearch() {
+  const ch = S.channels.get(S.active);
+  if (!ch) return;
+  if (ch.kind === "dm") { toast("Private messages are encrypted. Server search is disabled for DMs.", 3500); return; }
+  S.searchChannel = S.active;
+  messageSearchMatches = []; messageSearchIndex = -1; messageSearchQuery = "";
+  $("messageSearchBtn").classList.add("hidden");
+  $("messageSearchBar").classList.remove("hidden");
+  $("messageSearchInput").value = ""; $("messageSearchCount").textContent = "0/0";
+  $("messageSearchInput").focus();
+}
+
+function closeMessageSearch() {
+  $("messageSearchBar").classList.add("hidden"); $("messageSearchBtn").classList.remove("hidden");
+  S.searchChannel = null; messageSearchMatches = []; messageSearchIndex = -1; messageSearchQuery = "";
+  document.querySelectorAll("#messages .msg.search-match, #messages .msg.search-current").forEach((node) => node.classList.remove("search-match", "search-current"));
+  $("messageSearchInput").value = ""; $("messageSearchCount").textContent = "0/0";
+}
+
+function handleMessageSearchKeydown(event) {
+  if (event.key === "Escape") { event.preventDefault(); closeMessageSearch(); return; }
+  if (event.key === "Enter") {
+    event.preventDefault();
+    if (messageSearchMatches.length && $("messageSearchInput").value.trim() === messageSearchQuery) navigateMessageSearch(event.shiftKey ? "previous" : "next");
+    else runMessageSearch();
+  }
+}
+
+function runMessageSearch(event) {
+  if (event) event.preventDefault();
+  const query = $("messageSearchInput").value.trim();
+  if (query.length < 2 || query.length > 100) { $("messageSearchCount").textContent = query.length ? "—/—" : "0/0"; return; }
+  S.searchChannel = S.active; messageSearchQuery = query; messageSearchMatches = []; messageSearchIndex = -1;
+  $("messageSearchCount").textContent = "…";
+  document.querySelectorAll("#messages .msg.search-match, #messages .msg.search-current").forEach((node) => node.classList.remove("search-match", "search-current"));
+  sendOp({ op: "search", channel: S.active, query });
+}
+
+async function onSearchResults({ channel, query, messages }) {
+  if (channel !== S.active || channel !== S.searchChannel || query !== messageSearchQuery) return;
+  const found = messages || [];
+  messageSearchMatches = found.map((m) => String(m.id)).filter(Boolean); messageSearchIndex = -1;
+  const existing = S.msgs.get(channel) || [];
+  const byId = new Map(existing.map((m) => [String(m.id), m]));
+  for (const m of found) byId.set(String(m.id), m);
+  S.msgs.set(channel, [...byId.values()].sort((a, b) => Number(a.id) - Number(b.id)));
+  $("messageSearchCount").textContent = `0/${messageSearchMatches.length}`;
+  if (!messageSearchMatches.length) { document.querySelectorAll("#messages .msg.search-match, #messages .msg.search-current").forEach((node) => node.classList.remove("search-match", "search-current")); return; }
+  await renderStream(); navigateMessageSearch(0);
+}
+
+function navigateMessageSearch(direction) {
+  if (!messageSearchMatches.length) return;
+  if (direction === "next") messageSearchIndex = (messageSearchIndex + 1) % messageSearchMatches.length;
+  else if (direction === "previous") messageSearchIndex = messageSearchIndex <= 0 ? messageSearchMatches.length - 1 : messageSearchIndex - 1;
+  else messageSearchIndex = Math.max(0, Math.min(direction, messageSearchMatches.length - 1));
+  document.querySelectorAll("#messages .msg.search-match, #messages .msg.search-current").forEach((node) => node.classList.remove("search-match", "search-current"));
+  messageSearchMatches.forEach((id, index) => { const node = document.getElementById(`m-${S.active}-${id}`); if (node) { node.classList.add("search-match"); if (index === messageSearchIndex) node.classList.add("search-current"); } });
+  const current = document.getElementById(`m-${S.active}-${messageSearchMatches[messageSearchIndex]}`);
+  if (current) current.scrollIntoView({ behavior: "smooth", block: "center" });
+  $("messageSearchCount").textContent = `${messageSearchIndex + 1}/${messageSearchMatches.length}`;
+}
+
+function onPinUpdate({ channel, pins }) {
+  if (!channel) return;
+  S.pins.set(channel, Array.isArray(pins) ? pins : []);
+  if (channel === S.active) renderStream();
 }
 
 function onReact({ channel, msgId, userId, emoji, on }) {
@@ -753,13 +1036,175 @@ function onReact({ channel, msgId, userId, emoji, on }) {
   if (!perCh) { perCh = new Map(); S.reactions.set(channel, perCh); }
   let perMsg = perCh.get(msgId);
   if (!perMsg) { perMsg = new Map(); perCh.set(msgId, perMsg); }
+  for (const [oldEmoji, oldUsers] of perMsg.entries()) {
+    if (oldEmoji !== emoji) { oldUsers.delete(userId); if (!oldUsers.size) perMsg.delete(oldEmoji); }
+  }
   let users = perMsg.get(emoji);
   if (!users) { users = new Set(); perMsg.set(emoji, users); }
-  if (on) users.add(userId);
-  else    users.delete(userId);
-  if (users.size === 0) perMsg.delete(emoji);
-  if (perMsg.size === 0) perCh.delete(msgId);
+  if (on) users.add(userId); else users.delete(userId);
+  if (!users.size) perMsg.delete(emoji);
+  if (!perMsg.size) perCh.delete(msgId);
   if (channel === S.active) renderStream();
+}
+
+function isMessagePinned(m) {
+  return (S.pins.get(m.channel) || []).some((p) => String(p.id) === String(m.id));
+}
+
+function toggleMessagePin(m) {
+  sendOp({ op: "pin_toggle", channel: m.channel, msgId: Number(m.id) });
+}
+
+function renderPinnedBanner(channel) {
+  const pins = S.pins.get(channel) || [];
+  if (!pins.length) return null;
+  const banner = el("section", { class: "pinned-banner" });
+  banner.append(el("button", {
+    class: "pinned-banner-head", type: "button",
+    "aria-expanded": S.pinsExpanded ? "true" : "false",
+    onclick: () => { S.pinsExpanded = !S.pinsExpanded; renderStream(); },
+  }, [el("span", {}, "📌 Pinned messages"), el("span", { class: "pinned-count" }, String(pins.length)), el("span", { class: "pinned-chevron" }, S.pinsExpanded ? "▴" : "▾")]));
+  if (S.pinsExpanded) {
+    const list = el("div", { class: "pinned-list" });
+    for (const p of pins) {
+      list.append(el("button", {
+        type: "button", class: "pinned-item",
+        title: "Jump to this message",
+        onclick: () => {
+          const loaded = (S.msgs.get(channel) || []).some((m) => String(m.id) === String(p.id));
+          if (loaded) jumpToMessage(channel, Number(p.id));
+          else toast("This pinned message is outside the currently loaded history.", 3500);
+        },
+      }, [el("strong", {}, p.username || "Message"), el("span", {}, `Message #${p.id} · pinned by ${p.pinnedByName || "a member"}`)]));
+    }
+    banner.append(list);
+  }
+  return banner;
+}
+
+function positionMessageReaction(row) {
+  if (!row?.isConnected) return;
+  const bubble = row.querySelector(".bubble"), button = row.querySelector(".msg-hover-reaction");
+  if (!bubble || !button) return;
+  const br = bubble.getBoundingClientRect(), rr = row.getBoundingClientRect();
+  const width = button.offsetWidth || 34, height = button.offsetHeight || 34;
+  const left = row.classList.contains("own") ? br.left - rr.left - width - 10 : br.right - rr.left + 10;
+  button.style.left = `${left}px`;
+  button.style.top = `${br.top - rr.top + (br.height - height) / 2}px`;
+}
+function closeMessageMenu(row, menu, bubble) {
+  row?.classList.remove("menu-open");
+  if (!menu) return;
+  menu.classList.remove("menu-floating");
+  for (const prop of ["left","top","maxHeight","overflowY"]) menu.style[prop] = "";
+  menu.remove(); if (bubble) bubble.append(menu);
+}
+function toggleMessageMenu(row, menu, bubble, trigger) {
+  if (!row || !menu || !bubble) return;
+  if (row.classList.contains("menu-open")) { closeMessageMenu(row, menu, bubble); return; }
+  document.querySelectorAll(".msg.menu-open").forEach((other) => {
+    const otherMenu = other.querySelector(".msg-menu") || document.querySelector(".msg-menu.menu-floating");
+    closeMessageMenu(other, otherMenu, other.querySelector(".bubble"));
+  });
+  row.classList.add("menu-open"); menu.classList.add("menu-floating"); document.body.append(menu);
+  const tr = trigger.getBoundingClientRect(), sr = $("messages")?.getBoundingClientRect(), cr = $("sendForm")?.getBoundingClientRect();
+  const viewportTop = Math.max(8, sr?.top ?? 8);
+  const viewportBottom = Math.min(window.innerHeight - 8, sr?.bottom ?? window.innerHeight - 8, cr?.top ?? window.innerHeight - 8);
+  const maxHeight = Math.max(1, viewportBottom - viewportTop);
+  menu.style.maxHeight = `${maxHeight}px`; menu.style.overflowY = "auto";
+  const mr = menu.getBoundingClientRect(), h = Math.min(mr.height || 250, maxHeight);
+  const below = viewportBottom - tr.bottom - 6, above = tr.top - viewportTop - 6;
+  const top = below >= h ? tr.bottom + 6 : above >= h ? tr.top - h - 6 : Math.max(viewportTop, Math.min(tr.bottom + 6, viewportBottom - h));
+  const w = mr.width || 210;
+  const left = row.classList.contains("own") ? Math.max(8, Math.min(innerWidth - w - 8, tr.left)) : Math.max(8, Math.min(innerWidth - w - 8, tr.right - w));
+  menu.style.left = `${left}px`; menu.style.top = `${top}px`;
+}
+function positionMessageActions(row) {
+  if (!row?.isConnected || !row.classList.contains("actions-visible")) return;
+  row.classList.remove("actions-above", "actions-below");
+  const bubble = row.querySelector(".bubble");
+  const actions = row.querySelector(".msg-actions");
+  const stream = $("messages");
+  if (!bubble || !actions || !stream) return;
+  const br = bubble.getBoundingClientRect();
+  const rr = row.getBoundingClientRect();
+  const sr = stream.getBoundingClientRect();
+  const width = actions.offsetWidth || 150;
+  const height = actions.offsetHeight || 38;
+  const gap = 10;
+  const incoming = !row.classList.contains("own");
+  const leftCandidate = incoming ? br.left - width - gap : br.right + gap;
+  const leftFits = incoming ? leftCandidate >= sr.left + 6 : leftCandidate + width <= sr.right - 6;
+  const sideTop = br.top + (br.height - height) / 2;
+  const verticalFits = sideTop >= sr.top + 6 && sideTop + height <= sr.bottom - 6;
+  let left;
+  let top;
+  if (leftFits && verticalFits) {
+    left = leftCandidate - rr.left;
+    top = sideTop - rr.top;
+  } else {
+    // Prefer the reserved strip above the bubble. At the very top edge, use
+    // a reserved strip below it instead of letting the toolbar be clipped.
+    const updatedBubble = bubble.getBoundingClientRect();
+    const updatedRow = row.getBoundingClientRect();
+    left = Math.max(6, Math.min(updatedBubble.left - updatedRow.left, updatedRow.width - width - 6));
+    const minTop = sr.top + 6 - updatedRow.top;
+    const maxTop = sr.bottom - height - 6 - updatedRow.top;
+    const aboveTop = updatedBubble.top - updatedRow.top - height - 8;
+    if (aboveTop >= minTop && aboveTop <= maxTop) {
+      top = aboveTop;
+    } else {
+      row.classList.add("actions-below");
+      const belowBubble = bubble.getBoundingClientRect();
+      const belowRow = row.getBoundingClientRect();
+      const belowTop = belowBubble.bottom - belowRow.top + 8;
+      top = belowTop + height <= sr.bottom - 6 - belowRow.top
+        ? belowTop
+        : Math.max(2, Math.min(maxTop, aboveTop));
+    }
+  }
+  actions.style.left = `${left}px`;
+  actions.style.right = "auto";
+  actions.style.top = `${top}px`;
+}
+
+function repositionVisibleMessageActions() {
+  document.querySelectorAll("#messages .msg").forEach(positionMessageReaction);
+  document.querySelectorAll("#messages .msg.actions-visible").forEach(positionMessageActions);
+}
+window.addEventListener("resize", repositionVisibleMessageActions);
+$("messages")?.addEventListener("scroll", repositionVisibleMessageActions, { passive: true });
+
+function messageMentionsMe(m) {
+  if (!S.me?.username || !m || m.kind === "system" || m.kind === "file") return Promise.resolve(false);
+  const inspect = async () => {
+    let text = String(m.text || "");
+    const peer = dmPeer(S.channels.get(m.channel));
+    if (peer && text.startsWith("e2e:v1:")) {
+      const decrypted = await E2EE.tryDecrypt(peer.id, peer.pubkey, text);
+      if (decrypted == null) return false;
+      text = decrypted;
+    }
+    const escaped = S.me.username.replace(/[^A-Za-z0-9._-]/g, (ch) => "\\" + ch);
+    return new RegExp(`(^|[^A-Za-z0-9._-])@${escaped}(?=$|[^A-Za-z0-9._-])`, "i").test(text);
+  };
+  return inspect().catch(() => false);
+}
+
+function updateMentionBadge() {
+  const badge = $("mentionJumpBtn");
+  if (!badge) return;
+  const id = S.mentions.get(S.active);
+  badge.classList.toggle("hidden", !id);
+  badge.setAttribute("aria-hidden", id ? "false" : "true");
+  badge.onclick = () => {
+    const targetId = S.mentions.get(S.active);
+    if (targetId == null) return;
+    const node = document.getElementById(`m-${S.active}-${targetId}`);
+    if (node) node.scrollIntoView({ behavior: "smooth", block: "center" });
+    S.mentions.delete(S.active);
+    updateMentionBadge();
+  };
 }
 
 function toggleReaction(msgId, emoji) {
@@ -1196,6 +1641,8 @@ async function renderStream() {
   box.innerHTML = "";
   const arr = S.msgs.get(S.active) || [];
   const ch = S.channels.get(S.active);
+  const pinnedBanner = renderPinnedBanner(S.active);
+  if (pinnedBanner) box.append(pinnedBanner);
 
   if (arr.length === 0) {
     box.append(renderEmptyState(ch));
@@ -1215,17 +1662,22 @@ async function renderStream() {
       prevDay = day; prev = null;
     }
 
-    const isSystem = m.kind === "system";
+    const isSystem = m.kind === "system" && !m.deleted;
     const isFollow = !isSystem
       && prev
       && prev.userId === m.userId
       && (m.ts - prev.ts) < 300 // 5 min
-      && prev.kind !== "system";
+      && (prev.kind !== "system" || prev.deleted);
 
     box.append(await renderMessage(m, { follow: isFollow, peer, ch }));
     prev = m;
   }
   updateHeader();
+  if (messageSearchMatches.length && S.searchChannel === S.active) {
+    messageSearchMatches.forEach((id) => { const node = document.getElementById(`m-${S.active}-${id}`); if (node) node.classList.add("search-match"); });
+    const currentId = messageSearchMatches[messageSearchIndex];
+    if (currentId != null) document.getElementById(`m-${S.active}-${currentId}`)?.classList.add("search-current");
+  }
   if (atBottom) {
     // Snap to bottom now and after layout / image loads settle.
     const snap = () => { box.scrollTop = box.scrollHeight; };
@@ -1251,7 +1703,7 @@ function renderEmptyState(ch) {
 }
 
 async function renderMessage(m, { follow, peer, ch }) {
-  if (m.kind === "system") {
+  if (m.kind === "system" && !m.deleted) {
     return el("div", { class: "msg system" },
       el("div", { class: "bubble" }, el("span", { class: "text" }, m.text)),
     );
@@ -1261,10 +1713,10 @@ async function renderMessage(m, { follow, peer, ch }) {
   const isDm  = ch && ch.kind === "dm";
 
   // Decrypt DM ciphertext when possible.
-  let displayText = m.text || "";
+  let displayText = m.deleted ? "This message was deleted." : (m.text || "");
   let encrypted = false;
   let fileRealName = null;
-  if (peer && displayText.startsWith("e2e:v1:")) {
+  if (!m.deleted && peer && displayText.startsWith("e2e:v1:")) {
     const pt = await E2EE.tryDecrypt(peer.id, peer.pubkey, displayText);
     if (pt != null) { displayText = pt; encrypted = true; }
     else displayText = "🔒 (cannot decrypt — missing key)";
@@ -1298,7 +1750,10 @@ async function renderMessage(m, { follow, peer, ch }) {
     if (orig) {
       quoteName = orig.username || quoteName;
       quoteColor = orig.color || quoteColor;
-      let t = orig.text || "";
+      if (orig.deleted) {
+        quoteText = "This message was deleted.";
+      }
+      let t = orig.deleted ? "This message was deleted." : (orig.text || "");
       if (peer && t.startsWith("e2e:v1:")) {
         const pt = await E2EE.tryDecrypt(peer.id, peer.pubkey, t);
         t = pt != null ? pt : "🔒 (encrypted)";
@@ -1359,7 +1814,7 @@ async function renderMessage(m, { follow, peer, ch }) {
     }
   }
 
-  if (m.kind === "file" && m.file) {
+  if (!m.deleted && m.kind === "file" && m.file) {
     const f = m.file;
     // Detect a DM E2EE envelope. When present, displayText is the JSON
     // metadata that tells us the real name/mime + the AES-GCM IV used
@@ -1537,23 +1992,37 @@ async function renderMessage(m, { follow, peer, ch }) {
     bubble.append(bar);
   }
 
-  // Hover action group (skips system messages because they returned early).
-  const actions = el("div", { class: "msg-actions" }, [
-    el("button", {
-      class: "ma-btn",
-      title: "Add reaction",
-      onclick: (ev) => { ev.stopPropagation(); openReactionPicker(ev.currentTarget, m.id); },
-      html: `<svg viewBox="0 0 24 24" width="16" height="16"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="9" cy="10.5" r="1.1" fill="currentColor"/><circle cx="15" cy="10.5" r="1.1" fill="currentColor"/><path d="M8.5 14.2c.8 1.3 2.1 2.1 3.5 2.1s2.7-.8 3.5-2.1" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`,
-    }),
-    el("button", {
-      class: "ma-btn",
-      title: "Reply",
-      onclick: (ev) => { ev.stopPropagation(); startReplyTo(m, displayText, fileRealName); },
-      html: `<svg viewBox="0 0 24 24" width="16" height="16"><path d="M10 9V5l-7 7 7 7v-4c5 0 8 1.5 10 5-1-7-5-11-10-11z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>`,
-    }),
-  ]);
-  bubble.append(actions);
+  // WhatsApp-style hover controls: reaction stays outside the bubble; arrow lives inside it.
+  const savedNow = isMessageSaved(m);
+  const canDeleteMessage = isOwn || ch?.kind === "group";
+  const quickReaction = el("button", {
+    type: "button",
+    class: "msg-hover-reaction",
+    title: "React",
+    "aria-label": "React to message",
+    onclick: (ev) => { ev.stopPropagation(); openReactionPicker(ev.currentTarget, m.id); },
+    html: `<svg viewBox="0 0 24 24" width="19" height="19"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="9" cy="10.5" r="1.1" fill="currentColor"/><circle cx="15" cy="10.5" r="1.1" fill="currentColor"/><path d="M8.5 14.2c.8 1.3 2.1 2.1 3.5 2.1s2.7-.8 3.5-2.1" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`,
+  });
 
+  const menuTrigger = el("button", {
+    type: "button",
+    class: "msg-menu-trigger",
+    title: "Message actions",
+    "aria-label": "Message actions",
+    onclick: (ev) => {
+      ev.stopPropagation();
+      toggleMessageMenu(row, menu, bubble, ev.currentTarget);
+    },
+    html: `<svg viewBox="0 0 24 24" width="16" height="16"><path d="m7 10 5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  });
+  const menu = el("div", { class: "msg-menu", role: "menu" }, [
+    el("button", { type: "button", class: "msg-menu-item", onclick: (ev) => { ev.stopPropagation(); closeMessageMenu(row, menu, bubble); startReplyTo(m, displayText, fileRealName); } }, [svg("M10 9V5l-7 7 7 7v-4c5 0 8 1.5 10 5-1-7-5-11-10-11z", 16), "Reply"]),
+    el("button", { type: "button", class: "msg-menu-item", onclick: (ev) => { ev.stopPropagation(); closeMessageMenu(row, menu, bubble); openForwardDialog(m, displayText, fileRealName, peer); } }, [svg("M14 5l7 7-7 7M21 12H9a6 6 0 0 0-6 6", 16), "Forward"]),
+    el("button", { type: "button", class: "msg-menu-item", onclick: (ev) => { ev.stopPropagation(); closeMessageMenu(row, menu, bubble); toggleMessagePin(m); } }, [svg("M16 3l5 5-4 1-4 4-1 5-2-2-4 4-2-2 4-4-2-2 5-1 4-4z", 16), isMessagePinned(m) ? "Unpin" : "Pin"]),
+    el("button", { type: "button", class: "msg-menu-item", onclick: (ev) => { ev.stopPropagation(); closeMessageMenu(row, menu, bubble); toggleMessageBookmark(m); } }, [svg("M6 4h12v17l-6-4-6 4z", 16), savedNow ? "Remove saved message" : "Save message"]),
+    el("button", { type: "button", class: "msg-menu-item", onclick: async (ev) => { ev.stopPropagation(); closeMessageMenu(row, menu, bubble); try { await navigator.clipboard.writeText(displayText || fileRealName || ""); toast("Copied"); } catch { toast("Could not copy this message"); } } }, [svg("M8 8V4h12v12h-4M4 8h12v12H4z", 16), "Copy"]),
+    el("button", { type: "button", class: "msg-menu-item danger", disabled: !canDeleteMessage, title: canDeleteMessage ? "Delete for everyone" : "Only the sender or group admin can delete this message", onclick: (ev) => { ev.stopPropagation(); closeMessageMenu(row, menu, bubble); if (canDeleteMessage && confirm("Delete this message for everyone? This cannot be undone.")) sendOp({ op: "delete_message", channel: m.channel, msgId: Number(m.id) }); } }, [svg("M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14M10 10v6M14 10v6", 16), "Delete for everyone"]),
+  ]);
   // Tail only on the first bubble of a group.
   const classes = ["msg"];
   if (isOwn) classes.push("own");
@@ -1561,11 +2030,39 @@ async function renderMessage(m, { follow, peer, ch }) {
   if (follow) classes.push("follow");
   else        classes.push("has-tail");
 
+  bubble.append(menuTrigger, menu);
   const stack = el("div", { class: "msg-stack" });
   if (header) stack.append(header);
   stack.append(bubble);
-
-  return el("div", { class: classes.join(" "), id: `m-${m.channel}-${m.id}` }, [avatar, stack]);
+  const row = el("div", { class: classes.join(" "), id: `m-${m.channel}-${m.id}` }, [avatar, stack, quickReaction]);
+  row.addEventListener("mouseenter", () => {
+    row.classList.add("actions-visible");
+    requestAnimationFrame(() => { positionMessageReaction(row); positionMessageActions(row); });
+  });
+  row.addEventListener("focusin", () => {
+    row.classList.add("actions-visible");
+    requestAnimationFrame(() => { positionMessageReaction(row); positionMessageActions(row); });
+  });
+  row.addEventListener("mouseleave", (ev) => {
+    if (!row.contains(ev.relatedTarget) && !menu.contains(ev.relatedTarget)) {
+      row.classList.remove("actions-visible");
+      // Leave the menu open if keyboard focus is still within the row.
+      if (!row.contains(document.activeElement) && !menu.contains(document.activeElement)) closeMessageMenu(row, menu, bubble);
+    }
+  });
+  row.addEventListener("focusout", (ev) => {
+    if (!row.contains(ev.relatedTarget) && !menu.contains(ev.relatedTarget)) {
+      row.classList.remove("actions-visible");
+      closeMessageMenu(row, menu, bubble);
+    }
+  });
+  row.addEventListener("dblclick", (ev) => {
+    if (ev.target.closest("button, a, input, textarea, video, audio, .bubble, .msg-hover-reaction, .msg-menu")) return;
+    ev.preventDefault();
+    startReplyTo(m, displayText, fileRealName);
+  });
+  requestAnimationFrame(() => positionMessageReaction(row));
+  return row;
 }
 
 // Compute tick state for an own message:
@@ -1715,6 +2212,7 @@ function isAtBottom(box) {
 // ── Channel switching ────────────────────────────────────────────────
 function switchChannel(id) {
   S.active = id;
+  updateMentionBadge();
   S.unread.set(id, 0);
   if (S.replyTo && S.replyTo.channelId !== id) clearReplyTo();
   else renderReplyPreview();
@@ -1874,6 +2372,184 @@ async function sendMessage(rawText) {
 }
 
 // ── Reply-to ──────────────────────────────────────────────────────────
+
+/* ── Saved messages: synced through the authenticated server account ── */
+let savedMessages = [];
+function getSavedMessages() { return savedMessages; }
+function isMessageSaved(message) {
+  return savedMessages.some((item) => item.channel === message.channel && String(item.id) === String(message.id));
+}
+function toggleMessageBookmark(message, button) {
+  if (!message || message.kind === "system") return;
+  sendOp({ op: "saved_toggle", channel: message.channel, msgId: Number(message.id) });
+  if (button) button.disabled = true;
+}
+function updateSavedCount() {
+  const button = $("savedMessagesBtn");
+  if (!button) return;
+  button.title = savedMessages.length ? `View saved messages (${savedMessages.length})` : "View saved messages";
+  const count = $("savedMessagesCount");
+  if (count) { count.textContent = savedMessages.length > 99 ? "99+" : String(savedMessages.length); count.classList.toggle("hidden", savedMessages.length === 0); }
+}
+function onSavedMessages(e) {
+  savedMessages = Array.isArray(e.items) ? e.items : [];
+  updateSavedCount();
+  document.querySelectorAll("#messages .bookmark-btn").forEach((button) => {
+    const node = button.closest(".msg");
+    if (!node) return;
+    const parts = node.id.match(/^m-(.+)-(\d+)$/);
+    if (!parts) return;
+    const message = { channel: parts[1], id: parts[2] };
+    const active = isMessageSaved(message);
+    button.disabled = false;
+    button.classList.toggle("saved", active);
+    button.title = active ? "Remove bookmark" : "Save message";
+    button.setAttribute("aria-label", button.title);
+    button.textContent = active ? "★" : "☆";
+  });
+  if (!$("savedMessagesOverlay")) return;
+  renderSavedMessages();
+}
+function closeSavedMessages() { $("savedMessagesOverlay")?.remove(); }
+function renderSavedMessages() {
+  const overlay = $("savedMessagesOverlay");
+  if (!overlay) return;
+  const list = overlay.querySelector(".saved-list");
+  if (!list) return;
+  list.replaceChildren();
+  if (!savedMessages.length) {
+    list.append(el("div", { class: "saved-empty" }, "No saved messages yet. Use ☆ on any message to bookmark it."));
+    return;
+  }
+  for (const item of savedMessages) {
+    const row = el("button", { class: "saved-item", type: "button", onclick: () => {
+      if (S.active !== item.channel) {
+        toast(`Open #${item.channelName} to view this saved message`, 3500);
+        return;
+      }
+      const node = document.getElementById(`m-${item.channel}-${item.id}`);
+      if (node) {
+        closeSavedMessages();
+        node.scrollIntoView({ behavior: "smooth", block: "center" });
+        node.classList.add("saved-jump-highlight");
+        setTimeout(() => node.classList.remove("saved-jump-highlight"), 1800);
+      } else {
+        toast("This message isn't in the currently loaded chat history", 3000);
+      }
+    } }, [
+      el("div", { class: "saved-item-top" }, [
+        el("strong", {}, item.username || "Message"),
+        el("span", { class: "saved-item-channel" }, "#" + (item.channelName || item.channel)),
+      ]),
+      el("div", { class: "saved-item-text" }, item.text || "(No text preview)"),
+      el("span", { class: "saved-item-date" }, new Date(Number(item.ts) * 1000).toLocaleString()),
+    ]);
+    list.append(row);
+  }
+}
+function openSavedMessages() {
+  closeSavedMessages();
+  const overlay = el("div", { id: "savedMessagesOverlay", class: "saved-overlay", role: "dialog", "aria-modal": "true", "aria-label": "Saved messages" });
+  const panel = el("section", { class: "saved-panel" });
+  const header = el("div", { class: "saved-panel-header" }, [
+    el("div", {}, [el("div", { class: "saved-panel-title" }, "Saved messages"), el("div", { class: "muted xs" }, "Synced to your LocalChat account")]),
+    el("button", { class: "icon-btn", type: "button", title: "Close saved messages", "aria-label": "Close saved messages", onclick: closeSavedMessages }, "×"),
+  ]);
+  const list = el("div", { class: "saved-list" });
+  panel.append(header, list); overlay.append(panel);
+  overlay.addEventListener("click", (event) => { if (event.target === overlay) closeSavedMessages(); });
+  document.addEventListener("keydown", function onEscape(event) {
+    if (event.key === "Escape") { closeSavedMessages(); document.removeEventListener("keydown", onEscape); }
+  });
+  document.body.append(overlay);
+  renderSavedMessages();
+  sendOp({ op: "saved_list" });
+}
+
+function openForwardDialog(message, displayText, fileRealName, sourcePeer) {
+  if (!message || message.kind === "system" || message.deleted) return;
+  if (String(message.text || "").startsWith("e2e:v1:") && String(displayText || "").startsWith("🔒 (cannot decrypt")) {
+    toast("This encrypted message cannot be decrypted here, so it cannot be forwarded.", 4000);
+    return;
+  }
+  const overlay = el("div", { class: "forward-overlay" });
+  const panel = el("section", { class: "forward-panel", role: "dialog", "aria-modal": "true", "aria-label": "Forward message" });
+  const search = el("input", { class: "forward-search", type: "search", placeholder: "Search people and groups…" });
+  const list = el("div", { class: "forward-list" });
+  const close = () => overlay.remove();
+  const targets = [...S.channels.values()].filter((ch) => ch.id !== message.channel && (ch.kind === "dm" || ch.kind === "group" || ch.kind === "lobby"));
+  const draw = () => {
+    list.replaceChildren();
+    const q = search.value.trim().toLowerCase();
+    const filtered = targets.filter((ch) => {
+      const title = ch.kind === "lobby" ? "general" : (ch.name || ch.id);
+      return title.toLowerCase().includes(q) || ch.id.toLowerCase().includes(q);
+    });
+    if (!filtered.length) list.append(el("div", { class: "forward-empty" }, "No matching conversations"));
+    for (const ch of filtered) {
+      const title = ch.kind === "lobby" ? "# general" : (ch.kind === "dm" ? (ch.name || "Private chat") : ch.name || "Group");
+      list.append(el("button", { type: "button", class: "forward-target", onclick: async () => {
+        if (message.kind === "file") {
+          try {
+            if (!message.file?.filename) throw new Error("Attachment metadata is unavailable");
+            const response = await fetch("/uploads/" + encodeURIComponent(message.file.filename));
+            if (!response.ok) throw new Error("The original attachment is unavailable");
+            let bytes = new Uint8Array(await response.arrayBuffer());
+            let name = fileRealName || message.file.originalName || "forwarded-file";
+            let mime = message.file.mimeType || "application/octet-stream";
+            if (String(message.text || "").startsWith("e2e:v1:")) {
+              if (!sourcePeer?.pubkey || !E2EE.available) throw new Error("The encrypted attachment cannot be decrypted here");
+              const envelopeText = await E2EE.tryDecrypt(sourcePeer.id, sourcePeer.pubkey, message.text);
+              if (!envelopeText) throw new Error("The attachment metadata could not be decrypted");
+              const envelope = JSON.parse(envelopeText);
+              if (!envelope || envelope.kind !== "file" || !envelope.iv) throw new Error("Invalid encrypted attachment metadata");
+              const plain = await E2EE.decryptBytesFrom(sourcePeer.id, sourcePeer.pubkey, unb64(envelope.iv), bytes);
+              if (!plain) throw new Error("The attachment could not be decrypted");
+              bytes = plain;
+              name = envelope.name || name;
+              mime = envelope.mime || mime;
+            }
+            const forwardedFile = new File([bytes], name, { type: mime });
+            const uploaded = await uploadFile(forwardedFile, ch.id);
+            if (!uploaded) return;
+            close();
+            toast("Attachment forwarded");
+          } catch (err) {
+            toast("Could not forward attachment: " + (err.message || "unknown error"), 4000);
+          }
+          return;
+        }
+        let text = String(displayText || "");
+        if (ch.kind === "dm") {
+          const destPeer = dmPeer(ch);
+          if (destPeer?.pubkey && E2EE.available) {
+            try { text = await E2EE.encryptFor(destPeer.id, destPeer.pubkey, "↪ Forwarded\n" + text); }
+            catch { toast("Could not encrypt this forwarded message for the recipient"); return; }
+          } else if (text.startsWith("e2e:v1:")) {
+            toast("This private message could not be decrypted for forwarding"); return;
+          } else {
+            text = "↪ Forwarded\n" + text;
+          }
+        } else {
+          text = "↪ Forwarded\n" + text;
+        }
+        if (text.length > 4096) { toast("This message is too long to forward"); return; }
+        sendOp({ op: "send", channel: ch.id, text });
+        close();
+        toast("Message forwarded");
+      } }, [el("span", { class: "forward-target-icon" }, ch.kind === "dm" ? "●" : "#"), el("span", { class: "forward-target-name" }, title), el("span", { class: "forward-target-kind" }, ch.kind === "dm" ? "Direct message" : ch.kind === "group" ? "Group" : "Public")]));
+    }
+  };
+  panel.append(el("div", { class: "forward-head" }, [el("strong", {}, "Forward message"), el("button", { type: "button", class: "forward-close", "aria-label": "Close", onclick: close }, "×")]), search, list);
+  overlay.append(panel);
+  overlay.addEventListener("click", (ev) => { if (ev.target === overlay) close(); });
+  search.addEventListener("input", draw);
+  document.addEventListener("keydown", function esc(ev) { if (ev.key === "Escape" && overlay.isConnected) { close(); document.removeEventListener("keydown", esc); } });
+  document.body.append(overlay);
+  draw();
+  search.focus();
+}
+
 function startReplyTo(m, plainText, fileRealName) {
   if (!m || m.kind === "system") return;
   const txt = (plainText != null ? plainText : (m.text || "")).toString();
@@ -1928,13 +2604,105 @@ const _warnedNoKey = new Set();
 // Composer
 const msgInput = $("msgInput");
 $("replyPreviewClose")?.addEventListener("click", () => clearReplyTo());
+
+// @mention autocomplete. Mentions are sent as literal @usernames, which keeps
+// the wire format compatible with existing messages and mention notifications.
+const mentionPicker = el("div", { id: "mentionPicker", class: "mention-picker hidden", role: "listbox", "aria-label": "Mention a user" });
+$("sendForm").append(mentionPicker);
+let mentionCandidates = [];
+let mentionActiveIndex = 0;
+let mentionToken = null;
+
+function closeMentionPicker() {
+  mentionToken = null;
+  mentionCandidates = [];
+  mentionActiveIndex = 0;
+  mentionPicker.classList.add("hidden");
+  mentionPicker.replaceChildren();
+}
+function getMentionToken() {
+  const caret = msgInput.selectionStart ?? msgInput.value.length;
+  const before = msgInput.value.slice(0, caret);
+  const match = before.match(/(^|\s)@([A-Za-z0-9._-]*)$/);
+  if (!match) return null;
+  return { start: caret - match[2].length - 1, end: caret, query: match[2] };
+}
+function updateMentionPicker() {
+  const token = getMentionToken();
+  if (!token) { closeMentionPicker(); return; }
+  const query = token.query.toLowerCase();
+  const candidates = [...S.users.values()]
+    .filter((u) => u.username && u.username.toLowerCase() !== (S.me?.username || "").toLowerCase())
+    .filter((u) => u.username.toLowerCase().startsWith(query))
+    .sort((a, b) => a.username.localeCompare(b.username))
+    .slice(0, 8);
+  if (!candidates.length) { closeMentionPicker(); return; }
+  mentionToken = token;
+  mentionCandidates = candidates;
+  mentionActiveIndex = Math.min(mentionActiveIndex, candidates.length - 1);
+  mentionPicker.replaceChildren(...candidates.map((u, i) => {
+    const item = el("button", {
+      type: "button",
+      class: "mention-option" + (i === mentionActiveIndex ? " active" : ""),
+      role: "option",
+      "aria-selected": i === mentionActiveIndex ? "true" : "false",
+      onmousedown: (ev) => { ev.preventDefault(); insertMention(u.username); },
+    }, [
+      el("span", { class: "mention-option-avatar", style: `background:${u.color || colorForName(u.username)}` }, (u.avatar || u.username[0] || "?").toUpperCase()),
+      el("span", { class: "mention-option-name" }, "@" + u.username),
+      el("span", { class: "mention-option-status" }, u.online ? "online" : ""),
+    ]);
+    return item;
+  }));
+  mentionPicker.classList.remove("hidden");
+}
+function insertMention(username) {
+  if (!mentionToken) return;
+  const { start, end } = mentionToken;
+  const before = msgInput.value.slice(0, start);
+  const after = msgInput.value.slice(end);
+  const inserted = "@" + username + " ";
+  msgInput.value = before + inserted + after;
+  const caret = before.length + inserted.length;
+  msgInput.focus();
+  msgInput.setSelectionRange(caret, caret);
+  autoGrow(msgInput);
+  closeMentionPicker();
+}
+function moveMentionSelection(delta) {
+  if (mentionPicker.classList.contains("hidden") || !mentionCandidates.length) return false;
+  mentionActiveIndex = (mentionActiveIndex + delta + mentionCandidates.length) % mentionCandidates.length;
+  [...mentionPicker.querySelectorAll(".mention-option")].forEach((item, i) => {
+    item.classList.toggle("active", i === mentionActiveIndex);
+    item.setAttribute("aria-selected", i === mentionActiveIndex ? "true" : "false");
+  });
+  return true;
+}
+function chooseMentionSelection() {
+  if (mentionPicker.classList.contains("hidden") || !mentionCandidates.length) return false;
+  insertMention(mentionCandidates[mentionActiveIndex].username);
+  return true;
+}
+
 msgInput.addEventListener("input", () => {
   autoGrow(msgInput);
+  mentionActiveIndex = 0;
+  updateMentionPicker();
   if (S.typingTimer) clearTimeout(S.typingTimer);
   sendOp({ op: "typing", channel: S.active, typing: true });
   S.typingTimer = setTimeout(() => sendOp({ op: "typing", channel: S.active, typing: false }), 2500);
 });
+msgInput.addEventListener("click", updateMentionPicker);
+msgInput.addEventListener("keyup", (e) => {
+  if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) updateMentionPicker();
+});
 msgInput.addEventListener("keydown", (e) => {
+  if (!mentionPicker.classList.contains("hidden")) {
+    if (e.key === "ArrowDown") { e.preventDefault(); moveMentionSelection(1); return; }
+    if (e.key === "ArrowUp") { e.preventDefault(); moveMentionSelection(-1); return; }
+    if (e.key === "Enter" && !e.shiftKey && chooseMentionSelection()) { e.preventDefault(); return; }
+    if (e.key === "Escape") { e.preventDefault(); closeMentionPicker(); return; }
+  }
   if (e.key === "Escape" && S.replyTo) {
     e.preventDefault();
     clearReplyTo();
@@ -1944,14 +2712,19 @@ msgInput.addEventListener("keydown", (e) => {
     e.preventDefault();
     const v = msgInput.value;
     msgInput.value = "";
+    closeMentionPicker();
     autoGrow(msgInput);
     sendMessage(v);
   }
+});
+document.addEventListener("click", (e) => {
+  if (!e.target.closest("#mentionPicker") && e.target !== msgInput) closeMentionPicker();
 });
 $("sendForm").addEventListener("submit", (e) => {
   e.preventDefault();
   const v = msgInput.value;
   msgInput.value = "";
+  closeMentionPicker();
   autoGrow(msgInput);
   sendMessage(v);
 });
@@ -2211,6 +2984,7 @@ document.addEventListener("click", (e) => {
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") $("sidebar")?.classList.remove("open");
 });
+updateBrowserNotificationButton();
 // Re-confirm read state when the tab becomes visible again.
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) scheduleReadReceipt();
@@ -2416,7 +3190,7 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape" && _emojiOp
 window.addEventListener("blur", () => { if (_emojiOpen) closeEmoji(); });
 
 // ── Paste image / drag-drop ──────────────────────────────────────────
-async function uploadFile(f) {
+async function uploadFile(f, targetChannel = S.active) {
   // The atomic /api/upload handler authenticates via the per-WS
   // session token from the welcome envelope. If we haven't received
   // it yet (page just loaded, WS still connecting), wait briefly so
@@ -2429,10 +3203,10 @@ async function uploadFile(f) {
     }
     if (!S.session) {
       toast("Not connected — try again in a moment", 4000);
-      return;
+      return false;
     }
   }
-  const ch = S.channels.get(S.active);
+  const ch = S.channels.get(targetChannel);
   const peer = ch ? dmPeer(ch) : null;
   const isDmEncrypted = ch?.kind === "dm" && peer?.pubkey && E2EE.available;
 
@@ -2464,7 +3238,7 @@ async function uploadFile(f) {
       envelopeWire = await E2EE.encryptFor(peer.id, peer.pubkey, env);
     } catch (err) {
       toast("Encrypt failed: " + err.message, 4000);
-      return;
+      return false;
     }
   } else if (ch?.kind === "dm") {
     // DM but no peer pubkey / insecure context — warn before sending in clear.
@@ -2472,7 +3246,7 @@ async function uploadFile(f) {
       "Direct-message files normally travel end-to-end encrypted, but the peer's\n" +
       "encryption key isn't available right now (peer offline or insecure context).\n\n" +
       "Send this file in plaintext anyway? The server admin will be able to read it.")) {
-      return;
+      return false;
     }
   }
 
@@ -2483,7 +3257,7 @@ async function uploadFile(f) {
   // could be lost on refresh. The client_id makes retries idempotent.
   const form = new FormData();
   form.append("file", blobToUpload, uploadName);
-  form.append("channel", S.active);
+  form.append("channel", targetChannel);
   if (envelopeWire) form.append("text", envelopeWire);
   if (S.session) form.append("session", S.session);
   const clientId = (crypto.randomUUID && crypto.randomUUID()) ||
@@ -2496,8 +3270,10 @@ async function uploadFile(f) {
     // Server already broadcast the message via the channel bus;
     // our own onWireMsg will render it. Nothing else to do.
     toast(isDmEncrypted ? `Sent (encrypted) ${f.name}` : `Uploaded ${f.name}`);
+    return true;
   } catch (err) {
     toast("Upload failed: " + err.message, 4000);
+    return false;
   }
 }
 $("msgInput").addEventListener("paste", async (e) => {
