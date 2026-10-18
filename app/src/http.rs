@@ -145,10 +145,12 @@ async fn info(State(state): State<Arc<AppState>>) -> impl IntoResponse {
         .map(|v| v.trim_start_matches('v'))
         .filter(|v| !v.is_empty())
         .unwrap_or(env!("CARGO_PKG_VERSION"));
+    let build = option_env!("LOCALCHAT_BUILD").unwrap_or("1");
     Json(json!({
         "addresses": crate::net::lan_addresses(),
         "hostname": hostname(),
         "version": version,
+        "build": build,
         "server_id": state.server_id,
         "data_dir": state.app_root.display().to_string(),
         "uploads_dir": state.uploads_dir.display().to_string(),
@@ -629,7 +631,10 @@ try {
   Move-Item -LiteralPath $CurrentExe -Destination $backup
   try {
     Move-Item -LiteralPath $tempExe -Destination $CurrentExe
-    Start-Process -FilePath $CurrentExe
+    $started = Start-Process -FilePath $CurrentExe -PassThru
+    Start-Sleep -Seconds 3
+    $started.Refresh()
+    if ($started.HasExited) { throw 'The updated executable exited immediately; restoring the previous build.' }
     Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue
   } catch {
     if (Test-Path -LiteralPath $CurrentExe) { Remove-Item -LiteralPath $CurrentExe -Force -ErrorAction SilentlyContinue }
