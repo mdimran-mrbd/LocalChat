@@ -23,6 +23,7 @@ jobs:
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
       version: ${{ steps.meta.outputs.version }}
+      build: ${{ steps.meta.outputs.build }}
     steps:
       - name: Checkout (full history + tags)
         uses: actions/checkout@v4
@@ -50,6 +51,9 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           # Bare semver (no leading 'v') for embedding in the binary.
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          BUILD_NUMBER="$(tr -d '[:space:]' < app/BUILD_NUMBER)"
+          if ! [[ "$BUILD_NUMBER" =~ ^[0-9]+$ ]]; then echo "Invalid app/BUILD_NUMBER" >&2; exit 1; fi
+          echo "build=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
 
   build:
     name: Windows x64
@@ -79,6 +83,7 @@ jobs:
           # /api/info reports the same version as the GitHub release
           # tag, not the stale Cargo.toml value.
           LOCALCHAT_VERSION: ${{ needs.version.outputs.version }}
+          LOCALCHAT_BUILD: ${{ needs.version.outputs.build }}
         run: |
           cargo build --release --target x86_64-pc-windows-msvc --features tray
 
@@ -134,7 +139,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.version.outputs.tag }}
-          name: ${{ needs.version.outputs.tag }}
+          name: LocalChat ${{ needs.version.outputs.version }} — Build ${{ needs.version.outputs.build }}
           target_commitish: ${{ github.sha }}
           files: release/*
           generate_release_notes: true
