@@ -604,6 +604,7 @@ async fn install_update(
         ));
         let script = r##"param([string]$CurrentExe, [int]$ParentPid)
 $ErrorActionPreference = 'Stop'
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $repo = 'mdimran-mrbd/LocalChat'
 $releaseUri = "https://api.github.com/repos/$repo/releases/latest"
 $headers = @{ 'User-Agent' = 'LocalChat-Updater'; 'Accept' = 'application/vnd.github+json' }
@@ -640,6 +641,10 @@ try {
   # Keep a local diagnostic for the user; never install an unverified file.
   try { Set-Content -LiteralPath "$CurrentExe.update-error.txt" -Value $_.Exception.Message -Encoding UTF8 } catch {}
   if (Test-Path -LiteralPath $tempExe) { Remove-Item -LiteralPath $tempExe -Force -ErrorAction SilentlyContinue }
+  $running = Get-Process -Name ([IO.Path]::GetFileNameWithoutExtension($CurrentExe)) -ErrorAction SilentlyContinue
+  if (-not $running -and (Test-Path -LiteralPath $CurrentExe)) {
+    try { Start-Process -FilePath $CurrentExe } catch {}
+  }
 } finally {
   if (Test-Path -LiteralPath $tempSum) { Remove-Item -LiteralPath $tempSum -Force -ErrorAction SilentlyContinue }
   if (Test-Path -LiteralPath $scriptFile) { Remove-Item -LiteralPath $scriptFile -Force -ErrorAction SilentlyContinue }
