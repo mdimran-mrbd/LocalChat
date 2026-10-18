@@ -123,6 +123,13 @@ jobs:
           find artifacts -type f -exec cp {} release/ \;
           ls -la release
 
+      - name: Create SHA-256 checksum
+        shell: bash
+        run: |
+          cd release
+          sha256sum LocalChat.exe > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
       - name: Create / update Release
         uses: softprops/action-gh-release@v2
         with:
