@@ -2512,13 +2512,107 @@ const _warnedNoKey = new Set();
 // Composer
 const msgInput = $("msgInput");
 $("replyPreviewClose")?.addEventListener("click", () => clearReplyTo());
+
+// @mention autocomplete. Mentions are sent as literal @usernames, which keeps
+// the wire format compatible with existing messages and mention notifications.
+const mentionPicker = el("div", { id: "mentionPicker", class: "mention-picker hidden", role: "listbox", "aria-label": "Mention a user" });
+$("sendForm").append(mentionPicker);
+let mentionCandidates = [];
+let mentionActiveIndex = 0;
+let mentionToken = null;
+
+function closeMentionPicker() {
+  mentionToken = null;
+  mentionCandidates = [];
+  mentionActiveIndex = 0;
+  mentionPicker.classList.add("hidden");
+  mentionPicker.replaceChildren();
+}
+function getMentionToken() {
+  const caret = msgInput.selectionStart ?? msgInput.value.length;
+  const before = msgInput.value.slice(0, caret);
+  const match = before.match(/(^|\\s)@([A-Za-z0-9._-]*)$/);
+  if (!match) return null;
+  return { start: caret - match[2].length - 1, end: caret, query: match[2] };
+}
+function updateMentionPicker() {
+  const token = getMentionToken();
+  if (!token) { closeMentionPicker(); return; }
+  const query = token.query.toLowerCase();
+  const candidates = [...S.users.values()]
+    .filter((u) => u.username && u.username.toLowerCase() !== (S.me?.username || "").toLowerCase())
+    .filter((u) => u.username.toLowerCase().startsWith(query))
+    .sort((a, b) => a.username.localeCompare(b.username))
+    .slice(0, 8);
+  if (!candidates.length) { closeMentionPicker(); return; }
+  mentionToken = token;
+  mentionCandidates = candidates;
+  mentionActiveIndex = Math.min(mentionActiveIndex, candidates.length - 1);
+  mentionPicker.replaceChildren(...candidates.map((u, i) => {
+    const item = el("button", {
+      type: "button",
+      class: "mention-option" + (i === mentionActiveIndex ? " active" : ""),
+      role: "option",
+      "aria-selected": i === mentionActiveIndex ? "true" : "false",
+      onmousedown: (ev) => { ev.preventDefault(); insertMention(u.username); },
+      onclick: (ev) => { ev.preventDefault(); insertMention(u.username); },
+    }, [
+      el("span", { class: "mention-option-avatar", style: `background:${u.color || colorForName(u.username)}` }, (u.avatar || u.username[0] || "?").toUpperCase()),
+      el("span", { class: "mention-option-name" }, "@" + u.username),
+      el("span", { class: "mention-option-status" }, u.online ? "online" : ""),
+    ]);
+    return item;
+  }));
+  mentionPicker.classList.remove("hidden");
+}
+function insertMention(username) {
+  if (!mentionToken) return;
+  const { start, end } = mentionToken;
+  const before = msgInput.value.slice(0, start);
+  const after = msgInput.value.slice(end);
+  const inserted = "@" + username + " ";
+  msgInput.value = before + inserted + after;
+  const caret = before.length + inserted.length;
+  msgInput.focus();
+  msgInput.setSelectionRange(caret, caret);
+  autoGrow(msgInput);
+  closeMentionPicker();
+}
+function moveMentionSelection(delta) {
+  if (mentionPicker.classList.contains("hidden") || !mentionCandidates.length) return false;
+  mentionActiveIndex = (mentionActiveIndex + delta + mentionCandidates.length) % mentionCandidates.length;
+  [...mentionPicker.querySelectorAll(".mention-option")].forEach((item, i) => {
+    item.classList.toggle("active", i === mentionActiveIndex);
+    item.setAttribute("aria-selected", i === mentionActiveIndex ? "true" : "false");
+  });
+  return true;
+}
+function chooseMentionSelection() {
+  if (mentionPicker.classList.contains("hidden") || !mentionCandidates.length) return false;
+  insertMention(mentionCandidates[mentionActiveIndex].username);
+  return true;
+}
+
+$("replyPreviewClose")?.addEventListener("click", () => clearReplyTo());
 msgInput.addEventListener("input", () => {
   autoGrow(msgInput);
+  mentionActiveIndex = 0;
+  updateMentionPicker();
   if (S.typingTimer) clearTimeout(S.typingTimer);
   sendOp({ op: "typing", channel: S.active, typing: true });
   S.typingTimer = setTimeout(() => sendOp({ op: "typing", channel: S.active, typing: false }), 2500);
 });
+msgInput.addEventListener("click", updateMentionPicker);
+msgInput.addEventListener("keyup", (e) => {
+  if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) updateMentionPicker();
+});
 msgInput.addEventListener("keydown", (e) => {
+  if (!mentionPicker.classList.contains("hidden")) {
+    if (e.key === "ArrowDown") { e.preventDefault(); moveMentionSelection(1); return; }
+    if (e.key === "ArrowUp") { e.preventDefault(); moveMentionSelection(-1); return; }
+    if (e.key === "Enter" && !e.shiftKey && chooseMentionSelection()) { e.preventDefault(); return; }
+    if (e.key === "Escape") { e.preventDefault(); closeMentionPicker(); return; }
+  }
   if (e.key === "Escape" && S.replyTo) {
     e.preventDefault();
     clearReplyTo();
@@ -2528,14 +2622,19 @@ msgInput.addEventListener("keydown", (e) => {
     e.preventDefault();
     const v = msgInput.value;
     msgInput.value = "";
+    closeMentionPicker();
     autoGrow(msgInput);
     sendMessage(v);
   }
+});
+document.addEventListener("click", (e) => {
+  if (!e.target.closest("#mentionPicker") && e.target !== msgInput) closeMentionPicker();
 });
 $("sendForm").addEventListener("submit", (e) => {
   e.preventDefault();
   const v = msgInput.value;
   msgInput.value = "";
+  closeMentionPicker();
   autoGrow(msgInput);
   sendMessage(v);
 });
