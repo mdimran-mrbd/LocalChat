@@ -2555,7 +2555,6 @@ function updateMentionPicker() {
       role: "option",
       "aria-selected": i === mentionActiveIndex ? "true" : "false",
       onmousedown: (ev) => { ev.preventDefault(); insertMention(u.username); },
-      onclick: (ev) => { ev.preventDefault(); insertMention(u.username); },
     }, [
       el("span", { class: "mention-option-avatar", style: `background:${u.color || colorForName(u.username)}` }, (u.avatar || u.username[0] || "?").toUpperCase()),
       el("span", { class: "mention-option-name" }, "@" + u.username),
@@ -2593,7 +2592,6 @@ function chooseMentionSelection() {
   return true;
 }
 
-$("replyPreviewClose")?.addEventListener("click", () => clearReplyTo());
 msgInput.addEventListener("input", () => {
   autoGrow(msgInput);
   mentionActiveIndex = 0;
