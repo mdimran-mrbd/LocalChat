@@ -45,6 +45,7 @@ pub async fn serve(
     let app = Router::new()
         .route("/ws", get(ws_upgrade))
         .route("/api/info", get(info))
+        .route("/api/update/install", post(install_update))
         .route("/api/share", get(share))
         .route(
             "/api/upload",
@@ -548,6 +549,117 @@ async fn serve_asset(
                     .unwrap()
             } else {
                 (StatusCode::NOT_FOUND, "not found").into_response()
+            }
+        }
+    }
+}
+
+
+// ── User-confirmed self-update (Windows host only) ────────────────────
+// The update endpoint is loopback-only: LAN chat participants must never
+// be able to replace the host's executable. The helper downloads only the
+// latest release from this repository and verifies SHA256SUMS.txt before
+// replacing the running binary. The user must explicitly click "Update now".
+async fn install_update(
+    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
+) -> axum::response::Response {
+    if !addr.ip().is_loopback() {
+        return (StatusCode::FORBIDDEN, Json(json!({
+            "error": "Updates can only be started from the host computer."
+        }))).into_response();
+    }
+
+    #[cfg(not(windows))]
+    {
+        return (StatusCode::NOT_IMPLEMENTED, Json(json!({
+            "error": "The automatic updater currently supports Windows only."
+        }))).into_response();
+    }
+
+    #[cfg(windows)]
+    {
+        use std::{process::Command, thread, time::Duration};
+
+        let current_exe = match std::env::current_exe() {
+            Ok(path) => path,
+            Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
+                "error": "Could not locate the running LocalChat executable."
+            }))).into_response(),
+        };
+        let script_path = std::env::temp_dir().join(format!(
+            "localchat-update-{}.ps1", std::process::id()
+        ));
+        let script = r##"param([string]$CurrentExe, [int]$ParentPid)
+$ErrorActionPreference = 'Stop'
+$repo = 'mdimran-mrbd/LocalChat'
+$releaseUri = "https://api.github.com/repos/$repo/releases/latest"
+$headers = @{ 'User-Agent' = 'LocalChat-Updater'; 'Accept' = 'application/vnd.github+json' }
+$tempExe = "$CurrentExe.update-$ParentPid"
+$tempSum = "$CurrentExe.sha256-$ParentPid"
+$backup = "$CurrentExe.previous"
+$scriptFile = $MyInvocation.MyCommand.Path
+try {
+  $release = Invoke-RestMethod -Uri $releaseUri -Headers $headers -TimeoutSec 30
+  $exeAsset = $release.assets | Where-Object { $_.name -eq 'LocalChat.exe' } | Select-Object -First 1
+  $sumAsset = $release.assets | Where-Object { $_.name -eq 'SHA256SUMS.txt' } | Select-Object -First 1
+  if (-not $exeAsset -or -not $sumAsset) { throw 'The latest release is missing the executable or checksum manifest.' }
+  Invoke-WebRequest -Uri $exeAsset.browser_download_url -OutFile $tempExe -Headers $headers -TimeoutSec 120
+  Invoke-WebRequest -Uri $sumAsset.browser_download_url -OutFile $tempSum -Headers $headers -TimeoutSec 30
+  $line = Get-Content -LiteralPath $tempSum | Where-Object { $_ -match '^\s*[A-Fa-f0-9]{64}\s+\*?LocalChat\.exe\s*$' } | Select-Object -First 1
+  if (-not $line -or $line -notmatch '^\s*([A-Fa-f0-9]{64})\s+\*?LocalChat\.exe\s*$') { throw 'The release checksum manifest is invalid.' }
+  $expected = $Matches[1].ToUpperInvariant()
+  $actual = (Get-FileHash -LiteralPath $tempExe -Algorithm SHA256).Hash.ToUpperInvariant()
+  if ($actual -ne $expected) { throw 'The downloaded executable failed SHA-256 verification.' }
+  while (Get-Process -Id $ParentPid -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 400 }
+  if (Test-Path -LiteralPath $backup) { Remove-Item -LiteralPath $backup -Force }
+  Move-Item -LiteralPath $CurrentExe -Destination $backup
+  try {
+    Move-Item -LiteralPath $tempExe -Destination $CurrentExe
+    Start-Process -FilePath $CurrentExe
+    Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue
+  } catch {
+    if (Test-Path -LiteralPath $CurrentExe) { Remove-Item -LiteralPath $CurrentExe -Force -ErrorAction SilentlyContinue }
+    if (Test-Path -LiteralPath $backup) { Move-Item -LiteralPath $backup -Destination $CurrentExe -Force }
+    if (Test-Path -LiteralPath $CurrentExe) { Start-Process -FilePath $CurrentExe }
+    throw
+  }
+} catch {
+  # Keep a local diagnostic for the user; never install an unverified file.
+  try { Set-Content -LiteralPath "$CurrentExe.update-error.txt" -Value $_.Exception.Message -Encoding UTF8 } catch {}
+  if (Test-Path -LiteralPath $tempExe) { Remove-Item -LiteralPath $tempExe -Force -ErrorAction SilentlyContinue }
+} finally {
+  if (Test-Path -LiteralPath $tempSum) { Remove-Item -LiteralPath $tempSum -Force -ErrorAction SilentlyContinue }
+  if (Test-Path -LiteralPath $scriptFile) { Remove-Item -LiteralPath $scriptFile -Force -ErrorAction SilentlyContinue }
+}
+"##;
+        if let Err(_) = std::fs::write(&script_path, script) {
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
+                "error": "Could not prepare the updater helper."
+            }))).into_response();
+        }
+        let spawn_result = Command::new("powershell.exe")
+            .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File"])
+            .arg(&script_path)
+            .arg(&current_exe)
+            .arg(std::process::id().to_string())
+            .spawn();
+        match spawn_result {
+            Ok(_) => {
+                // Let Axum flush the JSON response before shutting down.
+                thread::spawn(|| {
+                    thread::sleep(Duration::from_millis(1800));
+                    std::process::exit(0);
+                });
+                (StatusCode::OK, Json(json!({
+                    "status": "starting",
+                    "message": "LocalChat will close, verify the update, and restart if successful."
+                }))).into_response()
+            }
+            Err(_) => {
+                let _ = std::fs::remove_file(&script_path);
+                (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
+                    "error": "Could not start the Windows updater."
+                }))).into_response()
             }
         }
     }
