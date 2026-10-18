@@ -646,6 +646,9 @@ try {
   # Keep a local diagnostic for the user; never install an unverified file.
   try { Set-Content -LiteralPath "$CurrentExe.update-error.txt" -Value $_.Exception.Message -Encoding UTF8 } catch {}
   if (Test-Path -LiteralPath $tempExe) { Remove-Item -LiteralPath $tempExe -Force -ErrorAction SilentlyContinue }
+  # The app exits shortly after starting this helper; wait before deciding
+  # whether recovery needs to relaunch the old executable.
+  while (Get-Process -Id $ParentPid -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 400 }
   $running = Get-Process -Name ([IO.Path]::GetFileNameWithoutExtension($CurrentExe)) -ErrorAction SilentlyContinue
   if (-not $running -and (Test-Path -LiteralPath $CurrentExe)) {
     try { Start-Process -FilePath $CurrentExe } catch {}
