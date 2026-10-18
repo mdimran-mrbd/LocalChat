@@ -97,7 +97,7 @@ function compareVersions(a, b) {
   return 0;
 }
 
-async function checkForUpdates(currentVersion) {
+async function checkForUpdates(currentVersion, currentBuild) {
   // Only the host's own browser may offer the host executable update.
   // Other users joining over the LAN must never see an action that restarts the server.
   if (!["localhost", "127.0.0.1"].includes(location.hostname.toLowerCase())) return;
@@ -108,7 +108,11 @@ async function checkForUpdates(currentVersion) {
     if (!response.ok) return;
     const release = await response.json();
     const latest = String(release.tag_name || "").replace(/^v/i, "");
-    if (!latest || compareVersions(latest, currentVersion) <= 0) return;
+    const versionOrder = compareVersions(latest, currentVersion);
+    const isDevelopmentBuild = String(currentBuild || "dev") === "dev";
+    // Allow a dev/test binary to move to the first official release even
+    // when its Cargo package version already matches that release.
+    if (!latest || versionOrder < 0 || (versionOrder === 0 && !isDevelopmentBuild)) return;
     const assets = Array.isArray(release.assets) ? release.assets : [];
     if (!assets.some((a) => a.name === "LocalChat.exe") ||
         !assets.some((a) => a.name === "SHA256SUMS.txt")) return;
@@ -448,7 +452,7 @@ const S = {
       const build = (info && info.build) || "dev";
       versionLabel.textContent = `Version ${version} · Build ${build}`;
     }
-    void checkForUpdates(info && info.version);
+    void checkForUpdates(info && info.version, info && info.build);
   } catch {
     bindServerId(`origin:${location.host}`);
   }
