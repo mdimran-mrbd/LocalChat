@@ -593,7 +593,7 @@ async fn install_update(
 
     #[cfg(windows)]
     {
-        use std::{process::Command, thread, time::Duration};
+        use std::process::Command;
 
         let current_exe = match std::env::current_exe() {
             Ok(path) => path,
@@ -614,6 +614,7 @@ $tempExe = "$CurrentExe.update-$ParentPid"
 $tempSum = "$CurrentExe.sha256-$ParentPid"
 $backup = "$CurrentExe.previous"
 $scriptFile = $MyInvocation.MyCommand.Path
+$stoppedApp = $false
 try {
   $release = Invoke-RestMethod -Uri $releaseUri -Headers $headers -TimeoutSec 30
   $exeAsset = $release.assets | Where-Object { $_.name -eq 'LocalChat.exe' } | Select-Object -First 1
@@ -626,7 +627,15 @@ try {
   $expected = $Matches[1].ToUpperInvariant()
   $actual = (Get-FileHash -LiteralPath $tempExe -Algorithm SHA256).Hash.ToUpperInvariant()
   if ($actual -ne $expected) { throw 'The downloaded executable failed SHA-256 verification.' }
-  while (Get-Process -Id $ParentPid -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 400 }
+  # Keep the current server running throughout download and verification.
+  # Stop it only once the replacement is verified and ready to install.
+  Stop-Process -Id $ParentPid -Force -ErrorAction SilentlyContinue
+  $stoppedApp = $true
+  $stopDeadline = (Get-Date).AddSeconds(15)
+  while (Get-Process -Id $ParentPid -ErrorAction SilentlyContinue) {
+    if ((Get-Date) -gt $stopDeadline) { throw 'Could not stop LocalChat to finish the update.' }
+    Start-Sleep -Milliseconds 400
+  }
   if (Test-Path -LiteralPath $backup) { Remove-Item -LiteralPath $backup -Force }
   Move-Item -LiteralPath $CurrentExe -Destination $backup
   try {
@@ -646,12 +655,19 @@ try {
   # Keep a local diagnostic for the user; never install an unverified file.
   try { Set-Content -LiteralPath "$CurrentExe.update-error.txt" -Value $_.Exception.Message -Encoding UTF8 } catch {}
   if (Test-Path -LiteralPath $tempExe) { Remove-Item -LiteralPath $tempExe -Force -ErrorAction SilentlyContinue }
-  # The app exits shortly after starting this helper; wait before deciding
-  # whether recovery needs to relaunch the old executable.
-  while (Get-Process -Id $ParentPid -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 400 }
-  $running = Get-Process -Name ([IO.Path]::GetFileNameWithoutExtension($CurrentExe)) -ErrorAction SilentlyContinue
-  if (-not $running -and (Test-Path -LiteralPath $CurrentExe)) {
-    try { Start-Process -FilePath $CurrentExe } catch {}
+  # If installation had begun, restore service after the old process exits.
+  # A download/checksum failure happens before shutdown, so leave the app running.
+  if ($stoppedApp) {
+    $stopDeadline = (Get-Date).AddSeconds(15)
+    while (Get-Process -Id $ParentPid -ErrorAction SilentlyContinue) {
+      if ((Get-Date) -gt $stopDeadline) { break }
+      Start-Sleep -Milliseconds 400
+    }
+    $parentStillRunning = Get-Process -Id $ParentPid -ErrorAction SilentlyContinue
+    $running = Get-Process -Name ([IO.Path]::GetFileNameWithoutExtension($CurrentExe)) -ErrorAction SilentlyContinue
+    if (-not $parentStillRunning -and -not $running -and (Test-Path -LiteralPath $CurrentExe)) {
+      try { Start-Process -FilePath $CurrentExe } catch {}
+    }
   }
 } finally {
   if (Test-Path -LiteralPath $tempSum) { Remove-Item -LiteralPath $tempSum -Force -ErrorAction SilentlyContinue }
@@ -671,14 +687,9 @@ try {
             .spawn();
         match spawn_result {
             Ok(_) => {
-                // Let Axum flush the JSON response before shutting down.
-                thread::spawn(|| {
-                    thread::sleep(Duration::from_millis(1800));
-                    std::process::exit(0);
-                });
                 (StatusCode::OK, Json(json!({
                     "status": "starting",
-                    "message": "LocalChat will close, verify the update, and restart if successful."
+                    "message": "The update will be downloaded and verified first. LocalChat will close only when the replacement is ready."
                 }))).into_response()
             }
             Err(_) => {
