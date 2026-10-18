@@ -8,7 +8,7 @@ One ~5 MB binary. No accounts. No cloud. No telemetry.
 Double-click. Share the LAN URL. Done.
 
 [![Build](../../actions/workflows/build.yml/badge.svg)](../../actions/workflows/build.yml)
-[![Release](https://img.shields.io/github/v/release/BipulRaman/LocalChat?label=download)](../../releases/latest)
+[![Release](https://img.shields.io/github/v/release/mdimran-mrbd/LocalChat?label=download)](../../releases/latest)
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Platform: Windows](https://img.shields.io/badge/platform-Windows-informational)
 
@@ -130,6 +130,14 @@ CI publishes a single `LocalChat.exe` when you push a tag (`git tag v2.0.0 && gi
 - [ ] Searchable history
 
 PRs welcome.
+
+## Project ownership and credits
+
+**Maintainer:** [Md. Imran Islam](https://github.com/mdimran-mrbd)  
+**Source code for this build:** [mdimran-mrbd/LocalChat](https://github.com/mdimran-mrbd/LocalChat)
+
+This project is based on the original LocalChat created by [Bipul Raman](https://github.com/BipulRaman).  
+Original upstream repository: [BipulRaman/LocalChat](https://github.com/BipulRaman/LocalChat).
 
 ## License
 
