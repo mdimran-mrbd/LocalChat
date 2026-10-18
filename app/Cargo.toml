@@ -4,6 +4,7 @@ version     = "1.0.0"
 edition     = "2021"
 rust-version = "1.75"
 description = "LAN Instant Messenger — self-contained, tray-only, ultra-light"
+authors = ["Md. Imran Islam", "Bipul Raman"]
 license     = "MIT"
 default-run = "localchat"
 
