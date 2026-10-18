@@ -87,6 +87,62 @@ function toast(msg, ms = 2500) {
   toast._t = setTimeout(() => t.classList.add("hidden"), ms);
 }
 
+function compareVersions(a, b) {
+  const left = String(a || "0").replace(/^v/i, "").split(".").map((n) => parseInt(n, 10) || 0);
+  const right = String(b || "0").replace(/^v/i, "").split(".").map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < 3; i++) {
+    const diff = (left[i] || 0) - (right[i] || 0);
+    if (diff) return diff > 0 ? 1 : -1;
+  }
+  return 0;
+}
+
+async function checkForUpdates(currentVersion) {
+  // Only the host's own browser may offer the host executable update.
+  // Other users joining over the LAN must never see an action that restarts the server.
+  if (!["localhost", "127.0.0.1"].includes(location.hostname.toLowerCase())) return;
+  try {
+    const response = await fetch("https://api.github.com/repos/mdimran-mrbd/LocalChat/releases/latest", {
+      headers: { Accept: "application/vnd.github+json" }
+    });
+    if (!response.ok) return;
+    const release = await response.json();
+    const latest = String(release.tag_name || "").replace(/^v/i, "");
+    if (!latest || compareVersions(latest, currentVersion) <= 0) return;
+    const assets = Array.isArray(release.assets) ? release.assets : [];
+    if (!assets.some((a) => a.name === "LocalChat.exe") ||
+        !assets.some((a) => a.name === "SHA256SUMS.txt")) return;
+    $("updateVersion").textContent = latest;
+    $("updateBanner").classList.remove("hidden");
+  } catch {
+    // Offline / rate-limited checks are intentionally silent; chat still works.
+  }
+}
+
+$("updateNowBtn").addEventListener("click", async () => {
+  const button = $("updateNowBtn");
+  const status = $("updateStatus");
+  button.disabled = true;
+  button.textContent = "Preparing…";
+  status.textContent = "Downloading and verifying the release. LocalChat will restart.";
+  try {
+    const response = await fetch("/api/update/install", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-LocalChat-Update": "1" },
+      body: "{}"
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || "Could not start the update.");
+    button.textContent = "Restarting…";
+    status.textContent = "Update requested. LocalChat will close, verify the download, and restart if successful.";
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = "Update now";
+    status.textContent = "";
+    toast(error.message || "Update could not be started. You can download the release manually.");
+  }
+});
+
 // ── Per-server localStorage namespace ────────────────────────────────
 // Every LocalChat database stamps a stable `server_id` (UUID) at first
 // creation and returns it from /api/info. We keep ONE localStorage
@@ -386,6 +442,7 @@ const S = {
     const info = await fetch("/api/info").then((r) => r.json());
     bindServerId(info && info.server_id ? info.server_id : `origin:${location.host}`);
     S.hostname = (info && info.hostname) || "";
+    void checkForUpdates(info && info.version);
   } catch {
     bindServerId(`origin:${location.host}`);
   }
