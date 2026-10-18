@@ -145,7 +145,7 @@ async fn info(State(state): State<Arc<AppState>>) -> impl IntoResponse {
         .map(|v| v.trim_start_matches('v'))
         .filter(|v| !v.is_empty())
         .unwrap_or(env!("CARGO_PKG_VERSION"));
-    let build = option_env!("LOCALCHAT_BUILD").unwrap_or("1");
+    let build = option_env!("LOCALCHAT_BUILD").unwrap_or("dev");
     Json(json!({
         "addresses": crate::net::lan_addresses(),
         "hostname": hostname(),
