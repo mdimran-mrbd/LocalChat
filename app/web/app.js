@@ -442,6 +442,12 @@ const S = {
     const info = await fetch("/api/info").then((r) => r.json());
     bindServerId(info && info.server_id ? info.server_id : `origin:${location.host}`);
     S.hostname = (info && info.hostname) || "";
+    const versionLabel = $("appVersionLabel");
+    if (versionLabel) {
+      const version = (info && info.version) || "unknown";
+      const build = (info && info.build) || "dev";
+      versionLabel.textContent = `Version ${version} · Build ${build}`;
+    }
     void checkForUpdates(info && info.version);
   } catch {
     bindServerId(`origin:${location.host}`);
