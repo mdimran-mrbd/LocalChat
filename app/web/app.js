@@ -681,6 +681,8 @@ function handleEvent(e) {
     case "ch_created":   return onChannelCreated(e.channel);
     case "ch_info":      return onChannelInfo(e);
     case "ch_updated":   return onChannelUpdated(e);
+    case "ch_role_updated": return onChannelRoleUpdated(e);
+    case "ch_member_removed": return onChannelMemberRemoved(e);
     case "ch_notification_set": return onChannelNotificationSet(e);
     case "ch_invited":   return onChannelInvited(e);
     case "ch_deleted":   return onChannelDeleted(e.channel);
@@ -887,6 +889,16 @@ async function onWireMsg(m) {
     try {
       const id = JSON.parse(m.text).channel || m.channel;
       onChannelDeleted(id);
+    } catch {}
+    return;
+  }
+  if (m.username === "__ch_member_removed") {
+    try {
+      const data = JSON.parse(m.text);
+      if (data.forUserId === S.me?.id) {
+        onChannelDeleted(data.channel);
+        if (typeof toast === "function") toast("You were removed from the group.");
+      }
     } catch {}
     return;
   }
@@ -3944,6 +3956,21 @@ function onChannelUpdated(e) {
   ch.name = e.name || ch.name;
   if (S.active === e.channel && !$("channelInfoDrawer")?.classList.contains("hidden")) renderChannelInfo();
   if (typeof toast === "function") toast("Group details saved.");
+}
+function onChannelRoleUpdated(e) {
+  const ch = S.channels.get(e.channel);
+  if (!ch) return;
+  if (S.active === e.channel && !$("channelInfoDrawer")?.classList.contains("hidden")) sendOp({ op: "ch_info", channel: e.channel });
+}
+function onChannelMemberRemoved(e) {
+  if (e.userId === S.me?.id) {
+    onChannelDeleted(e.channel);
+    if (typeof toast === "function") toast("You were removed from the group.");
+    return;
+  }
+  const ch = S.channels.get(e.channel);
+  if (ch && Array.isArray(ch.members)) ch.members = ch.members.filter(id => id !== e.userId);
+  if (S.active === e.channel && !$("channelInfoDrawer")?.classList.contains("hidden")) sendOp({ op: "ch_info", channel: e.channel });
 }
 function onChannelNotificationSet(e) {
   const ch = S.channels.get(e.channel);
