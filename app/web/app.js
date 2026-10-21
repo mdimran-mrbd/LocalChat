@@ -534,6 +534,7 @@ const S = {
   mentions: new Map(),      // channelId → latest message ID mentioning me
   readMarks: new Map(),    // channelId → Map<userId, latestReadMsgId>
   unread: new Map(),       // channelId → count
+  unreadIndicators: new Map(), // channelId → { mention, reply }
   typing: new Map(),       // channelId → Map<userId, { username, until }>
   active: "pub:general",
   hasHistory: new Set(),   // channels we've requested history for
@@ -1119,9 +1120,14 @@ async function onWireMsg(m) {
   refreshOpenSharedItems(m.channel);
 
   const isMine = S.me && (m.userId === S.me.id || m.username === S.me.username);
+  let mentionMe = false;
+  let replyToMe = false;
   if (!isMine && m.kind !== "system") {
     notifyIncomingMessage(m);
-    if (await messageMentionsMe(m)) {
+    mentionMe = await messageMentionsMe(m);
+    const original = m.replyTo ? (S.msgs.get(m.channel) || []).find(x => String(x.id) === String(m.replyTo)) : null;
+    replyToMe = !!(original && (original.userId === S.me?.id || original.username === S.me?.username));
+    if (mentionMe) {
       S.mentions.set(m.channel, String(m.id));
       updateMentionBadge();
     }
@@ -1129,6 +1135,12 @@ async function onWireMsg(m) {
 
   if (m.channel !== S.active) {
     S.unread.set(m.channel, (S.unread.get(m.channel) || 0) + 1);
+    if (mentionMe || replyToMe) {
+      const flags = S.unreadIndicators.get(m.channel) || { mention: false, reply: false };
+      flags.mention = flags.mention || mentionMe;
+      flags.reply = flags.reply || replyToMe;
+      S.unreadIndicators.set(m.channel, flags);
+    }
     renderChannels();
   } else {
     // Force-scroll if the new message is from us, or if we're already near bottom.
@@ -1503,6 +1515,7 @@ function onChannelDeleted(id) {
   S.channels.delete(id);
   S.msgs.delete(id);
   S.unread.delete(id);
+  S.unreadIndicators.delete(id);
   S.typing.delete(id);
   if (S.active === id) {
     // Fall back to lobby (or first remaining channel).
@@ -1621,6 +1634,8 @@ function _channelItem(c) {
       el("div", { class: "chat-sub muted xs" },
         c.kind === "lobby" ? "lobby \u00b7 everyone" : (c.isPrivate ? "private channel" : "channel")),
     ]),
+    c.kind === "group" && S.unreadIndicators.get(c.id)?.mention ? el("span", { class: "chat-unread-signal mention-signal", title: "Unread mention", "aria-label": "Unread mention" }, "@") : null,
+    c.kind === "group" && S.unreadIndicators.get(c.id)?.reply ? el("span", { class: "chat-unread-signal reply-signal", title: "Unread reply to you", "aria-label": "Unread reply to you" }, "↩") : null,
     unread ? el("span", { class: "badge badge-unread" }, String(unread)) : null,
     el("button", { class: "chat-pin", type: "button", title: pinned ? "Unpin chat" : "Pin chat", "aria-label": pinned ? "Unpin chat" : "Pin chat", onclick: (ev) => { ev.stopPropagation(); toggleChatPin(c.id); } }, pinned ? "📌" : "📍"),
     canDelete ? el("button", {
@@ -1659,6 +1674,7 @@ function leaveChannel(channelId) {
   if (ch) S.channels.delete(channelId);
   S.msgs.delete(channelId);
   S.unread.delete(channelId);
+  S.unreadIndicators.delete(channelId);
   renderChannels();
   toast(`Left #${ch?.name || channelId}`);
 }
@@ -2469,6 +2485,7 @@ function switchChannel(id) {
   S.active = id;
   updateMentionBadge();
   S.unread.set(id, 0);
+  S.unreadIndicators.delete(id);
   if (S.replyTo && S.replyTo.channelId !== id) clearReplyTo();
   else renderReplyPreview();
   renderChannels();
