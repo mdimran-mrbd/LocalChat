@@ -865,6 +865,70 @@ async fn handle_op(
     let op = v.get("op").and_then(Value::as_str).ok_or("missing op")?;
 
     match op {
+        "poll_create" => {
+            let channel_id = v.get("channel").and_then(Value::as_str).ok_or("missing channel")?.to_compact_string();
+            let question = v.get("question").and_then(Value::as_str).unwrap_or("").trim();
+            let options_value = v.get("options").and_then(Value::as_array).ok_or("missing poll options")?;
+            let ch = state.channels.get(&channel_id).ok_or("no such channel")?;
+            if !can_send(&ch, &user_id) { return Err("not a member".into()); }
+            if ch.kind == ChannelKind::Dm { return Err("polls are only available in group chats".into()); }
+            if question.is_empty() || question.chars().count() > 180 { return Err("Poll question must be 1–180 characters".into()); }
+            if options_value.len() < 2 || options_value.len() > 10 { return Err("Polls need 2–10 options".into()); }
+            let mut options = Vec::new();
+            for item in options_value {
+                let option = item.as_str().unwrap_or("").trim();
+                if option.is_empty() || option.chars().count() > 100 { return Err("Each poll option must be 1–100 characters".into()); }
+                options.push(option.to_string());
+            }
+            let unique: std::collections::HashSet<String> = options.iter().map(|s| s.to_lowercase()).collect();
+            if unique.len() != options.len() { return Err("Poll options must be unique".into()); }
+            let user = state.users.get(&user_id).ok_or("user gone")?.clone();
+            let poll_text = format!("poll:v1:{}", json!({"question":question,"options":options}));
+            let msg = Arc::new(WireMsg {
+                id: state.next_msg_id(), channel: channel_id.clone(), kind: MsgKind::Text,
+                user_id: user_id.clone(), username: user.username.clone(), avatar: user.avatar.clone(),
+                color: user.color.clone(), ts: now_secs(), text: poll_text, file: None,
+                reply_to: None, edited_at: None, deleted: false,
+            });
+            ch.push_history(msg.clone()).await;
+            state.db.insert_message(&msg).await.map_err(|_| "could not save poll".to_string())?;
+            state.metrics.inc_messages();
+            let _ = ch.tx.send(msg);
+        }
+
+        "poll_vote" | "poll_state" => {
+            let channel_id = v.get("channel").and_then(Value::as_str).ok_or("missing channel")?.to_compact_string();
+            let message_id = v.get("msgId").and_then(Value::as_u64).ok_or("missing poll message")?;
+            let ch = state.channels.get(&channel_id).ok_or("no such channel")?;
+            if !can_send(&ch, &user_id) { return Err("not a member".into()); }
+            if ch.kind == ChannelKind::Dm { return Err("polls are only available in group chats".into()); }
+            let stored = state.db.tail_messages(&channel_id, 500).await.map_err(|_| "could not load poll".to_string())?;
+            let poll_msg = stored.iter().find(|m| m.id == message_id && !m.deleted).ok_or("poll not found")?;
+            let payload = poll_msg.text.strip_prefix("poll:v1:").ok_or("message is not a poll")?;
+            let poll: Value = serde_json::from_str(payload).map_err(|_| "invalid poll data")?;
+            let option_count = poll.get("options").and_then(Value::as_array).map(|a| a.len()).ok_or("invalid poll options")?;
+            if op == "poll_vote" {
+                let option_index = v.get("optionIndex").and_then(Value::as_u64).ok_or("missing option")? as usize;
+                if option_index >= option_count { return Err("invalid poll option".into()); }
+                let saved = state.db.cast_poll_vote(&channel_id, message_id, user_id.as_str(), option_index, now_secs()).await
+                    .map_err(|_| "could not save vote".to_string())?;
+                if !saved { return Err("poll is no longer available".into()); }
+            }
+            let (counts, mine) = state.db.poll_results(&channel_id, message_id, user_id.as_str(), option_count).await
+                .map_err(|_| "could not load poll results".to_string())?;
+            let event = json!({"ev":"poll_update","channel":channel_id,"msgId":message_id,"counts":counts,"userVote":mine});
+            let _ = sink.send(Message::Text(event.to_string())).await;
+            if op == "poll_vote" {
+                let update = json!({"channel":channel_id,"msgId":message_id,"counts":counts});
+                let _ = ch.tx.send(Arc::new(WireMsg {
+                    id: 0, channel: channel_id, kind: MsgKind::System, user_id: user_id.clone(),
+                    username: CompactString::const_new("__poll"), avatar: CompactString::const_new(""),
+                    color: CompactString::const_new(""), ts: now_secs(), text: update.to_string(),
+                    file: None, reply_to: None, edited_at: None, deleted: true,
+                }));
+            }
+        }
+
         "send" => {
             let channel_id = v
                 .get("channel")
