@@ -1905,12 +1905,12 @@ function renderChannels() {
   }
 
   if (S.sidebarMessageResults.length && q) {
-    const results = S.sidebarMessageResults.filter(item => String(item.message?.text || item.message?.file?.name || "").toLowerCase().includes(q));
+    const results = S.sidebarMessageResults.filter(item => String(item.snippet || item.message?.text || item.message?.file?.name || "").toLowerCase().includes(q));
     const resultItems = results.slice(0, 20).map(item => el("li", { class: "chat-item search-result-item", title: "Open matching message", onclick: () => openSidebarSearchResult(item) }, [
       el("div", { class: "avatar", style: "background:var(--brand)" }, "#"),
       el("div", { class: "chat-meta" }, [
         el("div", { class: "chat-name" }, item.channelName || item.channelId || "Channel"),
-        el("div", { class: "chat-sub muted xs" }, `${item.message?.username || "Member"}: ${String(item.message?.text || item.message?.file?.name || "Attachment").slice(0, 90)}`),
+        el("div", { class: "chat-sub muted xs" }, `${item.message?.username || "Member"}: ${String(item.snippet || item.message?.text || item.message?.file?.name || "Attachment").slice(0, 90)}`),
       ]),
     ]));
     root.append(_sbGroup("message-search-results", "Message matches", results.length, resultItems));
@@ -1936,12 +1936,40 @@ function handleSidebarSearchKeydown(event) {
   if (query.length < 2 || query.length > 100) { toast("Message search must be 2–100 characters."); return; }
   sendOp({ op: "search_all", query });
 }
-function onSearchAllResults(e) {
-  const query = String(e.query || "");
-  if (query.trim().toLowerCase() !== (S.sidebarFilter || "").trim().toLowerCase()) return;
-  S.sidebarMessageResults = Array.isArray(e.results) ? e.results : [];
+async function onSearchAllResults(e) {
+  const query = String(e.query || "").trim();
+  if (query.toLowerCase() !== (S.sidebarFilter || "").trim().toLowerCase()) return;
+  const results = Array.isArray(e.results) ? [...e.results] : [];
+  // Keep E2EE DMs out of server search. Search only the DM history already
+  // loaded on this device, decrypting in memory and never sending plaintext.
+  for (const channel of S.channels.values()) {
+    if (channel.kind !== "dm") continue;
+    const peer = dmPeer(channel);
+    if (!peer?.pubkey) continue;
+    for (const message of S.msgs.get(channel.id) || []) {
+      if (message.deleted || message.kind === "system") continue;
+      let text = String(message.text || "");
+      if (text.startsWith("e2e:v1:")) {
+        const decrypted = await E2EE.tryDecrypt(peer.id, peer.pubkey, text);
+        if (decrypted == null) continue;
+        text = decrypted;
+      }
+      let searchable = text;
+      if (message.kind === "file" && text.startsWith("{")) {
+        try {
+          const envelope = JSON.parse(text);
+          searchable = [envelope.name, envelope.originalName, envelope.fileName, envelope.caption].filter(Boolean).join(" ") || text;
+        } catch {}
+      }
+      if (searchable.toLowerCase().includes(query.toLowerCase())) {
+        results.push({ channelId: channel.id, channelName: peer.username || "Private chat", message, snippet: searchable, localOnly: true });
+      }
+    }
+  }
+  if (query.toLowerCase() !== (S.sidebarFilter || "").trim().toLowerCase()) return;
+  S.sidebarMessageResults = results.sort((x, y) => Number(y.message?.ts || 0) - Number(x.message?.ts || 0));
   renderChannels();
-  if (!S.sidebarMessageResults.length) toast("No message matches found in searchable channels.", 3000);
+  if (!S.sidebarMessageResults.length) toast("No matches found in searchable channels or locally loaded private-chat history.", 3500);
 }
 function openSidebarSearchResult(result) {
   const channelId = result?.channelId;
