@@ -448,11 +448,27 @@ const E2EE = {
     if (payload) {
       try { await this.restoreKeyBackup(password, payload); return true; }
       catch (error) {
-        this.backupReady = false;
         console.warn("Could not unlock the encrypted DM key backup", error);
-        toast("Your DM history backup could not be unlocked. Check whether your account password changed on another device.", 6000);
+        // If this device already has the established private key, it is safe
+        // to re-wrap it with the current password. Never overwrite a backup
+        // with a newly generated key that doesn't match the server identity.
+        if (S.me?.pubkey && S.me.pubkey === this.myPubStr()) {
+          const refreshed = await this.createKeyBackup(password);
+          if (refreshed) {
+            sendOp({ op: "key_backup_set", payload: refreshed });
+            this.backupReady = true;
+            return true;
+          }
+        }
+        this.backupReady = false;
+        toast("This device cannot unlock the old DM key. Sign in once on the device that can still read your old DMs to create a secure backup, then sign in here again.", 7000);
         return false;
       }
+    }
+    if (S.me?.pubkey && S.me.pubkey !== this.myPubStr()) {
+      this.backupReady = false;
+      toast("This device has a different DM key. Sign in on the device that can read your old DMs to create a secure backup first.", 7000);
+      return false;
     }
     const encrypted = await this.createKeyBackup(password);
     if (encrypted) { sendOp({ op: "key_backup_set", payload: encrypted }); this.backupReady = true; return true; }
@@ -2539,7 +2555,7 @@ async function renderMessage(m, { follow, peer, ch }) {
 
 function createPollPrompt() {
   const ch = S.channels.get(S.active);
-  if (!ch || ch.kind === "dm") { toast("Polls are available in group chats only."); return; }
+  if (!ch || ch.kind !== "group" || ch.id.startsWith("notes:")) { toast("Polls are available in group chats only."); return; }
   const question = prompt("Poll question (max 180 characters):");
   if (question == null) return;
   if (!question.trim()) { toast("Enter a poll question."); return; }
