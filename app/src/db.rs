@@ -796,6 +796,29 @@ impl Db {
         .await
     }
 
+    /// Older page of a channel, strictly before the supplied message ID.
+    /// Returns messages oldest → newest so the frontend can prepend safely.
+    pub async fn messages_before(&self, channel: &str, before_id: u64, limit: usize) -> rusqlite::Result<Vec<WireMsg>> {
+        let cid = channel.to_string();
+        self.with(move |c| {
+            let mut stmt = c.prepare(
+                "SELECT id, channel_id, user_id, username, avatar, color,
+                        kind, ts, text, reply_to, edited_at, deleted,
+                        file_id, file_name, file_size, file_mime, file_url
+                   FROM messages
+                  WHERE channel_id = ?1 AND id < ?2
+                  ORDER BY id DESC
+                  LIMIT ?3",
+            )?;
+            let rows = stmt.query_map(params![cid, before_id as i64, limit.min(500) as i64], row_to_message)?;
+            let mut out: Vec<WireMsg> = Vec::new();
+            for row in rows { out.push(row?); }
+            out.reverse();
+            Ok(out)
+        })
+        .await
+    }
+
     /// Search visible channel history by message text or attached file name.
     /// Results are newest first and capped by the caller.
     pub async fn message_exists_in_channel(&self, channel: &str, message_id: u64) -> rusqlite::Result<bool> {
