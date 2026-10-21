@@ -1103,6 +1103,18 @@ impl Db {
         }).await
     }
 
+    /// Load the stored text of a poll without scanning or loading the full chat history.
+    pub async fn poll_message_text(&self, channel: &str, message_id: u64) -> rusqlite::Result<Option<String>> {
+        let cid = channel.to_string();
+        self.with(move |c| {
+            c.query_row(
+                "SELECT text FROM messages WHERE id=?1 AND channel_id=?2 AND deleted=0",
+                params![message_id as i64, cid],
+                |r| r.get(0),
+            ).optional()
+        }).await
+    }
+
     /// Return per-option vote counts and the requesting user's selected option.
     pub async fn poll_results(&self, channel: &str, message_id: u64, user_id: &str, option_count: usize) -> rusqlite::Result<(Vec<u64>, Option<usize>)> {
         let cid = channel.to_string();
