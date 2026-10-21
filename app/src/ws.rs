@@ -280,6 +280,7 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
         last_seen: prior.as_ref().map(|p| p.last_seen).unwrap_or(0),
         last_connect: now_secs(),
         total_sessions: prior.as_ref().map(|p| p.total_sessions).unwrap_or(0) + 1,
+        designation: prior.as_ref().map(|p| p.designation.clone()).unwrap_or_default(),
     };
     state.users.insert(user_id.clone(), info.clone());
     state.known_users.insert(user_id.clone(), info.clone());
@@ -1444,6 +1445,21 @@ async fn handle_op(
                 edited_at: None,
                 deleted: false,
             }));
+        }
+
+        "designation_set" => {
+            let designation = v.get("designation").and_then(Value::as_str).ok_or("missing designation")?;
+            if !matches!(designation, "AM" | "TL" | "STL" | "QDE" | "LRD" | "EE" | "CSA") {
+                return Err("choose a valid designation".into());
+            }
+            let changed = state.db.set_user_designation(user_id.clone(), designation).await
+                .map_err(|_| "could not save designation".to_string())?;
+            if !changed { return Err("your designation has already been assigned".into()); }
+            let mut info = state.users.get(&user_id).map(|entry| entry.value().clone()).ok_or("user not found")?;
+            info.designation = designation.to_compact_string();
+            state.users.insert(user_id.clone(), info.clone());
+            state.known_users.insert(user_id.clone(), info);
+            broadcast_users(&state).await;
         }
 
         "ch_notification_set" => {
