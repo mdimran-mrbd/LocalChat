@@ -2933,3 +2933,19 @@ html, body.admin-shell { height: 100%; overflow: hidden; }
 .ci-media-tile .ci-item-footer .btn { width:100%; padding-inline:4px; font-size:10px; }
 .ci-view-all { grid-column:1 / -1; justify-self:stretch; }
 @media (max-width:520px) { .ci-media-grid { grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; } }
+
+
+/* Accessible hover/focus action for group photo changes. */
+
+.ci-avatar { position: relative; }
+.ci-avatar-edit {
+  position: absolute; right: 2px; bottom: 2px; width: 30px; height: 30px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 2px solid var(--panel, #fff); border-radius: 50%;
+  background: var(--fg-0, #374151); color: var(--panel, #fff);
+  cursor: pointer; opacity: 0; transform: translateY(2px);
+  transition: opacity .14s ease, transform .14s ease;
+}
+.ci-avatar:hover .ci-avatar-edit, .ci-avatar:focus-within .ci-avatar-edit { opacity: 1; transform: translateY(0); }
+.ci-avatar-edit:focus-visible { opacity: 1; outline: 2px solid var(--brand, #6366f1); outline-offset: 2px; }
+@media (hover: none) { .ci-avatar-edit { opacity: 1; transform: none; } }
