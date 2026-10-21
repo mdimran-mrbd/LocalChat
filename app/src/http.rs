@@ -265,6 +265,7 @@ async fn upload(
     let mut channel: Option<String> = None;
     let mut text: String = String::new();
     let mut client_id: Option<String> = None;
+    let mut purpose: Option<String> = None;
 
     let mut file_info: Option<FileInfo> = None;
     let mut file_size: u64 = 0;
@@ -290,6 +291,10 @@ async fn upload(
             }
             "client_id" => {
                 client_id = Some(field.text().await
+                    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?);
+            }
+            "purpose" => {
+                purpose = Some(field.text().await
                     .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?);
             }
             "file" => {
@@ -355,6 +360,56 @@ async fn upload(
     let user_id = session
         .as_deref()
         .and_then(|t| state.sessions.get(t).map(|e| e.value().clone()));
+
+    // Group-photo uploads are a separate authenticated operation: they
+    // update channel metadata and never create a chat message. The client
+    // resizes/crops first; the server still enforces strict size/type checks.
+    if purpose.as_deref() == Some("channel_photo") {
+        let (Some(uid), Some(ch_id)) = (user_id.clone(), channel.clone()) else {
+            let _ = tokio::fs::remove_file(state.uploads_dir.join(info.filename.as_str())).await;
+            return Err((StatusCode::UNAUTHORIZED, "session expired — refresh and try again".into()));
+        };
+        if file_size > 2 * 1024 * 1024 || !matches!(info.mime_type.as_str(), "image/webp" | "image/jpeg" | "image/png") {
+            let _ = tokio::fs::remove_file(state.uploads_dir.join(info.filename.as_str())).await;
+            return Err((StatusCode::BAD_REQUEST, "group photos must be JPEG, PNG, or WebP under 2 MB".into()));
+        }
+        let bytes = tokio::fs::read(state.uploads_dir.join(info.filename.as_str())).await
+            .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "could not verify image".into()))?;
+        let valid_signature = (bytes.starts_with(&[0x52, 0x49, 0x46, 0x46]) && bytes.get(8..12) == Some(b"WEBP"))
+            || bytes.starts_with(&[0xFF, 0xD8, 0xFF])
+            || bytes.starts_with(&[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+        if !valid_signature {
+            let _ = tokio::fs::remove_file(state.uploads_dir.join(info.filename.as_str())).await;
+            return Err((StatusCode::BAD_REQUEST, "uploaded content is not a supported image".into()));
+        }
+        let ch = state.channels.get(&ch_id)
+            .ok_or((StatusCode::BAD_REQUEST, "no such channel".into()))?;
+        if !matches!(ch.kind, crate::channel::ChannelKind::Group) {
+            let _ = tokio::fs::remove_file(state.uploads_dir.join(info.filename.as_str())).await;
+            return Err((StatusCode::BAD_REQUEST, "only groups can have a group photo".into()));
+        }
+        let role = state.db.member_role(&ch_id, uid.as_str()).await
+            .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "could not check group permissions".into()))?;
+        if ch.created_by != uid && role.as_deref() != Some("moderator") && role.as_deref() != Some("owner") {
+            let _ = tokio::fs::remove_file(state.uploads_dir.join(info.filename.as_str())).await;
+            return Err((StatusCode::FORBIDDEN, "only group owners and moderators can change the photo".into()));
+        }
+        let (name, description, old_photo) = state.db.channel_details(&ch_id).await
+            .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "could not load group details".into()))?
+            .ok_or((StatusCode::BAD_REQUEST, "group no longer exists".into()))?;
+        let photo_url = info.url.to_string();
+        state.db.update_channel_details(&ch_id, &name, &description, &photo_url).await
+            .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "could not save group photo".into()))?;
+        let uploaded_by_name = state.users.get(&uid).map(|u| u.username.to_string()).unwrap_or_default();
+        let _ = state.db.insert_upload(&info.filename, &info.original_name, info.mime_type.as_str(), file_size, Some(uid), &uploaded_by_name, now_secs()).await;
+        if old_photo.starts_with("/uploads/") && old_photo != photo_url {
+            let old_name = old_photo.trim_start_matches("/uploads/");
+            if !old_name.contains('/') && !old_name.contains('\\') {
+                let _ = tokio::fs::remove_file(state.uploads_dir.join(old_name)).await;
+            }
+        }
+        return Ok(Json(json!({ "photoUrl": photo_url })));
+    }
 
     // Always record the upload in the durable index for the admin
     // dashboard, regardless of whether a message was created.
