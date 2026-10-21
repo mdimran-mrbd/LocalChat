@@ -4832,6 +4832,15 @@ async function renderChannelInfoItems() {
   const messages = S.msgs.get(ch.id) || [];
   const items = [];
   const serverCache = peer ? null : _ciSharedCache.get(_ciSharedKey(ch.id, _channelInfoTab));
+  const serverCounts = serverCache?.counts;
+  const serverCountForTab = serverCounts
+    ? (_channelInfoTab === "media" ? serverCounts.media : _channelInfoTab === "links" ? serverCounts.links : serverCounts.files)
+    : 0;
+  // If the index reports matching items but this page is empty, use the
+  // locally loaded messages as a visible fallback instead of showing an
+  // empty list beside a non-zero count. This can happen after an older
+  // client/server cache or an interrupted index refresh.
+  const useLocalFallback = !!peer || !serverCache || (!serverCache.items.length && serverCountForTab > 0);
   if (!peer && serverCache) {
     for (const item of serverCache.items) {
       const mime = item.mimeType || "";
@@ -4846,7 +4855,7 @@ async function renderChannelInfoItems() {
       }
     }
   }
-  if (peer || !serverCache) for (const m of messages) {
+  if (useLocalFallback) for (const m of messages) {
     if (m.deleted || m.kind === "system") continue;
     let text = m.text || "";
     if (peer && text.startsWith("e2e:v1:")) {
