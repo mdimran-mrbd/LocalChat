@@ -1888,7 +1888,7 @@ function renderChannels() {
   } else if (tab === "mine") {
     // My channels and personal (DM) chats I've actually opened.
     root.append(_sbGroup("ch", "Channels", channels.length, channels.map(_channelItem)));
-    const personal = [...dmGroupedOnline, ...dmGroupedOffline];
+    const personal = [...dmGroupedOnline, ...dmGroupedOffline].sort(sortDm);
     root.append(_sbGroup("personal", "Personal", personal.length, personal.map(_dmItem)));
   } else {
     // All: channels + every DM + every person.
@@ -2085,7 +2085,8 @@ async function renderMessage(m, { follow, peer, ch }) {
     let quoteName = "message";
     let quoteColor = "var(--brand)";
     if (orig) {
-      quoteName = orig.username || quoteName;
+      const quoteProfile = S.userProfiles.get(orig.userId) || S.users.get(orig.userId);
+      quoteName = (orig.username || quoteName) + (quoteProfile?.designation ? " • " + quoteProfile.designation : "");
       quoteColor = orig.color || quoteColor;
       if (orig.deleted) {
         quoteText = "This message was deleted.";
@@ -4395,6 +4396,7 @@ function onChannelInfo(e) {
   ch.memberRoles = Object.fromEntries(profiles.map(m => [m.id, m.role || "member"]));
   for (const profile of profiles) { S.users.set(profile.id, profile); S.userProfiles.set(profile.id, profile); }
   renderChannels();
+  if (S.active === e.channel) renderStream();
   if (S.active === e.channel && !$("channelInfoDrawer")?.classList.contains("hidden")) {
     _ciNotificationMode = ch.notificationMode;
     renderChannelInfo();
