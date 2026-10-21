@@ -1336,6 +1336,27 @@ async fn handle_op(
             let _ = sink.send(Message::Text(out.to_string())).await;
         }
 
+        "ch_update" => {
+            let id = v.get("channel").and_then(Value::as_str).ok_or("missing channel")?;
+            let description = v.get("description").and_then(Value::as_str).unwrap_or("").trim();
+            let photo_url = v.get("photoUrl").and_then(Value::as_str).unwrap_or("").trim();
+            if description.chars().count() > 500 { return Err("description is too long (max 500 characters)".into()); }
+            if photo_url.len() > 2048 || (!photo_url.is_empty() && !(photo_url.starts_with("https://") || photo_url.starts_with("http://"))) {
+                return Err("photo URL must be an HTTP(S) URL under 2048 characters".into());
+            }
+            let ch = state.channels.get(id).ok_or("no such channel")?;
+            if !matches!(ch.kind, ChannelKind::Group) { return Err("only groups have editable details".into()); }
+            if ch.created_by != user_id { return Err("only the group owner can edit details".into()); }
+            let updated = state.db.update_channel_details(id, ch.name.as_str(), description, photo_url).await
+                .map_err(|_| "could not save group details".to_string())?;
+            if !updated { return Err("group no longer exists".into()); }
+            let (name, description, photo_url) = state.db.channel_details(id).await
+                .map_err(|_| "could not load updated group details".to_string())?
+                .unwrap_or_else(|| (ch.name.to_string(), description.to_string(), photo_url.to_string()));
+            let out = json!({"ev":"ch_updated","channel":id,"name":name,"description":description,"photoUrl":photo_url});
+            let _ = sink.send(Message::Text(out.to_string())).await;
+        }
+
         "ch_notification_set" => {
             let id = v.get("channel").and_then(Value::as_str).ok_or("missing channel")?;
             let mode = v.get("mode").and_then(Value::as_str).ok_or("missing mode")?;
