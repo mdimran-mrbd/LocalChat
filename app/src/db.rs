@@ -218,6 +218,7 @@ CREATE INDEX IF NOT EXISTS idx_admin_events_ts ON admin_events(ts DESC);
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SharedItem {
+    pub cursor: u64,
     pub message_id: u64,
     pub item_type: String,
     pub item_key: String,
@@ -1023,33 +1024,34 @@ impl Db {
 
     /// Cursor-paginated shared items, newest message first. Cursor is a
     /// message ID, so paging remains stable when timestamps collide.
-    pub async fn shared_items_page(&self, channel: &str, item_type: &str, before_id: Option<u64>, limit: usize) -> rusqlite::Result<Vec<SharedItem>> {
+    pub async fn shared_items_page(&self, channel: &str, item_type: &str, before_cursor: Option<u64>, limit: usize) -> rusqlite::Result<Vec<SharedItem>> {
         let cid = channel.to_string();
         let kind = item_type.to_string();
         self.with(move |c| {
             let mut stmt = c.prepare(
-                "SELECT si.message_id, si.item_type, si.item_key, si.created_at,
+                "SELECT si.rowid, si.message_id, si.item_type, si.item_key, si.created_at,
                         m.username, m.text, m.file_name, m.file_size, m.file_mime, m.file_url
                    FROM shared_items si
                    JOIN messages m ON m.id=si.message_id AND m.channel_id=si.channel_id
                   WHERE si.channel_id=?1 AND si.item_type=?2 AND m.deleted=0
-                    AND (?3 IS NULL OR si.message_id < ?3)
-                  ORDER BY si.message_id DESC, si.item_key ASC
+                    AND (?3 IS NULL OR si.rowid < ?3)
+                  ORDER BY si.rowid DESC
                   LIMIT ?4"
             )?;
             let rows = stmt.query_map(
-                params![cid, kind, before_id.map(|id| id as i64), limit.clamp(1, 100) as i64],
+                params![cid, kind, before_cursor.map(|id| id as i64), limit.clamp(1, 100) as i64],
                 |r| Ok(SharedItem {
-                    message_id: r.get::<_, i64>(0)? as u64,
-                    item_type: r.get(1)?,
-                    item_key: r.get(2)?,
-                    created_at: r.get::<_, i64>(3)? as u64,
-                    username: r.get(4)?,
-                    text: r.get(5)?,
-                    file_name: r.get(6)?,
-                    file_size: r.get::<_, Option<i64>>(7)?.map(|n| n.max(0) as u64),
-                    mime_type: r.get(8)?,
-                    url: r.get(9)?,
+                    cursor: r.get::<_, i64>(0)? as u64,
+                    message_id: r.get::<_, i64>(1)? as u64,
+                    item_type: r.get(2)?,
+                    item_key: r.get(3)?,
+                    created_at: r.get::<_, i64>(4)? as u64,
+                    username: r.get(5)?,
+                    text: r.get(6)?,
+                    file_name: r.get(7)?,
+                    file_size: r.get::<_, Option<i64>>(8)?.map(|n| n.max(0) as u64),
+                    mime_type: r.get(9)?,
+                    url: r.get(10)?,
                 })
             )?;
             let mut items = Vec::new();
