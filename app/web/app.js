@@ -20,7 +20,7 @@ function userNameNode(user) {
   }
   const root = el("span", { class: "user-name-display" });
   root.append(document.createTextNode(profile.username || "Unknown"));
-  if (profile.designation) root.append(el("span", { class: "user-designation" }, " • " + profile.designation));
+  if (profile.designation) root.append(el("span", { class: "user-designation" }, " • " + (profile.designation === "CSA" ? "Customer Service Advisor" : profile.designation)));
   return root;
 }
 
