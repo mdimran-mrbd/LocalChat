@@ -4386,6 +4386,7 @@ function renderChannelInfoMembers(members) {
 function onChannelInfo(e) {
   const ch = S.channels.get(e.channel);
   if (!ch) return;
+  ch.name = e.name || ch.name;
   ch.description = e.description || "";
   ch.photoUrl = e.photoUrl || "";
   ch.notificationMode = e.notificationMode || "all";
