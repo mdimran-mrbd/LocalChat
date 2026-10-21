@@ -146,20 +146,6 @@ function appendLinkedText(container, text, channelId = null) {
   }
   if (cursor < source.length) container.append(document.createTextNode(source.slice(cursor)));
 }
-function appendMessageLinkPreview(container, text) {
-  const item = extractChatUrls(text)[0];
-  if (!item) return;
-  let parsed; try { parsed = new URL(item.url); } catch { return; }
-  const preview = document.createElement("a");
-  preview.className = "message-link-preview"; preview.href = item.url;
-  preview.target = "_blank"; preview.rel = "noopener noreferrer";
-  const icon = document.createElement("span"); icon.className = "message-link-preview-icon"; icon.textContent = "↗";
-  const copy = document.createElement("span"); copy.className = "message-link-preview-copy";
-  const domain = document.createElement("strong"); domain.textContent = parsed.hostname.replace(/^www\./i, "");
-  const path = document.createElement("span"); path.textContent = parsed.pathname === "/" ? item.url : (parsed.pathname + parsed.search + parsed.hash);
-  copy.append(domain, path); preview.append(icon, copy); container.append(preview);
-}
-
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
@@ -682,40 +668,54 @@ function setStatus(kind, label) {
   pill.querySelector(".txt").textContent = label;
 }
 
-// ── Browser notifications (only while LocalChat is open) ──────────────
-const BROWSER_NOTIFICATIONS_KEY = "localchat-browser-notifications";
+// ── Browser notifications ─────────────────────────────────────────────
+// Permission is granted by the browser, but snooze is deliberately session-only:
+// reloading or signing in again resumes notifications automatically.
+let _browserNotificationSnoozedUntil = 0;
+let _browserNotificationSnoozeTimer = null;
 
 function browserNotificationsEnabled() {
-  try { return localStorage.getItem(BROWSER_NOTIFICATIONS_KEY) === "1"; }
-  catch { return false; }
+  return typeof Notification !== "undefined" &&
+    Notification.permission === "granted" &&
+    Date.now() >= _browserNotificationSnoozedUntil;
 }
 
 function updateBrowserNotificationButton() {
   const button = $("browserNotificationsBtn");
   if (!button) return;
-  const enabled = browserNotificationsEnabled() &&
-    typeof Notification !== "undefined" && Notification.permission === "granted";
+  const supported = "Notification" in window;
+  const granted = supported && Notification.permission === "granted";
+  const enabled = browserNotificationsEnabled();
+  const snoozed = granted && !enabled && Date.now() < _browserNotificationSnoozedUntil;
   button.classList.toggle("active", enabled);
-  button.title = enabled ? "Disable browser notifications" : "Enable browser notifications";
+  button.classList.toggle("snoozed", snoozed);
+  button.title = !supported ? "Browser notifications are not supported here"
+    : !granted ? (Notification.permission === "denied" ? "Notifications blocked by browser" : "Enable browser notifications")
+    : snoozed ? "Notifications snoozed" : "Browser notifications enabled";
   button.setAttribute("aria-label", button.title);
   button.setAttribute("aria-pressed", String(enabled));
-  // Make the state visible at a glance: crossed-out bell when disabled,
-  // regular bell when enabled. Keep the button's shape and sizing unchanged.
   button.innerHTML = enabled
     ? '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg>'
-    : '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/><path d="m3 3 18 18"/></svg>';
-  button.insertAdjacentHTML("beforeend", '<span>Browser notifications: ' + (enabled ? 'On' : 'Off') + '</span>');
+    : snoozed
+      ? '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/><circle cx="18" cy="18" r="4" fill="var(--bg-1)"/><path d="M18 16v2l1.2 1"/></svg>'
+      : '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/><path d="m3 3 18 18"/></svg>';
+  const menu = $("browserNotificationMenu");
+  if (menu) {
+    const enable = menu.querySelector('[data-notification-action="enable"]');
+    const resume = menu.querySelector('[data-notification-action="resume"]');
+    if (enable) enable.hidden = granted;
+    if (resume) resume.hidden = !snoozed;
+    menu.querySelectorAll("[data-snooze-minutes]").forEach(item => { item.hidden = !granted; });
+  }
 }
 
-async function toggleBrowserNotifications() {
+async function enableBrowserNotifications() {
   if (!("Notification" in window)) {
-    toast("This browser does not support desktop notifications.", 3500);
+    toast("This browser does not support desktop notifications.", 4000);
     return;
   }
-  if (browserNotificationsEnabled()) {
-    try { localStorage.setItem(BROWSER_NOTIFICATIONS_KEY, "0"); } catch {}
-    updateBrowserNotificationButton();
-    toast("Browser notifications disabled.");
+  if (!window.isSecureContext && !["localhost", "127.0.0.1", "::1"].includes(location.hostname)) {
+    toast("Browser notifications require HTTPS or LocalChat running on this device.", 5000);
     return;
   }
   if (Notification.permission === "denied") {
@@ -732,10 +732,56 @@ async function toggleBrowserNotifications() {
     updateBrowserNotificationButton();
     return;
   }
-  try { localStorage.setItem(BROWSER_NOTIFICATIONS_KEY, "1"); } catch {}
+  _browserNotificationSnoozedUntil = 0;
+  clearTimeout(_browserNotificationSnoozeTimer);
   updateBrowserNotificationButton();
-  toast("Browser notifications enabled. They appear for messages outside your current chat or when this tab is in the background.");
+  toast("Browser notifications are enabled. Snoozing lasts only until you sign out or reload LocalChat.");
 }
+
+function snoozeBrowserNotifications(minutes) {
+  const duration = Number(minutes);
+  if (![5, 30, 60, 480].includes(duration)) return;
+  if (typeof Notification === "undefined" || Notification.permission !== "granted") {
+    toast("Enable browser notifications first.", 3000);
+    return;
+  }
+  clearTimeout(_browserNotificationSnoozeTimer);
+  _browserNotificationSnoozedUntil = Date.now() + duration * 60 * 1000;
+  _browserNotificationSnoozeTimer = setTimeout(() => {
+    _browserNotificationSnoozedUntil = 0;
+    updateBrowserNotificationButton();
+    toast("Browser notifications resumed.");
+  }, duration * 60 * 1000);
+  updateBrowserNotificationButton();
+  toast("Browser notifications snoozed for " + (duration === 60 ? "1 hour" : duration === 480 ? "8 hours" : duration + " minutes") + ".");
+}
+
+function toggleBrowserNotifications() {
+  const menu = $("browserNotificationMenu");
+  if (menu) menu.hidden = !menu.hidden;
+}
+$("browserNotificationsBtn")?.addEventListener("click", ev => {
+  ev.stopPropagation();
+  toggleBrowserNotifications();
+});
+$("browserNotificationMenu")?.addEventListener("click", async ev => {
+  const action = ev.target.closest("button");
+  if (!action) return;
+  if (action.dataset.notificationAction === "enable") await enableBrowserNotifications();
+  else if (action.dataset.notificationAction === "resume") {
+    clearTimeout(_browserNotificationSnoozeTimer);
+    _browserNotificationSnoozedUntil = 0;
+    updateBrowserNotificationButton();
+    toast("Browser notifications resumed.");
+  } else if (action.dataset.snoozeMinutes) snoozeBrowserNotifications(action.dataset.snoozeMinutes);
+  $("browserNotificationMenu").hidden = true;
+});
+document.addEventListener("click", ev => {
+  if (!ev.target.closest("#browserNotificationControl") && $("browserNotificationMenu")) {
+    $("browserNotificationMenu").hidden = true;
+  }
+});
+Object.assign(window, { toggleBrowserNotifications, enableBrowserNotifications, snoozeBrowserNotifications });
 
 const _pendingBrowserNotifications = new Map();
 function notifyIncomingMessage(m) {
@@ -747,9 +793,10 @@ function notifyIncomingMessage(m) {
   const isDm = channel.kind === "dm";
   const chatName = isDm ? (dmPeer(channel)?.username || sender) : ("#" + (channel.name || "channel"));
   Promise.resolve(messageMentionsMe(m)).then(mentioned => {
-    if ((channel.notificationMode || "all") === "mentions" && !mentioned) return;
     const original = m.replyTo != null ? (S.msgs.get(m.channel) || []).find(x => String(x.id) === String(m.replyTo)) : null;
     const repliedToMe = !!original && (original.userId === S.me?.id || original.username === S.me?.username);
+    // "Mention or reply only" includes both notification types.
+    if ((channel.notificationMode || "all") === "mentions" && !mentioned && !repliedToMe) return;
     const detail = mentioned ? `${sender} mentioned you in ${chatName}`
       : repliedToMe ? `${sender} replied to your message in ${chatName}`
       : `New message from ${sender} in ${chatName}`;
@@ -2136,14 +2183,12 @@ async function renderMessage(m, { follow, peer, ch }) {
       const textNode = el("div", { class: "text" });
       appendLinkedText(textNode, displayText, m.channel);
       bubble.append(textNode);
-      appendMessageLinkPreview(bubble, displayText);
     }
   } else if (displayText) {
     const cls = isJumbo(displayText) ? "text jumbo" : "text";
     const textNode = el("div", { class: cls });
     appendLinkedText(textNode, displayText, m.channel);
     bubble.append(textNode);
-    appendMessageLinkPreview(bubble, displayText);
   }
 
   // Inline meta inside bubble: only ticks (own) + lock (E2EE). Time is in the header above.
@@ -4050,7 +4095,7 @@ async function renderChannelInfo() {
   const canEditPhoto = ch.kind === "group" && (ch.createdBy === S.me?.id || ch.memberRoles?.[S.me?.id] === "moderator" || ch.memberRoles?.[S.me?.id] === "owner");
   const description = ch.description || "";
   const canEditDescription = ch.kind === "group" && ch.createdBy === S.me?.id;
-  _ciNotificationMode = ch.notificationMode || _ciNotificationMode || "all";
+  _ciNotificationMode = ch.notificationMode || "all";
   root.innerHTML = `
     <section class="ci-profile">
       <div class="ci-avatar">${ch.photoUrl && !isDm ? `<img src="${_ciEsc(ch.photoUrl)}" alt="${_ciEsc(title)} group photo" loading="lazy">` : _ciEsc(profileAvatar)}${canEditPhoto ? '<button type="button" id="ciPhotoEditBtn" class="ci-avatar-edit" aria-label="Change group photo" title="Change group photo"><svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>' : ""}</div>
