@@ -1426,6 +1426,32 @@ async fn handle_op(
             let _ = sink.send(Message::Text(out.to_string())).await;
         }
 
+        "shared_items_list" => {
+            let id = v.get("channel").and_then(Value::as_str).ok_or("missing channel")?;
+            let item_type = v.get("type").and_then(Value::as_str).ok_or("missing type")?;
+            if !matches!(item_type, "media" | "link" | "file") { return Err("invalid shared item type".into()); }
+            let limit = v.get("limit").and_then(Value::as_u64).unwrap_or(48).clamp(1, 100) as usize;
+            let before_id = v.get("beforeId").and_then(Value::as_u64);
+            let ch = state.channels.get(id).ok_or("no such channel")?;
+            if !can_send(&ch, &user_id) { return Err("not a member".into()); }
+            let counts = state.db.shared_item_counts(id).await
+                .map_err(|_| "could not count shared items".to_string())?;
+            let items = state.db.shared_items_page(id, item_type, before_id, limit).await
+                .map_err(|_| "could not load shared items".to_string())?;
+            let has_more = items.len() == limit;
+            let next_cursor = items.last().map(|item| item.message_id);
+            let resp = json!({
+                "ev":"shared_items_list",
+                "channel":id,
+                "type":item_type,
+                "items":items,
+                "counts":{"media":counts.0,"links":counts.1,"files":counts.2},
+                "nextCursor":next_cursor,
+                "hasMore":has_more,
+            });
+            let _ = sink.send(Message::Text(resp.to_string())).await;
+        }
+
         "history_before" => {
             let id = v.get("channel").and_then(Value::as_str).ok_or("missing channel")?;
             let before_id = v.get("beforeId").and_then(Value::as_u64).ok_or("missing beforeId")?;
