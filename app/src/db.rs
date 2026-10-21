@@ -323,23 +323,12 @@ impl Db {
                 };
                 for (channel_id, message_id, ts, body) in link_rows {
                     for token in body.split_whitespace() {
-                        let candidate = token.trim_matches(|ch: char| matches!(ch, '(' | '[' | '{' | '<' | ')' | ']' | '}' | '>' | ',' | '.' | '!' | '?' | ';' | ':'));
-                        let lower = candidate.to_ascii_lowercase();
-                        let has_scheme = lower.starts_with("http://") || lower.starts_with("https://");
-                        let first_part = lower.split('/').next().unwrap_or("");
-                        let bare_domain = lower.starts_with("www.") || (
-                            first_part.split('.').count() >= 2 &&
-                            first_part.rsplit('.').next().map(|suffix| suffix.len() >= 2 && suffix.chars().all(|c| c.is_ascii_alphabetic())).unwrap_or(false)
-                        );
-                        if candidate.contains('.') && (has_scheme || bare_domain) {
-                            let normalized = if has_scheme { candidate.to_string() } else { format!("https://{candidate}") };
-                            if normalized.starts_with("http://") || normalized.starts_with("https://") {
-                                conn.execute(
-                                    "INSERT OR IGNORE INTO shared_items(channel_id,message_id,item_type,item_key,created_at)
-                                     VALUES(?1,?2,'link',?3,?4)",
-                                    params![channel_id, message_id, normalized, ts],
-                                )?;
-                            }
+                        if let Some(normalized) = normalize_shared_url_token(token) {
+                            conn.execute(
+                                "INSERT OR IGNORE INTO shared_items(channel_id,message_id,item_type,item_key,created_at)
+                                 VALUES(?1,?2,'link',?3,?4)",
+                                params![channel_id, message_id, normalized, ts],
+                            )?;
                         }
                     }
                 }
@@ -995,20 +984,12 @@ impl Db {
                 }
                 if matches!(m.kind, MsgKind::Text) && !m.text.starts_with("e2e:v1:") {
                     for token in m.text.split_whitespace() {
-                        let candidate = token.trim_matches(|ch: char| matches!(ch, '(' | '[' | '{' | '<' | ')' | ']' | '}' | '>' | ',' | '.' | '!' | '?' | ';' | ':'));
-                        let lower = candidate.to_ascii_lowercase();
-                        let has_scheme = lower.starts_with("http://") || lower.starts_with("https://");
-                        let bare_domain = lower.starts_with("www.") || lower.split('/').next().unwrap_or("").split('.').count() >= 2
-                            && lower.split('/').next().unwrap_or("").rsplit('.').next().map(|s| s.len() >= 2 && s.chars().all(|c| c.is_ascii_alphabetic())).unwrap_or(false);
-                        if candidate.contains('.') && (has_scheme || bare_domain) {
-                            let normalized = if has_scheme { candidate.to_string() } else { format!("https://{candidate}") };
-                            if normalized.starts_with("http://") || normalized.starts_with("https://") {
-                                c.execute(
-                                    "INSERT OR IGNORE INTO shared_items(channel_id,message_id,item_type,item_key,created_at)
-                                     VALUES(?1,?2,'link',?3,?4)",
-                                    params![m.channel.as_str(), m.id as i64, normalized, m.ts as i64],
-                                )?;
-                            }
+                        if let Some(normalized) = normalize_shared_url_token(token) {
+                            c.execute(
+                                "INSERT OR IGNORE INTO shared_items(channel_id,message_id,item_type,item_key,created_at)
+                                 VALUES(?1,?2,'link',?3,?4)",
+                                params![m.channel.as_str(), m.id as i64, normalized, m.ts as i64],
+                            )?;
                         }
                     }
                 }
@@ -1282,6 +1263,56 @@ impl Db {
         })
         .await
     }
+}
+
+// Normalize the same common URL forms used by the chat renderer for
+// persistent group shared-link indexing. Direct-message bodies never call
+// this helper; those remain end-to-end encrypted and unindexed.
+fn normalize_shared_url_token(token: &str) -> Option<String> {
+    let candidate = token.trim_matches(|ch: char| {
+        matches!(ch, '(' | '[' | '{' | '<' | ')' | ']' | '}' | '>' | ',' | '.' | '!' | '?' | ';' | ':' | '"' | '\'')
+    });
+    if candidate.is_empty() || candidate.chars().any(char::is_whitespace) {
+        return None;
+    }
+
+    let lower = candidate.to_ascii_lowercase();
+    let has_scheme = lower.starts_with("http://") || lower.starts_with("https://");
+    let authority = if has_scheme {
+        candidate.split_once("://").map(|(_, rest)| rest)?
+    } else {
+        candidate
+    };
+    let host_port = authority.split(|ch| ch == '/' || ch == '?' || ch == '#').next()?;
+    if host_port.is_empty() || host_port.contains('@') {
+        return None;
+    }
+    let hostname = host_port.split(':').next().unwrap_or("");
+    if !hostname.contains('.') {
+        return None;
+    }
+
+    if !has_scheme {
+        let labels: Vec<&str> = hostname.split('.').collect();
+        if labels.len() < 2 || labels.iter().any(|label| {
+            label.is_empty()
+                || label.starts_with('-')
+                || label.ends_with('-')
+                || !label.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '-')
+        }) {
+            return None;
+        }
+        let suffix = labels.last().copied().unwrap_or("");
+        if !(2..=24).contains(&suffix.len()) || !suffix.chars().all(|ch| ch.is_ascii_alphabetic()) {
+            return None;
+        }
+    }
+
+    Some(if has_scheme {
+        candidate.to_string()
+    } else {
+        format!("https://{candidate}")
+    })
 }
 
 fn msg_kind_str(k: MsgKind) -> &'static str {
