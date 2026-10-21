@@ -2889,3 +2889,10 @@ html, body.admin-shell { height: 100%; overflow: hidden; }
   .channel-info-drawer { width:100vw; border-left:0; }
   .channel-info-content { padding:15px; }
 }
+
+
+/* Chat Info group profile editor */
+.ci-edit-group { display:flex; flex-direction:column; gap:8px; margin-top:14px; padding-top:12px; border-top:1px solid var(--border, rgba(128,128,128,.25)); }
+.ci-edit-group label { font-size:12px; font-weight:600; color:var(--muted, #777); }
+.ci-edit-group input, .ci-edit-group textarea { width:100%; box-sizing:border-box; border:1px solid var(--border, rgba(128,128,128,.3)); border-radius:8px; padding:9px 10px; color:var(--text, inherit); background:var(--panel, transparent); font:inherit; font-size:13px; resize:vertical; }
+.ci-edit-group button { align-self:flex-start; }
