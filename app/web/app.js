@@ -4046,11 +4046,12 @@ function onChannelNotificationSet(e) {
   if (select) select.value = _ciNotificationMode;
 }
 
+let _ciShowAllItems = false;
 async function renderChannelInfoItems() {
   const root = $("ciSharedItems");
   const ch = S.channels.get(S.active);
   if (!root || !ch) return;
-  root.innerHTML = "";
+  root.replaceChildren();
   const peer = ch.kind === "dm" ? _ciPeer(ch) : null;
   const messages = S.msgs.get(ch.id) || [];
   const items = [];
@@ -4063,31 +4064,64 @@ async function renderChannelInfoItems() {
       text = plain;
     }
     if (_channelInfoTab === "files" && m.file) {
-      items.push({ type: "file", id: m.id, ts: m.ts, sender: m.username, title: m.file.originalName || m.file.filename || "Attachment", detail: m.file.mimeType || "File", url: m.file.url, icon: (m.file.mimeType || "").startsWith("image/") ? "🖼️" : (m.file.mimeType || "").startsWith("video/") ? "🎬" : "📄" });
+      const mime = m.file.mimeType || "";
+      items.push({ type: "file", id: m.id, ts: m.ts, sender: m.username, title: m.file.originalName || m.file.filename || "Attachment", detail: mime || "File", url: m.file.url, size: m.file.size, icon: mime.startsWith("image/") ? "🖼️" : mime.startsWith("video/") ? "🎬" : "📄" });
     }
     if (_channelInfoTab === "media" && m.file && /^(image\/|video\/)/i.test(m.file.mimeType || "")) {
-      items.push({ type: "media", id: m.id, ts: m.ts, sender: m.username, title: m.file.originalName || "Media", detail: m.file.mimeType || "Media", url: m.file.url, icon: (m.file.mimeType || "").startsWith("video/") ? "🎬" : "🖼️" });
+      const mime = m.file.mimeType || "";
+      items.push({ type: "media", id: m.id, ts: m.ts, sender: m.username, title: "Media", detail: mime || "Media", url: m.file.url, icon: mime.startsWith("video/") ? "🎬" : "🖼️" });
     }
     if (_channelInfoTab === "links") {
       for (const found of extractChatUrls(text)) {
-        items.push({ type: "link", id: m.id, ts: m.ts, sender: m.username, title: found.raw, detail: new URL(found.url).hostname, url: found.url, icon: "🔗" });
+        let hostname = "";
+        try { hostname = new URL(found.url).hostname; } catch (_) {}
+        items.push({ type: "link", id: m.id, ts: m.ts, sender: m.username, title: hostname || found.raw, detail: found.raw, url: found.url, icon: "🔗" });
       }
     }
   }
   items.sort((a,b) => (b.ts || 0) - (a.ts || 0));
   if (!items.length) {
-    root.innerHTML = '<div class="ci-empty">No ' + (_channelInfoTab === "media" ? "media" : _channelInfoTab) + ' found in the currently loaded messages.</div>';
+    const empty = document.createElement("div");
+    empty.className = "ci-empty";
+    empty.textContent = "No " + (_channelInfoTab === "media" ? "media" : _channelInfoTab) + " found in the currently loaded messages.";
+    root.append(empty);
     return;
   }
-  for (const item of items) {
-    const card = document.createElement("article"); card.className = "ci-item";
-    const icon = document.createElement("div"); icon.className = "ci-item-icon"; icon.textContent = item.icon;
+  const isMedia = _channelInfoTab === "media";
+  const shown = _ciShowAllItems ? items : items.slice(0, isMedia ? 12 : 6);
+  if (isMedia) root.classList.add("ci-media-grid"); else root.classList.remove("ci-media-grid");
+  for (const item of shown) {
+    const card = document.createElement("article");
+    card.className = isMedia ? "ci-item ci-media-tile" : "ci-item";
+    if (isMedia && item.url && (item.detail || "").startsWith("image/")) {
+      const thumb = document.createElement("img");
+      thumb.className = "ci-media-thumb";
+      thumb.src = item.url;
+      thumb.alt = "Shared image";
+      thumb.loading = "lazy";
+      thumb.decoding = "async";
+      thumb.referrerPolicy = "no-referrer";
+      thumb.addEventListener("error", () => { thumb.removeAttribute("src"); thumb.alt = "Image preview unavailable"; });
+      card.append(thumb);
+    } else {
+      const icon = document.createElement("div"); icon.className = "ci-item-icon"; icon.textContent = item.icon; card.append(icon);
+    }
     const main = document.createElement("div"); main.className = "ci-item-main";
-    const title = document.createElement("div"); title.className = "ci-item-title"; title.textContent = item.title;
-    const sub = document.createElement("div"); sub.className = "ci-item-sub"; sub.textContent = (item.sender || "Unknown") + " · " + new Date((item.ts || 0) * 1000).toLocaleString();
-    main.append(title, sub);
+    if (!isMedia || _ciShowAllItems) {
+      const title = document.createElement("div"); title.className = "ci-item-title";
+      title.textContent = item.type === "media" ? "Shared media" : item.title;
+      main.append(title);
+    }
+    const sub = document.createElement("div"); sub.className = "ci-item-sub";
+    sub.textContent = (item.sender || "Unknown") + " · " + new Date((item.ts || 0) * 1000).toLocaleString();
+    main.append(sub);
     if (item.type === "link") {
-      const link = document.createElement("a"); link.className = "ci-item-link"; link.href = item.url; link.target = "_blank"; link.rel = "noopener noreferrer"; link.textContent = item.url; main.append(link);
+      const link = document.createElement("a"); link.className = "ci-item-link"; link.href = item.url; link.target = "_blank"; link.rel = "noopener noreferrer"; link.textContent = item.detail; link.setAttribute("aria-label", "Open " + item.title); main.append(link);
+    }
+    if (item.type === "file" && item.size != null) {
+      const size = document.createElement("div"); size.className = "ci-item-sub";
+      size.textContent = Number(item.size) < 1024 ? item.size + " B" : (Number(item.size) / 1024).toFixed(1) + " KB";
+      main.append(size);
     }
     const footer = document.createElement("div"); footer.className = "ci-item-footer";
     const view = document.createElement("button"); view.type = "button"; view.className = "btn btn-ghost btn-sm"; view.textContent = "View in chat";
@@ -4104,7 +4138,15 @@ async function renderChannelInfoItems() {
         else sendOp({ op: "history_before", channel: channelId, beforeId: Number(loadedMessages[0].id), limit: 100 });
       }
     });
-    footer.append(view); main.append(footer); card.append(icon, main); root.append(card);
+    footer.append(view); main.append(footer); card.append(main); root.append(card);
+  }
+  if (items.length > shown.length) {
+    const more = document.createElement("button");
+    more.type = "button";
+    more.className = "btn btn-ghost btn-sm ci-view-all";
+    more.textContent = _ciShowAllItems ? "Show less" : "View all " + items.length + " items";
+    more.addEventListener("click", () => { _ciShowAllItems = !_ciShowAllItems; renderChannelInfoItems(); });
+    root.append(more);
   }
 }
 document.addEventListener("keydown", event => {
