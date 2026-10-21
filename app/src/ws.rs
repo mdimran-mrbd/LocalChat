@@ -1294,12 +1294,14 @@ async fn handle_op(
             let (name, description, photo_url) = state.db.channel_details(id).await
                 .map_err(|_| "could not load chat details".to_string())?
                 .unwrap_or_else(|| (ch.name.to_string(), String::new(), String::new()));
+            let member_ids: Vec<String> = ch.members.iter().map(|uid| uid.key().to_string()).collect();
             let mut members = Vec::new();
-            for uid in ch.members.iter() {
-                let profile = state.users.get(uid.key()).or_else(|| state.known_users.get(uid.key()));
-                let role = state.db.member_role(id, uid.key().as_str()).await
+            for uid in member_ids {
+                let profile = state.users.get(uid.as_str()).map(|p| p.value().clone())
+                    .or_else(|| state.known_users.get(uid.as_str()).map(|p| p.value().clone()));
+                let role = state.db.member_role(id, &uid).await
                     .ok().flatten().unwrap_or_else(|| {
-                        if uid.key().as_str() == ch.created_by.as_str() { "owner".to_string() }
+                        if uid == ch.created_by.as_str() { "owner".to_string() }
                         else { "member".to_string() }
                     });
                 if let Some(profile) = profile {
@@ -1308,11 +1310,11 @@ async fn handle_op(
                         "username": profile.username,
                         "avatar": profile.avatar,
                         "color": profile.color,
-                        "online": state.users.contains_key(uid.key()),
+                        "online": state.users.contains_key(uid.as_str()),
                         "role": role
                     }));
                 } else {
-                    members.push(json!({"id": uid.key(), "username":"Offline member", "avatar":"", "color":"", "online":false, "role":role}));
+                    members.push(json!({"id": uid, "username":"Offline member", "avatar":"", "color":"", "online":false, "role":role}));
                 }
             }
             members.sort_by(|a, b| a.get("username").and_then(Value::as_str).unwrap_or("").to_lowercase()
