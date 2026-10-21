@@ -164,10 +164,22 @@ async function checkForUpdates(currentVersion, currentBuild) {
         !assets.some((a) => a.name === "SHA256SUMS.txt")) return;
     $("updateVersion").textContent = latest;
     $("updateBanner").classList.remove("hidden");
+    scheduleUpdateBannerDismiss();
   } catch {
     // Offline / rate-limited checks are intentionally silent; chat still works.
   }
 }
+
+let _updateBannerTimer = null;
+function dismissUpdateBanner() { clearTimeout(_updateBannerTimer); $("updateBanner")?.classList.add("hidden"); }
+function scheduleUpdateBannerDismiss() {
+  clearTimeout(_updateBannerTimer);
+  _updateBannerTimer = setTimeout(() => {
+    const status = $("updateStatus")?.textContent || "";
+    if (!/Downloading|Update requested|restart|Preparing/i.test(status)) dismissUpdateBanner();
+  }, 12000);
+}
+$("dismissUpdateBanner")?.addEventListener("click", dismissUpdateBanner);
 
 // Update checks are explicitly opt-in; the install action remains separately user-confirmed.
 const updateChecksOptIn = $("updateChecksOptIn");
@@ -182,6 +194,7 @@ if (updateChecksOptIn) {
       } else {
         localStorage.removeItem("localchat-update-checks");
         $("updateBanner").classList.add("hidden");
+        clearTimeout(_updateBannerTimer);
         $("updateStatus").textContent = "";
       }
     } catch {
@@ -193,6 +206,7 @@ if (updateChecksOptIn) {
 $("updateNowBtn").addEventListener("click", async () => {
   const button = $("updateNowBtn");
   const status = $("updateStatus");
+  clearTimeout(_updateBannerTimer);
   button.disabled = true;
   button.textContent = "Preparing…";
   status.textContent = "Downloading and verifying the release. LocalChat will restart.";
@@ -3965,19 +3979,20 @@ async function renderChannelInfo() {
   const profileAvatar = isDm ? (peer?.avatar || "?") : (title.slice(0,1).toUpperCase() || "#");
   const canEditPhoto = ch.kind === "group" && (ch.createdBy === S.me?.id || ch.memberRoles?.[S.me?.id] === "moderator" || ch.memberRoles?.[S.me?.id] === "owner");
   const description = ch.description || "";
+  const canEditDescription = ch.kind === "group" && ch.createdBy === S.me?.id;
   _ciNotificationMode = ch.notificationMode || _ciNotificationMode || "all";
   root.innerHTML = `
     <section class="ci-profile">
-      <div class="ci-avatar">${ch.photoUrl && !isDm ? `<img src="${_ciEsc(ch.photoUrl)}" alt="${_ciEsc(title)} group photo" loading="lazy">` : _ciEsc(profileAvatar)}${canEditPhoto ? '<button type="button" id="ciPhotoEditBtn" class="ci-avatar-edit" aria-label="Change group photo" title="Change group photo">✎</button>' : ""}</div>
+      <div class="ci-avatar">${ch.photoUrl && !isDm ? `<img src="${_ciEsc(ch.photoUrl)}" alt="${_ciEsc(title)} group photo" loading="lazy">` : _ciEsc(profileAvatar)}${canEditPhoto ? '<button type="button" id="ciPhotoEditBtn" class="ci-avatar-edit" aria-label="Change group photo" title="Change group photo"><svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>' : ""}</div>
       ${canEditPhoto ? '<input id="ciPhotoFileInput" type="file" accept="image/png,image/jpeg,image/webp" hidden aria-label="Choose group photo">' : ""}
       <div class="ci-name">${_ciEsc(title)}</div>
       <div class="ci-subtitle">${isDm ? "Direct message · End-to-end encryption when available" : (ch.kind === "lobby" ? "Public channel" : (ch.isPrivate ? "Private group" : "Group conversation")) + " · " + members.length + " member" + (members.length === 1 ? "" : "s")}</div>
-      ${!isDm && ch.kind !== "lobby" ? `<div class="ci-description">${_ciEsc(description || "No group description yet.")}</div>` : ""}
-      ${!isDm && ch.kind === "group" && ch.createdBy === S.me?.id ? `
-        <form id="ciEditGroupForm" class="ci-edit-group">
+      ${!isDm && ch.kind !== "lobby" ? `<div class="ci-description-row"><div class="ci-description" id="ciDescriptionText">${_ciEsc(description || "No group description yet.")}</div>${canEditDescription ? '<button type="button" id="ciDescriptionEditBtn" class="ci-description-edit" aria-label="Edit group description" title="Edit description"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>' : ""}</div>` : ""}
+      ${canEditDescription ? `
+        <form id="ciEditGroupForm" class="ci-edit-group" hidden>
           <label for="ciDescriptionInput">Group description</label>
           <textarea id="ciDescriptionInput" maxlength="500" rows="3" placeholder="Add a group description…">${_ciEsc(description)}</textarea>
-          <button class="btn btn-primary btn-sm" type="submit">Save description</button>
+          <div class="ci-edit-group-actions"><button class="btn btn-ghost btn-sm" type="button" id="ciCancelDescriptionEdit">Cancel</button><button class="btn btn-primary btn-sm" type="submit">Save description</button></div>
         </form>` : ""}
     </section>
     <section class="ci-section">
@@ -4014,11 +4029,13 @@ async function renderChannelInfo() {
     await renderChannelInfoItems();
   }));
   const editForm = $("ciEditGroupForm");
-  if (editForm) editForm.addEventListener("submit", ev => {
-    ev.preventDefault();
-    const descriptionInput = $("ciDescriptionInput");
-    sendOp({ op: "ch_update", channel: ch.id, description: descriptionInput?.value || "" });
-  });
+  const descriptionEditButton = $("ciDescriptionEditBtn");
+  const descriptionInput = $("ciDescriptionInput");
+  if (editForm && descriptionEditButton) {
+    descriptionEditButton.addEventListener("click", () => { editForm.hidden = false; descriptionEditButton.setAttribute("aria-expanded", "true"); descriptionInput?.focus(); });
+    $("ciCancelDescriptionEdit")?.addEventListener("click", () => { if (descriptionInput) descriptionInput.value = ch.description || ""; editForm.hidden = true; descriptionEditButton.setAttribute("aria-expanded", "false"); });
+    editForm.addEventListener("submit", ev => { ev.preventDefault(); sendOp({ op: "ch_update", channel: ch.id, description: descriptionInput?.value || "" }); });
+  }
   const photoEditButton = $("ciPhotoEditBtn");
   const photoInput = $("ciPhotoFileInput");
   if (photoEditButton && photoInput) {
@@ -4083,12 +4100,11 @@ function renderChannelInfoMembers(members) {
         menu.append(message);
       }
       if (canManageMember && isOwner) {
-        const roleLabel = document.createElement("label"); roleLabel.className = "ci-member-menu-label"; roleLabel.textContent = "Role";
-        const roleSelect = document.createElement("select"); roleSelect.className = "ci-role-select"; roleSelect.setAttribute("aria-label", "Role for " + (u.username || "member"));
-        roleSelect.innerHTML = '<option value="member">Member</option><option value="moderator">Moderator</option>';
-        roleSelect.value = u.role === "moderator" ? "moderator" : "member";
-        roleSelect.addEventListener("change", () => { sendOp({ op: "ch_role_set", channel: activeChannel.id, userId: u.id, role: roleSelect.value }); closeMenu(); });
-        roleLabel.append(roleSelect); menu.append(roleLabel);
+        const roleAction = document.createElement("button"); roleAction.type = "button"; roleAction.className = "ci-member-menu-item";
+        const isModerator = u.role === "moderator";
+        roleAction.textContent = isModerator ? "Remove as moderator" : "Assign as moderator";
+        roleAction.addEventListener("click", () => { sendOp({ op: "ch_role_set", channel: activeChannel.id, userId: u.id, role: isModerator ? "member" : "moderator" }); closeMenu(); });
+        menu.append(roleAction);
       }
       if (canManageMember) {
         const remove = document.createElement("button"); remove.type = "button"; remove.className = "ci-member-menu-item danger"; remove.textContent = "Remove member";
@@ -4351,13 +4367,13 @@ async function renderChannelInfoItems() {
     return;
   }
   const type = _channelInfoTab;
-  const limit = type === "links" ? 2 : 6;
+  const limit = 4;
   const isMedia = type === "media";
   root.classList.add("ci-media-grid");
   root.classList.toggle("ci-links-grid", type === "links");
   root.classList.toggle("ci-files-grid", type === "files");
-  const shown = items.slice(0, limit);
   const needsMore = items.length > limit || !!serverCache?.hasMore;
+  const shown = items.slice(0, needsMore ? limit - 1 : limit);
   const makeTile = (item) => {
     const card = document.createElement("article"); card.className = "ci-item ci-preview-tile";
     const open = document.createElement("button"); open.type = "button"; open.className = "ci-preview-open";
