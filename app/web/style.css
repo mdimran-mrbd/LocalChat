@@ -3334,3 +3334,6 @@ body.poll-modal-open { overflow:hidden; }
   .composer textarea { padding:9px 12px; }
   .poll-create-panel { width:calc(100vw - 20px); }
 }
+
+.chat-pin svg { display:block; }
+.chat-pin-mark svg { display:inline-block; vertical-align:-2px; }
