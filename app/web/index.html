@@ -542,6 +542,34 @@
   </div>
 
   <!-- Chat information drawer -->
+  <div id="settingsBackdrop" class="settings-backdrop hidden" onclick="closeSettingsPanel()" aria-hidden="true"></div>
+  <aside id="settingsPanel" class="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settingsTitle" aria-hidden="true">
+    <header class="settings-head">
+      <div><h2 id="settingsTitle">Settings</h2><p class="muted sm">Your LocalChat account and preferences</p></div>
+      <button type="button" class="icon-btn settings-close" onclick="closeSettingsPanel()" aria-label="Close settings">×</button>
+    </header>
+    <div class="settings-content">
+      <section class="settings-section">
+        <h3>Profile</h3>
+        <form id="profileSettingsForm" onsubmit="submitProfileSettings(event)">
+          <label class="field"><span>Username</span><input id="profileUsername" minlength="3" maxlength="24" required autocomplete="username" pattern="[A-Za-z0-9][A-Za-z0-9_.-]{2,23}"></label>
+          <label class="field"><span>Designation</span><select id="profileDesignation" required>
+            <option value="AM">Assistant Manager - AM</option><option value="TL">Team Leader - TL</option>
+            <option value="STL">Senior Team Leader - STL</option><option value="QDE">Quality Development Executive - QDE</option>
+            <option value="LRD">Learning &amp; Resource Development Lead - LRD</option><option value="EE">Escalation Executive - EE</option>
+            <option value="CSA">Customer Service Advisor</option>
+          </select></label>
+          <p id="profileSettingsStatus" class="status" role="status" aria-live="polite"></p>
+          <button id="profileSettingsSave" type="submit" class="btn btn-primary">Save profile</button>
+        </form>
+      </section>
+      <section class="settings-section"><h3>Appearance</h3><button id="themeToggle" class="settings-action" type="button" onclick="toggleTheme()">Toggle theme</button></section>
+      <section class="settings-section"><h3>Notifications</h3><div id="settingsNotificationsSlot"></div></section>
+      <section class="settings-section"><h3>Account security</h3><button class="settings-action" type="button" onclick="openChangePasswordModal({ forced: false }); closeSettingsPanel();">Change password</button></section>
+      <section class="settings-section"><button class="settings-action danger" type="button" onclick="signOut()">Sign out</button></section>
+    </div>
+  </aside>
+
   <div id="channelInfoBackdrop" class="channel-info-backdrop hidden" onclick="closeChannelInfo()" aria-hidden="true"></div>
   <aside id="channelInfoDrawer" class="channel-info-drawer hidden" role="dialog" aria-modal="true" aria-labelledby="channelInfoTitle">
     <header class="channel-info-head">
