@@ -55,6 +55,12 @@ CREATE TABLE IF NOT EXISTS users (
 );
 CREATE INDEX IF NOT EXISTS idx_users_last_connect ON users(last_connect DESC);
 
+CREATE TABLE IF NOT EXISTS e2ee_key_backups (
+    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    payload TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS channels (
     id          TEXT    PRIMARY KEY,
     kind        TEXT    NOT NULL CHECK (kind IN ('lobby','group','dm')),
@@ -651,6 +657,32 @@ impl Db {
                 params![uid, username, username_lower, designation],
             )?;
             Ok(true)
+        }).await
+    }
+
+    /// Store only the client's password-encrypted E2EE key backup envelope.
+    pub async fn set_e2ee_key_backup(&self, id: UserId, payload: &str, updated_at: u64) -> rusqlite::Result<()> {
+        let uid = id.to_string();
+        let payload = payload.to_string();
+        self.with(move |c| {
+            c.execute(
+                "INSERT INTO e2ee_key_backups(user_id,payload,updated_at) VALUES(?1,?2,?3)
+                 ON CONFLICT(user_id) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at",
+                params![uid, payload, updated_at as i64],
+            )?;
+            Ok(())
+        }).await
+    }
+
+    /// Fetch the opaque encrypted backup; the server never decrypts it.
+    pub async fn get_e2ee_key_backup(&self, id: &UserId) -> rusqlite::Result<Option<String>> {
+        let uid = id.to_string();
+        self.with(move |c| {
+            c.query_row(
+                "SELECT payload FROM e2ee_key_backups WHERE user_id=?1",
+                params![uid],
+                |r| r.get(0),
+            ).optional()
         }).await
     }
 
