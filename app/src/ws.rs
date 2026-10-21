@@ -1287,6 +1287,65 @@ async fn handle_op(
                 .await;
         }
 
+        "ch_info" => {
+            let id = v.get("channel").and_then(Value::as_str).ok_or("missing channel")?;
+            let ch = state.channels.get(id).ok_or("no such channel")?;
+            if !can_send(&ch, &user_id) { return Err("not a member".into()); }
+            let (name, description, photo_url) = state.db.channel_details(id).await
+                .map_err(|_| "could not load chat details".to_string())?
+                .unwrap_or_else(|| (ch.name.to_string(), String::new(), String::new()));
+            let mut members = Vec::new();
+            for uid in ch.members.iter() {
+                let profile = state.users.get(uid.key()).or_else(|| state.known_users.get(uid.key()));
+                let role = state.db.member_role(id, uid.key().as_str()).await
+                    .ok().flatten().unwrap_or_else(|| {
+                        if uid.key().as_str() == ch.created_by.as_str() { "owner".to_string() }
+                        else { "member".to_string() }
+                    });
+                if let Some(profile) = profile {
+                    members.push(json!({
+                        "id": profile.id,
+                        "username": profile.username,
+                        "avatar": profile.avatar,
+                        "color": profile.color,
+                        "online": state.users.contains_key(uid.key()),
+                        "role": role
+                    }));
+                } else {
+                    members.push(json!({"id": uid.key(), "username":"Offline member", "avatar":"", "color":"", "online":false, "role":role}));
+                }
+            }
+            members.sort_by(|a, b| a.get("username").and_then(Value::as_str).unwrap_or("").to_lowercase()
+                .cmp(&b.get("username").and_then(Value::as_str).unwrap_or("").to_lowercase()));
+            let notification_mode = state.db.channel_notification(id, user_id.as_str()).await
+                .unwrap_or_else(|_| "all".to_string());
+            let out = json!({
+                "ev":"ch_info",
+                "channel":id,
+                "name":name,
+                "description":description,
+                "photoUrl":photo_url,
+                "members":members,
+                "notificationMode":notification_mode,
+                "createdBy":ch.created_by,
+                "kind":ch.kind,
+                "isPrivate":ch.is_private
+            });
+            let _ = sink.send(Message::Text(out.to_string())).await;
+        }
+
+        "ch_notification_set" => {
+            let id = v.get("channel").and_then(Value::as_str).ok_or("missing channel")?;
+            let mode = v.get("mode").and_then(Value::as_str).ok_or("missing mode")?;
+            let ch = state.channels.get(id).ok_or("no such channel")?;
+            if !can_send(&ch, &user_id) { return Err("not a member".into()); }
+            if !matches!(mode, "all" | "mentions" | "mute") { return Err("invalid notification mode".into()); }
+            state.db.set_channel_notification(id, user_id.as_str(), mode, now_secs()).await
+                .map_err(|_| "could not save notification setting".to_string())?;
+            let out = json!({"ev":"ch_notification_set","channel":id,"mode":mode});
+            let _ = sink.send(Message::Text(out.to_string())).await;
+        }
+
         "history_before" => {
             let id = v.get("channel").and_then(Value::as_str).ok_or("missing channel")?;
             let before_id = v.get("beforeId").and_then(Value::as_u64).ok_or("missing beforeId")?;
