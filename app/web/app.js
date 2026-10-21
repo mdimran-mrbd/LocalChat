@@ -767,9 +767,11 @@ function notifyIncomingMessage(m) {
         const title = pending.special === "mention" ? "You were mentioned"
           : pending.special === "reply" ? "New reply to your message"
           : isDm ? `Message from ${[...pending.senders][0] || sender}` : `New messages in ${chatName}`;
+        const senderNames = [...pending.senders].slice(0, 3).join(", ");
+        const extraSenders = pending.senders.size > 3 ? ` and ${pending.senders.size - 3} more` : "";
         const body = pending.count > 1
           ? (pending.special ? pending.detail + ` · Plus ${pending.count - 1} other new message${pending.count > 2 ? "s" : ""}.`
-            : `You have ${pending.count} new messages in ${chatName}.`)
+            : `You have multiple notifications from ${chatName}: ${senderNames}${extraSenders} (${pending.count} new messages).`)
           : pending.detail;
         const notification = new Notification(title, { body, tag: `localchat-${m.channel}`, renotify: false });
         notification.onclick = () => { try { window.focus(); } catch {} if (S.channels.has(m.channel)) switchChannel(m.channel); notification.close(); };
