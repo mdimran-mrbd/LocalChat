@@ -622,6 +622,28 @@ impl Db {
         }).await
     }
 
+    /// Update a user's editable profile atomically. Returns false when the
+    /// case-insensitive username is already owned by another account.
+    pub async fn update_user_profile(&self, id: UserId, username: &str, designation: &str) -> rusqlite::Result<bool> {
+        let uid = id.to_string();
+        let username = username.to_string();
+        let username_lower = username.to_lowercase();
+        let designation = designation.to_string();
+        self.with(move |c| {
+            let taken: bool = c.query_row(
+                "SELECT EXISTS(SELECT 1 FROM users WHERE username_lower=?1 AND id<>?2)",
+                params![username_lower, uid],
+                |r| r.get(0),
+            )?;
+            if taken { return Ok(false); }
+            c.execute(
+                "UPDATE users SET username=?2, username_lower=?3, designation=?4 WHERE id=?1",
+                params![uid, username, username_lower, designation],
+            )?;
+            Ok(true)
+        }).await
+    }
+
     pub async fn delete_user(&self, id: UserId) -> rusqlite::Result<()> {
         let id = id.to_string();
         self.with(move |c| {
