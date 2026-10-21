@@ -1439,7 +1439,7 @@ async fn handle_op(
             let items = state.db.shared_items_page(id, item_type, before_id, limit).await
                 .map_err(|_| "could not load shared items".to_string())?;
             let has_more = items.len() == limit;
-            let next_cursor = items.last().map(|item| item.message_id);
+            let next_cursor = items.last().map(|item| item.cursor);
             let resp = json!({
                 "ev":"shared_items_list",
                 "channel":id,
