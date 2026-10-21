@@ -1925,3 +1925,38 @@ impl Db {
         .await
     }
 }
+
+
+#[cfg(test)]
+mod shared_url_tests {
+    use super::normalize_shared_url_token;
+
+    #[test]
+    fn normalizes_supported_shared_link_forms() {
+        assert_eq!(
+            normalize_shared_url_token("https://example.com/docs)."),
+            Some("https://example.com/docs".to_string())
+        );
+        assert_eq!(
+            normalize_shared_url_token("www.example.com"),
+            Some("https://www.example.com".to_string())
+        );
+        assert_eq!(
+            normalize_shared_url_token("support.example.org/path?q=1"),
+            Some("https://support.example.org/path?q=1".to_string())
+        );
+        assert_eq!(
+            normalize_shared_url_token("http://example.com:8080/help"),
+            Some("http://example.com:8080/help".to_string())
+        );
+    }
+
+    #[test]
+    fn rejects_non_web_and_invalid_host_tokens() {
+        assert_eq!(normalize_shared_url_token("example"), None);
+        assert_eq!(normalize_shared_url_token("javascript:alert(1)"), None);
+        assert_eq!(normalize_shared_url_token("ftp://example.com/file"), None);
+        assert_eq!(normalize_shared_url_token("https://javascript:alert(1)"), None);
+        assert_eq!(normalize_shared_url_token("https://user@example.com/path"), None);
+    }
+}
