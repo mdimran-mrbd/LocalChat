@@ -542,6 +542,8 @@ const S = {
   channels: new Map(),     // id → meta
   msgs: new Map(),         // channelId → array of wire messages (raw)
   reactions: new Map(),    // channelId → Map<msgId, Map<emoji, Set<userId>>>
+  polls: new Map(),        // channelId:messageId → { counts, userVote }
+  pollRequests: new Set(), // avoid repeated state requests during rerenders
   pins: new Map(),         // channelId → pinned-message metadata array
   pinsExpanded: false,
   mentions: new Map(),      // channelId → latest message ID mentioning me
@@ -865,6 +867,7 @@ function handleEvent(e) {
     case "saved_messages": return onSavedMessages(e);
     case "react":        return onReact(e);
     case "pin_update":   return onPinUpdate(e);
+    case "poll_update":  return onPollUpdate(e, true);
     case "ch_created":   return onChannelCreated(e.channel);
     case "ch_info":      return onChannelInfo(e);
     case "ch_updated":   return onChannelUpdated(e);
@@ -1065,6 +1068,10 @@ async function onWireMsg(m) {
   }
   if (m.username === "__pin") {
     try { onPinUpdate(JSON.parse(m.text)); } catch {}
+    return;
+  }
+  if (m.username === "__poll") {
+    try { onPollUpdate({ ...JSON.parse(m.text), userVote: null }, false); } catch {}
     return;
   }
   if (m.username === "__msg_deleted") {
@@ -2330,6 +2337,19 @@ async function renderMessage(m, { follow, peer, ch }) {
       appendLinkedText(textNode, displayText, m.channel);
       bubble.append(textNode);
     }
+  } else if (!m.deleted && !isDm && displayText.startsWith("poll:v1:")) {
+    let poll = null;
+    try { poll = JSON.parse(displayText.slice("poll:v1:".length)); } catch {}
+    if (poll && typeof poll.question === "string" && Array.isArray(poll.options)) {
+      bubble.append(renderPollCard(m, poll));
+      const pollKey = `${m.channel}:${m.id}`;
+      if (!S.pollRequests.has(pollKey)) {
+        S.pollRequests.add(pollKey);
+        sendOp({ op: "poll_state", channel: m.channel, msgId: Number(m.id) });
+      }
+    } else {
+      bubble.append(el("div", { class: "text" }, "This poll cannot be displayed."));
+    }
   } else if (displayText) {
     const cls = isJumbo(displayText) ? "text jumbo" : "text";
     const textNode = el("div", { class: cls });
@@ -2439,6 +2459,59 @@ async function renderMessage(m, { follow, peer, ch }) {
   return row;
 }
 
+function createPollPrompt() {
+  const ch = S.channels.get(S.active);
+  if (!ch || ch.kind === "dm") { toast("Polls are available in group chats only."); return; }
+  const question = prompt("Poll question (max 180 characters):");
+  if (question == null) return;
+  if (!question.trim()) { toast("Enter a poll question."); return; }
+  const rawOptions = prompt("Enter 2–10 options, one per line:");
+  if (rawOptions == null) return;
+  const options = rawOptions.split("\n").map(x => x.trim()).filter(Boolean);
+  if (options.length < 2 || options.length > 10) { toast("Add between 2 and 10 non-empty options."); return; }
+  sendOp({ op: "poll_create", channel: S.active, question: question.trim(), options });
+}
+function renderPollCard(message, poll) {
+  const key = `${message.channel}:${message.id}`;
+  const state = S.polls.get(key) || { counts: [], userVote: null };
+  const counts = Array.isArray(state.counts) ? state.counts : [];
+  const total = counts.reduce((sum, count) => sum + (Number(count) || 0), 0);
+  const card = el("div", { class: "poll-card" });
+  card.append(el("div", { class: "poll-question" }, poll.question));
+  const options = poll.options.slice(0, 10);
+  options.forEach((option, index) => {
+    const count = Number(counts[index] || 0);
+    const percent = total ? Math.round(count * 100 / total) : 0;
+    const chosen = state.userVote === index;
+    const btn = el("button", {
+      type: "button",
+      class: "poll-option" + (chosen ? " selected" : ""),
+      "aria-pressed": chosen ? "true" : "false",
+      title: total ? `${count} vote${count === 1 ? "" : "s"} (${percent}%)` : "Vote for this option",
+      onclick: () => {
+        if (S.channels.get(message.channel)?.kind === "dm") return;
+        sendOp({ op: "poll_vote", channel: message.channel, msgId: Number(message.id), optionIndex: index });
+      },
+    }, [
+      el("span", { class: "poll-option-label" }, option),
+      el("span", { class: "poll-option-count" }, state.counts ? String(count) : ""),
+      el("span", { class: "poll-option-bar", style: `width:${percent}%` }),
+    ]);
+    card.append(btn);
+  });
+  card.append(el("div", { class: "poll-footer" }, `${total} vote${total === 1 ? "" : "s"} · ${state.userVote == null ? "Select an option to vote" : "Your vote is recorded"}`));
+  return card;
+}
+function onPollUpdate(event, rerender = true) {
+  if (!event || !event.channel || event.msgId == null) return;
+  const key = `${event.channel}:${event.msgId}`;
+  const old = S.polls.get(key) || { counts: [], userVote: null };
+  S.polls.set(key, {
+    counts: Array.isArray(event.counts) ? event.counts : old.counts,
+    userVote: Object.prototype.hasOwnProperty.call(event, "userVote") ? event.userVote : old.userVote,
+  });
+  if (rerender && S.active === event.channel) renderStream();
+}
 // Compute tick state for an own message:
 //   "sent"      → message is in the room, no other connected peer.
 //   "delivered" → at least one other channel member is currently online.
