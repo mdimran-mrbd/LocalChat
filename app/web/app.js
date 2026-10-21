@@ -59,6 +59,20 @@ function fmtSize(n) {
   if (n < 1024 ** 3) return (n / 1024 / 1024).toFixed(1) + " MB";
   return (n / 1024 / 1024 / 1024).toFixed(2) + " GB";
 }
+function sharedFileIcon(mime, name) {
+  const type = String(mime || "").toLowerCase();
+  const ext = String(name || "").split(".").pop().toLowerCase();
+  if (type.startsWith("image/") || /^(png|jpe?g|gif|webp|svg|bmp|heic)$/.test(ext)) return "🖼️";
+  if (type.startsWith("video/") || /^(mp4|mov|avi|mkv|webm)$/.test(ext)) return "🎬";
+  if (type.startsWith("audio/") || /^(mp3|wav|ogg|m4a|flac)$/.test(ext)) return "🎵";
+  if (ext === "pdf" || type === "application/pdf") return "📕";
+  if (/^(doc|docx|odt|rtf)$/.test(ext)) return "📝";
+  if (/^(xls|xlsx|csv|ods)$/.test(ext)) return "📊";
+  if (/^(ppt|pptx|odp)$/.test(ext)) return "📽️";
+  if (/^(zip|rar|7z|tar|gz)$/.test(ext)) return "🗜️";
+  if (/^(js|ts|jsx|tsx|rs|py|java|c|cpp|html|css|json|sql|sh)$/.test(ext)) return "💻";
+  return "📄";
+}
 function fileExt(name) {
   const i = name.lastIndexOf(".");
   if (i < 0 || i === name.length - 1) return "file";
@@ -100,23 +114,50 @@ function extractChatUrls(text) {
   }
   return found;
 }
-function appendLinkedText(container, text) {
+function appendLinkedText(container, text, channelId = null) {
   const source = String(text || "");
-  const links = extractChatUrls(source);
+  const tokens = extractChatUrls(source).map(item => ({ ...item, kind: "url" }));
+  if (channelId) {
+    const users = new Map(S.users);
+    if (S.me?.id) users.set(S.me.id, S.me);
+    const byName = new Map([...users.values()].filter(u => u?.username && u?.id).map(u => [u.username.toLowerCase(), u]));
+    for (const match of source.matchAll(/@([A-Za-z0-9._-]+)/g)) {
+      const user = byName.get(match[1].toLowerCase());
+      if (user) tokens.push({ raw: match[0], index: match.index, kind: "mention", user });
+    }
+  }
+  tokens.sort((a, b) => a.index - b.index || (a.kind === "url" ? -1 : 1));
   let cursor = 0;
-  for (const item of links) {
+  for (const item of tokens) {
+    if (item.index < cursor) continue;
     if (item.index > cursor) container.append(document.createTextNode(source.slice(cursor, item.index)));
     const anchor = document.createElement("a");
-    anchor.className = "message-link";
-    anchor.href = item.url;
-    anchor.target = "_blank";
-    anchor.rel = "noopener noreferrer";
-    anchor.textContent = item.raw;
-    anchor.setAttribute("aria-label", "Open link " + item.raw);
-    container.append(anchor);
-    cursor = item.index + item.raw.length;
+    if (item.kind === "mention") {
+      anchor.className = "message-mention"; anchor.href = "#"; anchor.textContent = item.raw;
+      anchor.title = "Open direct chat with " + item.user.username;
+      anchor.setAttribute("aria-label", "Open direct chat with " + item.user.username);
+      anchor.addEventListener("click", ev => { ev.preventDefault(); openDmWithUserId(item.user.id, item.user.username); });
+    } else {
+      anchor.className = "message-link"; anchor.href = item.url; anchor.target = "_blank";
+      anchor.rel = "noopener noreferrer"; anchor.textContent = item.raw;
+      anchor.setAttribute("aria-label", "Open link " + item.raw);
+    }
+    container.append(anchor); cursor = item.index + item.raw.length;
   }
   if (cursor < source.length) container.append(document.createTextNode(source.slice(cursor)));
+}
+function appendMessageLinkPreview(container, text) {
+  const item = extractChatUrls(text)[0];
+  if (!item) return;
+  let parsed; try { parsed = new URL(item.url); } catch { return; }
+  const preview = document.createElement("a");
+  preview.className = "message-link-preview"; preview.href = item.url;
+  preview.target = "_blank"; preview.rel = "noopener noreferrer";
+  const icon = document.createElement("span"); icon.className = "message-link-preview-icon"; icon.textContent = "↗";
+  const copy = document.createElement("span"); copy.className = "message-link-preview-copy";
+  const domain = document.createElement("strong"); domain.textContent = parsed.hostname.replace(/^www\./i, "");
+  const path = document.createElement("span"); path.textContent = parsed.pathname === "/" ? item.url : (parsed.pathname + parsed.search + parsed.hash);
+  copy.append(domain, path); preview.append(icon, copy); container.append(preview);
 }
 
 function escapeHtml(s) {
@@ -695,29 +736,46 @@ async function toggleBrowserNotifications() {
   toast("Browser notifications enabled. They appear for messages outside your current chat or when this tab is in the background.");
 }
 
+const _pendingBrowserNotifications = new Map();
 function notifyIncomingMessage(m) {
-  if (!browserNotificationsEnabled() || typeof Notification === "undefined" ||
-      Notification.permission !== "granted") return;
+  if (!browserNotificationsEnabled() || typeof Notification === "undefined" || Notification.permission !== "granted") return;
   if (!document.hidden && document.hasFocus() && m.channel === S.active) return;
-  try {
-    const channel = S.channels.get(m.channel);
-    const isDm = channel && channel.kind === "dm";
-    // Never include message text or decrypted DM content in system notifications.
-    const title = isDm ? "New direct message" : `New message in #${channel?.name || "channel"}`;
-    const sender = m.username || "Someone";
-    const notification = new Notification(title, {
-      body: `From ${sender}. Open LocalChat to view it.`,
-      tag: `localchat-${m.channel}`,
-      renotify: true
-    });
-    notification.onclick = () => {
-      try { window.focus(); } catch {}
-      if (S.channels.has(m.channel)) switchChannel(m.channel);
-      notification.close();
+  const channel = S.channels.get(m.channel);
+  if (!channel || channel.notificationMode === "mute") return;
+  const sender = m.username || "Someone";
+  const isDm = channel.kind === "dm";
+  const chatName = isDm ? (dmPeer(channel)?.username || sender) : ("#" + (channel.name || "channel"));
+  Promise.resolve(messageMentionsMe(m)).then(mentioned => {
+    if ((channel.notificationMode || "all") === "mentions" && !mentioned) return;
+    const original = m.replyTo != null ? (S.msgs.get(m.channel) || []).find(x => String(x.id) === String(m.replyTo)) : null;
+    const repliedToMe = !!original && (original.userId === S.me?.id || original.username === S.me?.username);
+    const detail = mentioned ? `${sender} mentioned you in ${chatName}`
+      : repliedToMe ? `${sender} replied to your message in ${chatName}`
+      : `New message from ${sender} in ${chatName}`;
+    const pending = _pendingBrowserNotifications.get(m.channel) || {
+      channelId: m.channel, count: 0, senders: new Set(), special: "", detail: "", timer: null
     };
-  } catch (error) {
-    console.debug("[notifications] unable to show browser notification", error);
-  }
+    pending.count += 1; pending.senders.add(sender);
+    if (mentioned) { pending.special = "mention"; pending.detail = detail; }
+    else if (repliedToMe && pending.special !== "mention") { pending.special = "reply"; pending.detail = detail; }
+    if (!pending.detail) pending.detail = detail;
+    clearTimeout(pending.timer);
+    pending.timer = setTimeout(() => {
+      _pendingBrowserNotifications.delete(m.channel);
+      try {
+        const title = pending.special === "mention" ? "You were mentioned"
+          : pending.special === "reply" ? "New reply to your message"
+          : isDm ? `Message from ${[...pending.senders][0] || sender}` : `New messages in ${chatName}`;
+        const body = pending.count > 1
+          ? (pending.special ? pending.detail + ` · Plus ${pending.count - 1} other new message${pending.count > 2 ? "s" : ""}.`
+            : `You have ${pending.count} new messages in ${chatName}.`)
+          : pending.detail;
+        const notification = new Notification(title, { body, tag: `localchat-${m.channel}`, renotify: false });
+        notification.onclick = () => { try { window.focus(); } catch {} if (S.channels.has(m.channel)) switchChannel(m.channel); notification.close(); };
+      } catch (error) { console.debug("[notifications] unable to show browser notification", error); }
+    }, 1800);
+    _pendingBrowserNotifications.set(m.channel, pending);
+  }).catch(error => console.debug("[notifications] classification failed", error));
 }
 
 Object.assign(window, { toggleBrowserNotifications });
@@ -2066,13 +2124,17 @@ async function renderMessage(m, { follow, peer, ch }) {
     bubble.append(att);
     if (displayText) {
       const textNode = el("div", { class: "text" });
-      appendLinkedText(textNode, displayText);
+      appendLinkedText(textNode, displayText, m.channel);
+      bubble.append(textNode);
+      appendMessageLinkPreview(bubble, displayText);
       bubble.append(textNode);
     }
   } else if (displayText) {
     const cls = isJumbo(displayText) ? "text jumbo" : "text";
     const textNode = el("div", { class: cls });
-    appendLinkedText(textNode, displayText);
+    appendLinkedText(textNode, displayText, m.channel);
+      bubble.append(textNode);
+      appendMessageLinkPreview(bubble, displayText);
     bubble.append(textNode);
   }
 
@@ -3997,6 +4059,7 @@ async function renderChannelInfo() {
     </section>
     <section class="ci-section">
       <div class="ci-section-head"><span>Notifications</span><span>Only for you</span></div>
+      <button id="browserNotificationsBtn" class="btn btn-ghost btn-sm ci-browser-notifications" type="button" title="Enable browser notifications" aria-label="Enable browser notifications" onclick="toggleBrowserNotifications()">Enable browser notifications</button>
       <select id="ciNotificationMode" class="ci-search" aria-label="Chat notification preference">
         <option value="all" ${_ciNotificationMode === "all" ? "selected" : ""}>All messages</option>
         <option value="mentions" ${_ciNotificationMode === "mentions" ? "selected" : ""}>Mentions only</option>
@@ -4019,6 +4082,7 @@ async function renderChannelInfo() {
       <div id="ciMembers" class="ci-members"></div>
     </section>
   `;
+  updateBrowserNotificationButton();
   const descriptionNode = root.querySelector(".ci-description");
   if (descriptionNode && description) { descriptionNode.replaceChildren(); appendLinkedText(descriptionNode, description); }
   root.querySelectorAll("[data-ci-tab]").forEach(btn => btn.addEventListener("click", async () => {
@@ -4289,7 +4353,7 @@ function openSharedItemsOverlay(type, items, loadMore) {
       image.addEventListener("error", () => { image.removeAttribute("src"); image.alt = "Image unavailable"; tile.classList.add("is-unavailable"); });
       image.addEventListener("click", () => openLightbox(item.url, "Shared image", item.url)); tile.append(image);
     } else {
-      const icon = document.createElement("div"); icon.className = "ci-expanded-icon"; icon.textContent = item.icon || (type === "links" ? "🔗" : "📄"); tile.append(icon);
+      const icon = document.createElement("div"); icon.className = "ci-expanded-icon"; icon.textContent = item.icon || (type === "links" ? "🌐" : sharedFileIcon(item.detail, item.title)); tile.append(icon);
     }
     const label = document.createElement("div"); label.className = "ci-expanded-label"; label.textContent = type === "media" ? (item.title || "Media") : (item.title || item.detail || "Shared item"); tile.append(label);
     const meta = document.createElement("div"); meta.className = "ci-expanded-meta"; meta.textContent = item.sender || "Unknown sender"; tile.append(meta);
@@ -4322,11 +4386,11 @@ async function renderChannelInfoItems() {
       if (item.itemType === "link") {
         let hostname = "";
         try { hostname = new URL(item.itemKey).hostname; } catch (_) {}
-        items.push({ type: "link", id: item.messageId, ts: item.createdAt, sender: item.username, title: hostname || item.itemKey, detail: item.itemKey, url: item.itemKey, icon: "🔗" });
+        items.push({ type: "link", id: item.messageId, ts: item.createdAt, sender: item.username, title: hostname || item.itemKey, detail: item.itemKey, url: item.itemKey, icon: "🌐" });
       } else if (item.itemType === "media") {
         items.push({ type: "media", id: item.messageId, ts: item.createdAt, sender: item.username, title: "Media", detail: mime || "Media", url: item.url || item.itemKey, icon: mime.startsWith("video/") ? "🎬" : "🖼️" });
       } else {
-        items.push({ type: "file", id: item.messageId, ts: item.createdAt, sender: item.username, title: item.fileName || "Attachment", detail: mime || "File", url: item.url || item.itemKey, size: item.fileSize, icon: "📄" });
+        items.push({ type: "file", id: item.messageId, ts: item.createdAt, sender: item.username, title: item.fileName || "Attachment", detail: mime || "File", url: item.url || item.itemKey, size: item.fileSize, icon: sharedFileIcon(mime, item.fileName || item.itemKey) });
       }
     }
   }
@@ -4340,7 +4404,7 @@ async function renderChannelInfoItems() {
     }
     if (_channelInfoTab === "files" && m.file) {
       const mime = m.file.mimeType || "";
-      items.push({ type: "file", id: m.id, ts: m.ts, sender: m.username, title: m.file.originalName || m.file.filename || "Attachment", detail: mime || "File", url: m.file.url, size: m.file.size, icon: mime.startsWith("image/") ? "🖼️" : mime.startsWith("video/") ? "🎬" : "📄" });
+      items.push({ type: "file", id: m.id, ts: m.ts, sender: m.username, title: m.file.originalName || m.file.filename || "Attachment", detail: mime || "File", url: m.file.url, size: m.file.size, icon: sharedFileIcon(mime, m.file.originalName || m.file.filename) });
     }
     if (_channelInfoTab === "media" && m.file && /^(image\/|video\/)/i.test(m.file.mimeType || "")) {
       const mime = m.file.mimeType || "";
