@@ -4093,6 +4093,13 @@ function renderChannelInfoMembers(members) {
         root.querySelectorAll(".ci-member-menu").forEach(other => { other.hidden = true; });
         root.querySelectorAll(".ci-member-menu-trigger").forEach(other => other.setAttribute("aria-expanded", "false"));
         menu.hidden = !opening; trigger.setAttribute("aria-expanded", String(opening));
+        menu.classList.remove("opens-up");
+        if (opening) requestAnimationFrame(() => {
+          const bounds = menu.getBoundingClientRect();
+          const rowBounds = row.getBoundingClientRect();
+          const drawerBounds = $("channelInfoDrawer").getBoundingClientRect();
+          if (bounds.bottom > drawerBounds.bottom - 8 && rowBounds.top - drawerBounds.top > bounds.height) menu.classList.add("opens-up");
+        });
       });
       if (canMessage) {
         const message = document.createElement("button"); message.type = "button"; message.className = "ci-member-menu-item"; message.textContent = "Message";
