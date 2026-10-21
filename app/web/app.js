@@ -1641,6 +1641,7 @@ function _channelItem(c) {
   const canDelete = !isNotes && c.kind === "group" && S.me && c.createdBy === S.me.id;
   // Personal Notes are permanent and owner-only; ordinary groups can be deleted/left.
   const canLeave = !isNotes && c.kind === "group" && isMember && !canDelete;
+  const askDelete = canDelete ? (ev) => {
     ev.stopPropagation();
     ev.preventDefault();
     confirmDialog({
