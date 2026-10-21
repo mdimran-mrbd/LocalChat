@@ -345,6 +345,34 @@
     </div>
   </div>
 
+  <!-- ═══════════════════ DESIGNATION ASSIGNMENT ═══════════════════ -->
+  <div id="designationModal" class="modal hidden" role="dialog" aria-labelledby="designationTitle" aria-modal="true">
+    <form class="modal-panel" onsubmit="submitDesignation(event)">
+      <header class="modal-head">
+        <h3 id="designationTitle">Set your designation</h3>
+      </header>
+      <div class="modal-body">
+        <p class="muted sm">Choose your current designation. This is a one-time account setting and will appear beside your name in LocalChat.</p>
+        <label class="field">
+          <span>Designation</span>
+          <select id="designationSelect" required>
+            <option value="">Choose designation…</option>
+            <option value="AM">Assistant Manager - AM</option>
+            <option value="TL">Team Leader - TL</option>
+            <option value="STL">Senior Team Leader - STL</option>
+            <option value="QDE">Quality Development Executive - QDE</option>
+            <option value="LRD">Learning &amp; Resource Development Lead - LRD</option>
+            <option value="EE">Escalation Executive - EE</option>
+            <option value="CSA">Customer Service Advisor - CSA</option>
+          </select>
+        </label>
+      </div>
+      <footer class="modal-foot">
+        <button id="designationSubmit" type="submit" class="btn btn-primary">Save designation</button>
+      </footer>
+    </form>
+  </div>
+
   <!-- ═══════════════════ CHANGE PASSWORD MODAL ═══════════════════ -->
   <div id="changePwModal" class="modal hidden" role="dialog" aria-labelledby="cpwTitle">
     <form class="modal-panel" onsubmit="submitChangePassword(event)">
