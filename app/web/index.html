@@ -288,6 +288,19 @@
   </div>
 
   <!-- ═══════════════════ MODALS ═══════════════════ -->
+  <div id="pollCreateModal" class="modal hidden poll-create-modal" role="dialog" aria-modal="true" aria-labelledby="pollCreateTitle" aria-hidden="true" onclick="if(event.target===this)closePollModal()">
+    <form class="modal-panel poll-create-panel" onsubmit="submitPollCreate(event)">
+      <header class="modal-head"><div><h3 id="pollCreateTitle">Create a poll</h3><p class="muted sm">Ask your group a question and collect votes.</p></div><button type="button" class="icon-btn" onclick="closePollModal()" aria-label="Close poll form">×</button></header>
+      <div class="modal-body poll-create-body">
+        <label class="field"><span>Poll question</span><input id="pollQuestionInput" type="text" maxlength="180" required placeholder="What would you like to ask?" autocomplete="off"></label>
+        <div class="poll-options-label"><strong>Answer options</strong><span id="pollOptionCount" class="muted xs">2/10 options</span></div>
+        <div id="pollOptionsList" class="poll-options-list"></div>
+        <button type="button" id="pollAddOptionBtn" class="poll-add-option" onclick="addPollOption()">＋ Add option</button>
+        <p id="pollCreateStatus" class="status err" role="status" aria-live="polite"></p>
+      </div>
+      <footer class="modal-foot"><button type="button" class="btn btn-ghost" onclick="closePollModal()">Cancel</button><button type="submit" class="btn btn-primary">Create poll</button></footer>
+    </form>
+  </div>
   <div id="createModal" class="modal hidden" role="dialog" aria-labelledby="cmTitle">
     <form class="modal-panel" onsubmit="createChannel(event)">
       <header class="modal-head">
@@ -555,23 +568,25 @@
     <div class="settings-content">
       <section class="settings-section">
         <h3>Profile</h3>
-        <form id="profileSettingsForm" onsubmit="submitProfileSettings(event)">
-          <label class="field"><span>Username</span><input id="profileUsername" minlength="3" maxlength="24" required autocomplete="username" pattern="[A-Za-z0-9][A-Za-z0-9_.-]{2,23}"></label>
-          <label class="field"><span>Designation</span><select id="profileDesignation" required>
-            <option value="AM">Assistant Manager - AM</option><option value="TL">Team Leader - TL</option>
-            <option value="STL">Senior Team Leader - STL</option><option value="QDE">Quality Development Executive - QDE</option>
-            <option value="LRD">Learning &amp; Resource Development Lead - LRD</option><option value="EE">Escalation Executive - EE</option>
-            <option value="CSA">Customer Service Advisor</option>
+        <form id="profileSettingsForm" onsubmit="event.preventDefault()">
+          <div class="profile-edit-row"><label class="field" for="profileUsername"><span>Username</span><input id="profileUsername" minlength="3" maxlength="24" required autocomplete="username" pattern="[A-Za-z0-9][A-Za-z0-9_.-]{2,23}" disabled></label>
+            <button type="button" class="profile-edit-icon" id="editUsernameBtn" title="Edit username" aria-label="Edit username" onclick="setProfileFieldEditing('username',true)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg></button>
+          </div>
+          <div class="profile-edit-actions" id="usernameEditActions" hidden><button type="button" class="btn btn-ghost btn-sm" onclick="cancelProfileFieldEdit('username')">Cancel</button><button type="button" class="btn btn-primary btn-sm" id="saveUsernameBtn" onclick="submitProfileField('username')">Save username</button></div>
+          <div class="profile-edit-row"><label class="field" for="profileDesignation"><span>Designation</span><select id="profileDesignation" required disabled>
+            <option value="AM">Assistant Manager - AM</option><option value="TL">Team Leader - TL</option><option value="STL">Senior Team Leader - STL</option><option value="QDE">Quality Development Executive - QDE</option><option value="LRD">Learning &amp; Resource Development Lead - LRD</option><option value="EE">Escalation Executive - EE</option><option value="CSA">Customer Service Advisor</option>
           </select></label>
+            <button type="button" class="profile-edit-icon" id="editDesignationBtn" title="Edit designation" aria-label="Edit designation" onclick="setProfileFieldEditing('designation',true)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg></button>
+          </div>
+          <div class="profile-edit-actions" id="designationEditActions" hidden><button type="button" class="btn btn-ghost btn-sm" onclick="cancelProfileFieldEdit('designation')">Cancel</button><button type="button" class="btn btn-primary btn-sm" id="saveDesignationBtn" onclick="submitProfileField('designation')">Save designation</button></div>
           <p id="profileSettingsStatus" class="status" role="status" aria-live="polite"></p>
-          <button id="profileSettingsSave" type="submit" class="btn btn-primary">Save profile</button>
         </form>
       </section>
-      <section class="settings-section"><h3>Appearance</h3><button id="themeToggle" class="settings-action" type="button" onclick="toggleTheme()">Toggle theme</button></section>
-      <section class="settings-section"><h3>Notifications</h3><div id="settingsNotificationsSlot"></div></section>
+      <section class="settings-section"><h3 class="settings-section-heading"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="8" cy="18" r="2"/></svg>Appearance</h3><button id="themeToggle" class="settings-action" type="button" onclick="toggleTheme()">Toggle theme</button></section>
+      <section class="settings-section"><h3 class="settings-section-heading"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>Notifications</h3><div id="settingsNotificationsSlot"></div></section>
       <section class="settings-section"><h3>Account security</h3><button class="settings-action" type="button" onclick="openChangePasswordModal({ forced: false }); closeSettingsPanel();">Change password</button></section>
-      <section class="settings-section"><button class="settings-action danger" type="button" onclick="signOut()">Sign out</button></section>
     </div>
+    <footer class="settings-logout-footer"><button type="button" class="settings-logout-btn" onclick="signOut()"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 17l5-5-5-5M15 12H3M12 3h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-6"/></svg>Logout</button></footer>
   </aside>
 
   <div id="channelInfoBackdrop" class="channel-info-backdrop hidden" onclick="closeChannelInfo()" aria-hidden="true"></div>

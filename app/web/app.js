@@ -1083,7 +1083,7 @@ async function onWelcome(e, password) {
     el("button", {
       id: "settingsOpenBtn", class: "icon-btn settings-open-btn", title: "Settings", "aria-label": "Open settings",
       onclick: openSettingsPanel,
-      html: `<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-1.7 2.94-.08-.02a1.7 1.7 0 0 0-1.78.58l-.05.07h-3.4l-.04-.08a1.7 1.7 0 0 0-1.56-1.02 1.7 1.7 0 0 0-.79.2l-.08.04-2.94-1.7.02-.08a1.7 1.7 0 0 0-.58-1.78l-.07-.05v-3.4l.08-.04a1.7 1.7 0 0 0 .82-1.47 1.7 1.7 0 0 0-.2-.79l-.04-.08 1.7-2.94.08.02a1.7 1.7 0 0 0 1.78-.58l.05-.07h3.4l.04.08a1.7 1.7 0 0 0 1.56 1.02 1.7 1.7 0 0 0 .79-.2l.08-.04 2.94 1.7-.02.08a1.7 1.7 0 0 0 .58 1.78l.07.05v3.4z"/></svg>`,
+      html: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2" fill="var(--bg-1)"/><circle cx="15" cy="12" r="2" fill="var(--bg-1)"/><circle cx="8" cy="18" r="2" fill="var(--bg-1)"/></svg>`,
     }),
   );
   const notificationControl = $("browserNotificationControl");
@@ -1135,8 +1135,11 @@ function onUsers(list) {
       const status = $("profileSettingsStatus");
       status.textContent = "Profile saved.";
       status.classList.remove("err"); status.classList.add("ok");
-      const save = $("profileSettingsSave");
-      if (save) { save.disabled = false; save.textContent = "Save profile"; }
+      setProfileFieldEditing("username", false);
+      setProfileFieldEditing("designation", false);
+      const us = $("saveUsernameBtn"), ds = $("saveDesignationBtn");
+      if (us) { us.disabled = false; us.textContent = "Save username"; }
+      if (ds) { ds.disabled = false; ds.textContent = "Save designation"; }
     }
   }
   const uc = $("userCount"); if (uc) uc.textContent = "";
@@ -1762,14 +1765,14 @@ function _channelItem(c) {
   }, [
     el("div", { class: "avatar", style: `background:var(--brand)` }, isNotes ? "📝" : "#"),
     el("div", { class: "chat-meta" }, [
-      el("div", { class: "chat-name" }, [pinned ? el("span", { class: "chat-pin-mark", title: "Pinned chat" }, "📌 ") : null, c.name || c.id]),
+      el("div", { class: "chat-name" }, [pinned ? el("span", { class: "chat-pin-mark", title: "Pinned chat", "aria-hidden": "true" }, "⌖ ") : null, c.name || c.id]),
       el("div", { class: "chat-sub muted xs" },
         isNotes ? "Personal notes · only you" : (c.kind === "lobby" ? "lobby · everyone" : (c.isPrivate ? "private channel" : "channel"))),
     ]),
     c.kind === "group" && S.unreadIndicators.get(c.id)?.mention ? el("span", { class: "chat-unread-signal mention-signal", title: "Unread mention", "aria-label": "Unread mention" }, "@") : null,
     c.kind === "group" && S.unreadIndicators.get(c.id)?.reply ? el("span", { class: "chat-unread-signal reply-signal", title: "Unread reply to you", "aria-label": "Unread reply to you" }, "↩") : null,
     unread ? el("span", { class: "badge badge-unread" }, String(unread)) : null,
-    el("button", { class: "chat-pin", type: "button", title: pinned ? "Unpin chat" : "Pin chat", "aria-label": pinned ? "Unpin chat" : "Pin chat", onclick: (ev) => { ev.stopPropagation(); toggleChatPin(c.id); } }, pinned ? "📌" : "📍"),
+    el("button", { class: "chat-pin", type: "button", title: pinned ? "Unpin chat" : "Pin chat", "aria-label": pinned ? "Unpin chat" : "Pin chat", onclick: (ev) => { ev.stopPropagation(); toggleChatPin(c.id); } }, "⌖"),
     canDelete ? el("button", {
       class: "chat-del",
       title: `Delete #${c.name || c.id}`,
@@ -1837,11 +1840,11 @@ function _dmItem(c) {
       el("span", { class: "presence-dot" }),
     ]),
     el("div", { class: "chat-meta" }, [
-      el("div", { class: "chat-name" }, [pinned ? el("span", { class: "chat-pin-mark", title: "Pinned chat" }, "📌 ") : null, userNameNode(u || { username: peerName })]),
+      el("div", { class: "chat-name" }, [pinned ? el("span", { class: "chat-pin-mark", title: "Pinned chat", "aria-hidden": "true" }, "⌖ ") : null, userNameNode(u || { username: peerName })]),
       el("div", { class: "chat-sub muted xs" }, online ? "online" : "offline"),
     ]),
     unread ? el("span", { class: "badge badge-unread" }, String(unread)) : null,
-    el("button", { class: "chat-pin", type: "button", title: pinned ? "Unpin chat" : "Pin chat", "aria-label": pinned ? "Unpin chat" : "Pin chat", onclick: (ev) => { ev.stopPropagation(); toggleChatPin(c.id); } }, pinned ? "📌" : "📍"),
+    el("button", { class: "chat-pin", type: "button", title: pinned ? "Unpin chat" : "Pin chat", "aria-label": pinned ? "Unpin chat" : "Pin chat", onclick: (ev) => { ev.stopPropagation(); toggleChatPin(c.id); } }, "⌖"),
     el("button", {
       class: "chat-del",
       title: `Delete conversation with ${peerName}`,
@@ -2556,14 +2559,53 @@ async function renderMessage(m, { follow, peer, ch }) {
 function createPollPrompt() {
   const ch = S.channels.get(S.active);
   if (!ch || ch.kind !== "group" || ch.id.startsWith("notes:")) { toast("Polls are available in group chats only."); return; }
-  const question = prompt("Poll question (max 180 characters):");
-  if (question == null) return;
-  if (!question.trim()) { toast("Enter a poll question."); return; }
-  const rawOptions = prompt("Enter 2–10 options, one per line:");
-  if (rawOptions == null) return;
-  const options = rawOptions.split("\n").map(x => x.trim()).filter(Boolean);
-  if (options.length < 2 || options.length > 10) { toast("Add between 2 and 10 non-empty options."); return; }
-  sendOp({ op: "poll_create", channel: S.active, question: question.trim(), options });
+  const modal = $("pollCreateModal");
+  if (!modal) { toast("Poll form is unavailable. Please reload LocalChat."); return; }
+  $("pollQuestionInput").value = "";
+  $("pollOptionsList").replaceChildren();
+  addPollOption("Option 1"); addPollOption("Option 2");
+  $("pollCreateStatus").textContent = "";
+  modal.classList.remove("hidden"); modal.setAttribute("aria-hidden", "false");
+  document.body.classList.add("poll-modal-open");
+  setTimeout(() => $("pollQuestionInput")?.focus(), 30);
+}
+function closePollModal(force = false) {
+  const modal = $("pollCreateModal");
+  if (!modal || modal.classList.contains("hidden")) return;
+  // Cancel is explicit; closing the popup never opens a browser-native dialog.
+  modal.classList.add("hidden"); modal.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("poll-modal-open");
+  $("createPollBtn")?.focus();
+}
+function addPollOption(value = "") {
+  const list = $("pollOptionsList");
+  if (!list || list.querySelectorAll(".poll-option-row").length >= 10) return;
+  const row = el("div", { class: "poll-option-row" });
+  const input = el("input", { class: "poll-option-input", type: "text", maxlength: "100", placeholder: "Enter an option", value, autocomplete: "off" });
+  const remove = el("button", { type: "button", class: "poll-remove-option", title: "Remove option", "aria-label": "Remove option", onclick: () => { row.remove(); updatePollOptionControls(); } }, "×");
+  row.append(input, remove); list.append(row); updatePollOptionControls();
+}
+function updatePollOptionControls() {
+  const list = $("pollOptionsList"); if (!list) return;
+  const rows = [...list.querySelectorAll(".poll-option-row")];
+  rows.forEach(row => { const b = row.querySelector(".poll-remove-option"); if (b) b.disabled = rows.length <= 2; });
+  const add = $("pollAddOptionBtn");
+  if (add) { add.disabled = rows.length >= 10; add.textContent = rows.length >= 10 ? "Maximum 10 options" : "＋ Add option"; }
+  const count = $("pollOptionCount"); if (count) count.textContent = rows.length + "/10 options";
+}
+function submitPollCreate(ev) {
+  ev.preventDefault();
+  const ch = S.channels.get(S.active);
+  if (!ch || ch.kind !== "group" || ch.id.startsWith("notes:")) { closePollModal(true); toast("Polls are available in group chats only."); return; }
+  const question = ($("pollQuestionInput")?.value || "").trim();
+  const options = [...($("pollOptionsList")?.querySelectorAll(".poll-option-input") || [])].map(i => i.value.trim()).filter(Boolean);
+  const status = $("pollCreateStatus");
+  if (!question || question.length > 180) { status.textContent = "Enter a question (1–180 characters)."; $("pollQuestionInput")?.focus(); return; }
+  if (options.length < 2 || options.length > 10) { status.textContent = "Add 2–10 non-empty answer options."; return; }
+  if (new Set(options.map(x => x.toLocaleLowerCase())).size !== options.length) { status.textContent = "Each answer option must be unique."; return; }
+  if (!S.ws || S.ws.readyState !== WebSocket.OPEN) { status.textContent = "You are disconnected. Reconnect and try again."; return; }
+  sendOp({ op: "poll_create", channel: S.active, question, options });
+  closePollModal(true);
 }
 function renderPollCard(message, poll) {
   const key = `${message.channel}:${message.id}`;
@@ -2647,36 +2689,55 @@ function renderTicks(state) {
   });
 }
 
-// Six quick reactions stay visible; the plus button expands the full picker.
+// Six quick reactions stay visible; expanded mode uses the full composer emoji catalog.
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
-const MORE_REACTIONS = ["🔥","🎉","👏","🙌","😍","🥰","😘","🤔","🤗","🤩","😎","😭","😡","🤬","😱","🥳","🤝","💯","✅","❌","👀","💡","💪","🤦","🤷","😴","🤮","🤒","😇","🥺","😬","🤯","🫡","🫶","💔","⭐","🎯","🚀","☕","🎂","🎁","🌹","🐱","🐶","💐"];
 function openReactionPicker(anchor, msgId) {
   closeReactionPicker();
   const pop = el("div", { class: "reaction-pop" });
   let expanded = false;
-  const renderChoices = () => {
-    pop.replaceChildren();
-    const choices = expanded ? [...QUICK_REACTIONS, ...MORE_REACTIONS] : QUICK_REACTIONS;
-    for (const emoji of choices) {
-      pop.append(el("button", {
-        class: "rp-btn", title: `React with ${emoji}`,
-        onclick: (ev) => { ev.stopPropagation(); toggleReaction(msgId, emoji); closeReactionPicker(); },
-      }, emoji));
-    }
-    if (!expanded) pop.append(el("button", {
-      class: "rp-btn rp-more", title: "More reactions", "aria-label": "More reactions",
-      onclick: (ev) => { ev.stopPropagation(); expanded = true; renderChoices(); pop.classList.add("expanded"); },
-    }, "+"));
+  const choose = (emoji, ev) => { ev?.stopPropagation(); toggleReaction(msgId, emoji); closeReactionPicker(); };
+  const position = () => {
+    const r = anchor.getBoundingClientRect(), width = expanded ? Math.min(380, window.innerWidth - 16) : 280;
+    pop.style.width = width + "px";
+    pop.style.left = Math.min(window.innerWidth - width - 8, Math.max(8, r.left + r.width / 2 - width / 2)) + "px";
+    const height = pop.getBoundingClientRect().height || (expanded ? 380 : 48);
+    let top = r.top - height - 8;
+    if (top < 8) top = Math.min(window.innerHeight - height - 8, r.bottom + 6);
+    pop.style.top = Math.max(8, top) + "px";
   };
-  renderChoices();
-  document.body.append(pop);
-  const r = anchor.getBoundingClientRect();
-  const popW = 280;
-  const left = Math.min(window.innerWidth - popW - 8, Math.max(8, r.left + r.width / 2 - popW / 2));
-  let top = r.top - 48;
-  if (top < 8) top = r.bottom + 6;
-  pop.style.left = `${left}px`;
-  pop.style.top = `${top}px`;
+  const renderFullPicker = () => {
+    pop.replaceChildren(); pop.classList.add("expanded");
+    const head = el("div", { class: "rp-head" }, [
+      el("strong", {}, "Choose a reaction"),
+      el("button", { type: "button", class: "rp-close", "aria-label": "Close emoji picker", onclick: ev => { ev.stopPropagation(); closeReactionPicker(); } }, "×")
+    ]);
+    const search = el("input", { type: "search", class: "rp-search", placeholder: "Search emoji…", "aria-label": "Search all emojis", autocomplete: "off" });
+    const tabs = el("div", { class: "rp-tabs", role: "tablist", "aria-label": "Emoji categories" });
+    const grid = el("div", { class: "rp-grid" });
+    let category = Object.keys(EMOJI)[0] || "Smileys";
+    const drawGrid = () => {
+      grid.replaceChildren();
+      const query = search.value.trim().toLocaleLowerCase();
+      const source = query ? Object.values(EMOJI).flat() : (EMOJI[category] || []);
+      const choices = [...new Set(source.filter(Boolean))];
+      if (!choices.length) { grid.append(el("div", { class: "rp-empty" }, "No matching emoji")); return; }
+      for (const emoji of choices) grid.append(el("button", { type: "button", class: "rp-btn", title: "React with " + emoji, "aria-label": "React with " + emoji, onclick: ev => choose(emoji, ev) }, emoji));
+    };
+    for (const name of Object.keys(EMOJI)) tabs.append(el("button", { type: "button", role: "tab", class: name === category ? "active" : "", onclick: ev => {
+      ev.stopPropagation(); category = name; search.value = "";
+      tabs.querySelectorAll("button").forEach(b => b.classList.toggle("active", b.textContent === name)); drawGrid();
+    } }, name));
+    search.addEventListener("input", drawGrid);
+    pop.append(head, search, tabs, grid); drawGrid(); search.focus();
+  };
+  const renderQuick = () => {
+    pop.replaceChildren(); pop.classList.remove("expanded");
+    for (const emoji of QUICK_REACTIONS) pop.append(el("button", { type: "button", class: "rp-btn", title: "React with " + emoji, onclick: ev => choose(emoji, ev) }, emoji));
+    pop.append(el("button", { type: "button", class: "rp-btn rp-more", title: "More reactions", "aria-label": "More reactions", onclick: ev => {
+      ev.stopPropagation(); expanded = true; renderFullPicker(); position();
+    } }, "+"));
+  };
+  renderQuick(); document.body.append(pop); position(); requestAnimationFrame(position);
   setTimeout(() => {
     document.addEventListener("click", _rpDismiss, { once: true, capture: true });
     document.addEventListener("keydown", _rpKey);
@@ -3542,6 +3603,8 @@ function openSettingsPanel() {
   if (!S.me) return;
   $("profileUsername").value = S.me.username || "";
   $("profileDesignation").value = S.me.designation || "CSA";
+  setProfileFieldEditing("username", false);
+  setProfileFieldEditing("designation", false);
   $("profileSettingsStatus").textContent = "";
   $("profileSettingsStatus").classList.remove("err", "ok");
   $("settingsBackdrop").classList.remove("hidden");
@@ -3560,29 +3623,38 @@ function closeSettingsPanel() {
   $("settingsOpenBtn")?.focus();
 }
 function _settingsEscape(ev) { if (ev.key === "Escape") closeSettingsPanel(); }
-function submitProfileSettings(ev) {
-  ev.preventDefault();
+function setProfileFieldEditing(field, editing) {
+  const input = $(field === "username" ? "profileUsername" : "profileDesignation");
+  const actions = $(field === "username" ? "usernameEditActions" : "designationEditActions");
+  const edit = $(field === "username" ? "editUsernameBtn" : "editDesignationBtn");
+  if (!input || !actions || !edit) return;
+  input.disabled = !editing; actions.hidden = !editing; edit.hidden = editing;
+  if (editing) input.focus();
+}
+function cancelProfileFieldEdit(field) {
+  $("profileUsername").value = S.me?.username || "";
+  $("profileDesignation").value = S.me?.designation || "CSA";
+  setProfileFieldEditing(field, false);
+  const status = $("profileSettingsStatus"); if (status) { status.textContent = ""; status.classList.remove("err", "ok"); }
+}
+function submitProfileField(field) {
   const username = ($("profileUsername")?.value || "").trim();
   const designation = $("profileDesignation")?.value || "";
-  const status = $("profileSettingsStatus");
-  status.classList.remove("err", "ok");
-  if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{2,23}$/.test(username)) {
+  const status = $("profileSettingsStatus"); status.classList.remove("err", "ok");
+  if (field === "username" && !/^[A-Za-z0-9][A-Za-z0-9_.-]{2,23}$/.test(username)) {
     status.textContent = "Use 3–24 characters: letters, digits, underscore, hyphen, or dot; start with a letter or digit.";
-    status.classList.add("err"); return;
+    status.classList.add("err"); $("profileUsername")?.focus(); return;
   }
-  if (!["AM","TL","STL","QDE","LRD","EE","CSA"].includes(designation)) {
-    status.textContent = "Choose a valid designation."; status.classList.add("err"); return;
+  if (field === "designation" && !["AM","TL","STL","QDE","LRD","EE","CSA"].includes(designation)) {
+    status.textContent = "Choose a valid designation."; status.classList.add("err"); $("profileDesignation")?.focus(); return;
   }
-  if (!S.ws || S.ws.readyState !== WebSocket.OPEN) {
-    status.textContent = "Not connected. Please try again."; status.classList.add("err"); return;
-  }
-  const save = $("profileSettingsSave");
-  save.disabled = true; save.textContent = "Saving…";
-  status.textContent = "Saving profile…";
+  if (!S.ws || S.ws.readyState !== WebSocket.OPEN) { status.textContent = "Not connected. Please try again."; status.classList.add("err"); return; }
+  const save = $(field === "username" ? "saveUsernameBtn" : "saveDesignationBtn");
+  if (save) { save.disabled = true; save.textContent = "Saving…"; }
+  status.textContent = "Saving changes…";
   sendOp({ op: "profile_update", username, designation });
-  setTimeout(() => { if (save.isConnected) { save.disabled = false; save.textContent = "Save profile"; } }, 2500);
+  setTimeout(() => { if (save?.isConnected) { save.disabled = false; save.textContent = field === "username" ? "Save username" : "Save designation"; } }, 3000);
 }
-
 function signOut() {
   lstore.remove("username");
   // Close socket cleanly so we don't auto-reconnect.
@@ -4492,17 +4564,20 @@ async function renderChannelInfo() {
     <section class="ci-profile">
       <div class="ci-avatar">${ch.photoUrl && !isDm ? `<img src="${_ciEsc(ch.photoUrl)}" alt="${_ciEsc(title)} group photo" loading="lazy">` : _ciEsc(profileAvatar)}${canEditPhoto ? '<button type="button" id="ciPhotoEditBtn" class="ci-avatar-edit" aria-label="Change group photo" title="Change group photo"><svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>' : ""}</div>
       ${canEditPhoto ? '<input id="ciPhotoFileInput" type="file" accept="image/png,image/jpeg,image/webp" hidden aria-label="Choose group photo">' : ""}
-      <div class="ci-name-row"><div class="ci-name">${_ciEsc(title)}</div>${canEditDescription ? '<button type="button" id="ciDescriptionEditBtn" class="ci-name-edit" aria-label="Edit channel name" title="Edit channel name" aria-expanded="false"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>' : ""}</div>
-      <div class="ci-subtitle">${isDm ? "Direct message · End-to-end encryption when available" : (ch.kind === "lobby" ? "Public channel" : (ch.isPrivate ? "Private group" : "Group conversation")) + " · " + members.length + " member" + (members.length === 1 ? "" : "s")}</div>
-      ${!isDm && ch.kind !== "lobby" ? `<div class="ci-description-row"><div class="ci-description" id="ciDescriptionText">${_ciEsc(description || "No group description yet.")}</div></div>` : ""}
-      ${canEditDescription ? `
-        <form id="ciEditGroupForm" class="ci-edit-group" hidden>
-          <label for="ciNameInput">Channel name</label>
-          <input id="ciNameInput" type="text" maxlength="48" minlength="2" required value="${_ciEsc(title)}" placeholder="Enter channel name">
-          <label for="ciDescriptionInput">Group description</label>
-          <textarea id="ciDescriptionInput" maxlength="500" rows="3" placeholder="Add a group description…">${_ciEsc(description)}</textarea>
-          <div class="ci-edit-group-actions"><button class="btn btn-ghost btn-sm" type="button" id="ciCancelDescriptionEdit">Cancel</button><button class="btn btn-primary btn-sm" type="submit">Save changes</button></div>
-        </form>` : ""}
+      <div class="ci-name-row"><div class="ci-name">${_ciEsc(title)}</div>${canEditDescription ? '<button type="button" id="ciNameEditBtn" class="ci-name-edit" aria-label="Edit channel name" title="Edit channel name" aria-expanded="false"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>' : ""}</div>
+       <div class="ci-subtitle">${isDm ? "Direct message · End-to-end encryption when available" : (ch.kind === "lobby" ? "Public channel" : (ch.isPrivate ? "Private group" : "Group conversation")) + " · " + members.length + " member" + (members.length === 1 ? "" : "s")}</div>
+       ${!isDm && ch.kind !== "lobby" ? `<div class="ci-description-row"><div class="ci-description" id="ciDescriptionText">${_ciEsc(description || "No group description yet.")}${canEditDescription ? '<button type="button" id="ciDescEditBtn" class="ci-name-edit ci-desc-edit" aria-label="Edit channel description" title="Edit channel description"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>' : ""}</div></div>` : ""}
+       ${canEditDescription ? `
+         <form id="ciEditNameForm" class="ci-edit-group" hidden>
+           <label for="ciNameInput">Channel name</label>
+           <input id="ciNameInput" type="text" maxlength="48" minlength="2" required value="${_ciEsc(title)}" placeholder="Enter channel name">
+           <div class="ci-edit-group-actions"><button class="btn btn-ghost btn-sm" type="button" id="ciCancelNameEdit">Cancel</button><button class="btn btn-primary btn-sm" type="submit">Save name</button></div>
+         </form>
+         <form id="ciEditDescriptionForm" class="ci-edit-group" hidden>
+           <label for="ciDescriptionInput">Channel description</label>
+           <textarea id="ciDescriptionInput" maxlength="500" rows="3" placeholder="Add a group description…">${_ciEsc(description)}</textarea>
+           <div class="ci-edit-group-actions"><button class="btn btn-ghost btn-sm" type="button" id="ciCancelDescEdit">Cancel</button><button class="btn btn-primary btn-sm" type="submit">Save description</button></div>
+         </form>` : ""}
     </section>
     <section class="ci-section">
       <div class="ci-section-head"><span>Notifications</span><span>Only for you</span></div>
@@ -4538,15 +4613,28 @@ async function renderChannelInfo() {
     if (activeChannel && activeChannel.kind !== "dm") requestChannelSharedItems(true);
     await renderChannelInfoItems();
   }));
-  const editForm = $("ciEditGroupForm");
-  const descriptionEditButton = $("ciDescriptionEditBtn");
+  const nameForm = $("ciEditNameForm");
+  const descriptionForm = $("ciEditDescriptionForm");
+  const nameButton = $("ciNameEditBtn");
+  const descriptionButton = $("ciDescEditBtn");
   const descriptionInput = $("ciDescriptionInput");
   const nameInput = $("ciNameInput");
-  if (editForm && descriptionEditButton) {
-    descriptionEditButton.addEventListener("click", () => { editForm.hidden = false; descriptionEditButton.setAttribute("aria-expanded", "true"); nameInput?.focus(); });
-    $("ciCancelDescriptionEdit")?.addEventListener("click", () => { if (descriptionInput) descriptionInput.value = ch.description || ""; if (nameInput) nameInput.value = ch.name || ""; editForm.hidden = true; descriptionEditButton.setAttribute("aria-expanded", "false"); });
-    editForm.addEventListener("submit", ev => { ev.preventDefault(); const name = (nameInput?.value || "").trim(); if (name.length < 2 || name.length > 48) { toast("Channel name must be 2–48 characters."); return; } sendOp({ op: "ch_update", channel: ch.id, name, description: descriptionInput?.value || "" }); });
-  }
+  nameButton?.addEventListener("click", () => { nameForm.hidden = false; nameButton.setAttribute("aria-expanded", "true"); nameInput?.focus(); });
+  descriptionButton?.addEventListener("click", () => { descriptionForm.hidden = false; descriptionInput?.focus(); });
+  $("ciCancelNameEdit")?.addEventListener("click", () => { if (nameInput) nameInput.value = ch.name || ""; nameForm.hidden = true; nameButton?.setAttribute("aria-expanded", "false"); });
+  $("ciCancelDescEdit")?.addEventListener("click", () => { if (descriptionInput) descriptionInput.value = ch.description || ""; descriptionForm.hidden = true; });
+  nameForm?.addEventListener("submit", ev => {
+    ev.preventDefault(); const name = (nameInput?.value || "").trim();
+    if (name.length < 2 || name.length > 48) { toast("Channel name must be 2–48 characters."); return; }
+    sendOp({ op: "ch_update", channel: ch.id, name, description: ch.description || "" });
+    nameForm.hidden = true; nameButton?.setAttribute("aria-expanded", "false");
+  });
+  descriptionForm?.addEventListener("submit", ev => {
+    ev.preventDefault(); const description = (descriptionInput?.value || "").trim();
+    if (description.length > 500) { toast("Description must be 500 characters or fewer."); return; }
+    sendOp({ op: "ch_update", channel: ch.id, name: ch.name || title, description });
+    descriptionForm.hidden = true;
+  });
   const photoEditButton = $("ciPhotoEditBtn");
   const photoInput = $("ciPhotoFileInput");
   if (photoEditButton && photoInput) {
