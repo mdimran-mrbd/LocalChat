@@ -902,9 +902,9 @@ async fn handle_op(
             let ch = state.channels.get(&channel_id).ok_or("no such channel")?;
             if !can_send(&ch, &user_id) { return Err("not a member".into()); }
             if ch.kind == ChannelKind::Dm { return Err("polls are only available in group chats".into()); }
-            let stored = state.db.tail_messages(&channel_id, 500).await.map_err(|_| "could not load poll".to_string())?;
-            let poll_msg = stored.iter().find(|m| m.id == message_id && !m.deleted).ok_or("poll not found")?;
-            let payload = poll_msg.text.strip_prefix("poll:v1:").ok_or("message is not a poll")?;
+            let poll_text = state.db.poll_message_text(&channel_id, message_id).await
+                .map_err(|_| "could not load poll".to_string())?.ok_or("poll not found")?;
+            let payload = poll_text.strip_prefix("poll:v1:").ok_or("message is not a poll")?;
             let poll: Value = serde_json::from_str(payload).map_err(|_| "invalid poll data")?;
             let option_count = poll.get("options").and_then(Value::as_array).map(|a| a.len()).ok_or("invalid poll options")?;
             if op == "poll_vote" {
