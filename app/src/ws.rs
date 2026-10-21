@@ -1654,6 +1654,24 @@ async fn handle_op(
             }));
         }
 
+        "search_all" => {
+            let query = v.get("query").and_then(Value::as_str).unwrap_or("").trim();
+            if query.chars().count() < 2 || query.chars().count() > 100 {
+                return Err("Search must be between 2 and 100 characters.".into());
+            }
+            // DB query enforces membership and excludes all DMs, whose contents
+            // must remain encrypted and unsearchable by the server.
+            let matches = state.db.search_messages_across_channels(user_id.as_str(), query, 100).await
+                .map_err(|_| "message search failed".to_string())?;
+            let results: Vec<Value> = matches.into_iter().map(|(message, channel_name)| json!({
+                "channelId": message.channel,
+                "channelName": channel_name,
+                "message": message
+            })).collect();
+            let out = json!({"ev":"search_all_results","query":query,"results":results});
+            let _ = sink.send(Message::Text(out.to_string())).await;
+        }
+
         "search" => {
             let id = v
                 .get("channel")
