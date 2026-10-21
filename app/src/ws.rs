@@ -1429,10 +1429,15 @@ async fn handle_op(
         "shared_items_list" => {
             let id = v.get("channel").and_then(Value::as_str).ok_or("missing channel")?;
             let item_type = v.get("type").and_then(Value::as_str).ok_or("missing type")?;
-            // The UI tab is named "links" while the persisted index type is singular "link".
-            // Accept the UI's plural form and normalize it for the database query.
-            if !matches!(item_type, "media" | "link" | "links" | "file") { return Err("invalid shared item type".into()); }
-            let db_item_type = if item_type == "links" { "link" } else { item_type };
+            // The UI uses plural tab names ("links", "files"), while the
+            // persisted index uses singular item types ("link", "file").
+            // Normalize the tab name before querying the index.
+            if !matches!(item_type, "media" | "link" | "links" | "file" | "files") { return Err("invalid shared item type".into()); }
+            let db_item_type = match item_type {
+                "links" => "link",
+                "files" => "file",
+                other => other,
+            };
             let limit = v.get("limit").and_then(Value::as_u64).unwrap_or(48).clamp(1, 100) as usize;
             let before_id = v.get("beforeId").and_then(Value::as_u64);
             let ch = state.channels.get(id).ok_or("no such channel")?;
