@@ -366,6 +366,7 @@ function bindServerId(id) {
 const E2EE = {
   kp: null,         // { privateKey, publicKey, publicJwk }
   available: false, // false on insecure contexts (plain HTTP non-localhost)
+  backupReady: false,
   peerKeyCache: new Map(),  // userId → CryptoKey (imported peer pubkey)
   sharedCache: new Map(),   // userId → AES-GCM CryptoKey (derived)
 
@@ -400,6 +401,71 @@ const E2EE = {
 
   myPubJwk() { return this.kp?.publicJwk || null; },
   myPubStr() { return this.kp ? JSON.stringify(this.kp.publicJwk) : ""; },
+
+  async _backupWrappingKey(password, salt, iterations) {
+    const material = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveKey"]);
+    return crypto.subtle.deriveKey({ name: "PBKDF2", salt, iterations, hash: "SHA-256" }, material,
+      { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
+  },
+
+  async createKeyBackup(password) {
+    if (!this.available || !password) return null;
+    const stored = lstore.get("e2ee-kp");
+    if (!stored) return null;
+    const pair = JSON.parse(stored);
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const key = await this._backupWrappingKey(password, salt, 310000);
+    const aad = new TextEncoder().encode("LocalChat E2EE key backup v1");
+    const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv, additionalData: aad },
+      key, new TextEncoder().encode(JSON.stringify(pair)));
+    return JSON.stringify({ v: 1, kdf: "PBKDF2-SHA-256", iterations: 310000,
+      salt: b64(salt), iv: b64(iv), ciphertext: b64(ciphertext) });
+  },
+
+  async restoreKeyBackup(password, payload) {
+    if (!this.available || !password || !payload) return false;
+    const envelope = JSON.parse(payload);
+    if (envelope.v !== 1 || envelope.kdf !== "PBKDF2-SHA-256" || envelope.iterations !== 310000 ||
+        !envelope.salt || !envelope.iv || !envelope.ciphertext) throw new Error("Unsupported encrypted key backup format");
+    const key = await this._backupWrappingKey(password, unb64(envelope.salt), envelope.iterations);
+    const aad = new TextEncoder().encode("LocalChat E2EE key backup v1");
+    const plaintext = await crypto.subtle.decrypt({ name: "AES-GCM", iv: unb64(envelope.iv), additionalData: aad },
+      key, unb64(envelope.ciphertext));
+    const pair = JSON.parse(new TextDecoder().decode(plaintext));
+    if (!pair?.privJwk || !pair?.pubJwk) throw new Error("Backup is missing key material");
+    const privateKey = await crypto.subtle.importKey("jwk", pair.privJwk, { name: "ECDH", namedCurve: "P-256" }, false, ["deriveKey"]);
+    const publicKey = await crypto.subtle.importKey("jwk", pair.pubJwk, { name: "ECDH", namedCurve: "P-256" }, true, []);
+    lstore.set("e2ee-kp", JSON.stringify(pair));
+    this.kp = { privateKey, publicKey, publicJwk: pair.pubJwk };
+    this.peerKeyCache.clear(); this.sharedCache.clear();
+    this.backupReady = true;
+    return true;
+  },
+
+  async unlockOrCreateBackup(password, payload) {
+    if (!this.available || !password) return false;
+    if (payload) {
+      try { await this.restoreKeyBackup(password, payload); return true; }
+      catch (error) {
+        this.backupReady = false;
+        console.warn("Could not unlock the encrypted DM key backup", error);
+        toast("Your DM history backup could not be unlocked. Check whether your account password changed on another device.", 6000);
+        return false;
+      }
+    }
+    const encrypted = await this.createKeyBackup(password);
+    if (encrypted) { sendOp({ op: "key_backup_set", payload: encrypted }); this.backupReady = true; return true; }
+    return false;
+  },
+
+  async refreshKeyBackup(password) {
+    if (!this.available || !password || !this.backupReady) return false;
+    const encrypted = await this.createKeyBackup(password);
+    if (!encrypted) return false;
+    sendOp({ op: "key_backup_set", payload: encrypted });
+    return true;
+  },
 
   async _derive(userId, peerPubKeyStr) {
     if (!this.available || !this.kp) return null;
@@ -638,7 +704,11 @@ $("joinForm").addEventListener("submit", (e) => {
   connect(username, password);
 });
 
+let _activePassword = "";
+let _pendingNewPassword = "";
+
 function connect(username, password) {
+  _activePassword = password || "";
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   const ws = new WebSocket(`${proto}//${location.host}/ws`);
   S.ws = ws;
@@ -655,13 +725,20 @@ function connect(username, password) {
     // Drain anything that was queued while the socket was down.
     flushOutbox();
   };
-  ws.onmessage = (ev) => handleEvent(JSON.parse(ev.data));
+  let eventQueue = Promise.resolve();
+  ws.onmessage = (ev) => {
+    let payload;
+    try { payload = JSON.parse(ev.data); } catch (error) { console.warn("Invalid server event", error); return; }
+    eventQueue = eventQueue.then(() => handleEvent(payload, _activePassword)).catch((error) => {
+      console.warn("LocalChat event handler failed", error);
+    });
+  };
   ws.onclose = () => {
     setStatus("off", "disconnected");
     if (S.me) {
       S.reconnectTries += 1;
       setStatus("warn", "reconnecting…");
-      setTimeout(() => connect(S.me.username, password), Math.min(6000, 400 * S.reconnectTries));
+      setTimeout(() => connect(S.me.username, _activePassword), Math.min(6000, 400 * S.reconnectTries));
     } else {
       const status = $("joinStatus");
       // If the server already pushed a specific error (e.g. username taken),
@@ -854,9 +931,9 @@ function notifyIncomingMessage(m) {
 Object.assign(window, { toggleBrowserNotifications });
 
 // ── Event dispatch ───────────────────────────────────────────────────
-function handleEvent(e) {
+function handleEvent(e, password = _activePassword) {
   switch (e.ev) {
-    case "welcome":      return onWelcome(e);
+    case "welcome":      return onWelcome(e, password);
     case "msg":          return onWireMsg(e.m);
     case "users":        return onUsers(e.users);
     case "history":      return onHistory(e);
@@ -957,9 +1034,10 @@ function onError(e) {
   toast(e.text || "Server error");
 }
 
-function onWelcome(e) {
+async function onWelcome(e, password) {
   S.me = e.user;
   S.session = e.session || null;
+  await E2EE.unlockOrCreateBackup(password, e.e2eeKeyBackup || null);
   S.reconnectTries = 0;
   // Persist the server-issued UserId so a future reconnect (or a brand
   // new browser, after the user re-enters their password) can echo it
@@ -3570,11 +3648,16 @@ function submitChangePassword(ev) {
     status.classList.add("err"); return;
   }
   status.textContent = "Saving…";
+  _pendingNewPassword = next;
   try { S.ws.send(JSON.stringify({ op: "change_password", current: cur, new: next })); }
-  catch { status.textContent = "Failed to send."; status.classList.add("err"); }
+  catch { _pendingNewPassword = ""; status.textContent = "Failed to send."; status.classList.add("err"); }
 }
 
 function onPasswordChanged() {
+  if (_pendingNewPassword) {
+    _activePassword = _pendingNewPassword; _pendingNewPassword = "";
+    E2EE.refreshKeyBackup(_activePassword).catch((error) => console.warn("Could not refresh encrypted DM key backup", error));
+  }
   const status = $("cpwStatus");
   if (status) {
     status.textContent = "Password updated.";
