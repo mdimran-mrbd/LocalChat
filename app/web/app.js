@@ -935,6 +935,17 @@ async function onWireMsg(m) {
     } catch {}
     return;
   }
+  if (m.username === "__ch_photo_updated") {
+    try {
+      const data = JSON.parse(m.text);
+      const ch = S.channels.get(data.channel);
+      if (ch) {
+        ch.photoUrl = data.photoUrl || "";
+        if (S.active === data.channel && !$("channelInfoDrawer")?.classList.contains("hidden")) renderChannelInfo();
+      }
+    } catch {}
+    return;
+  }
   if (m.username === "__ch_member_removed") {
     try {
       const data = JSON.parse(m.text);
