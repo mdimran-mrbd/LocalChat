@@ -3239,9 +3239,8 @@ html, body.admin-shell { height: 100%; overflow: hidden; }
 .settings-action.danger { color:#dc2626; }
 .settings-open-btn { flex:0 0 auto; }
 #settingsNotificationsSlot .browser-notification-control { width:100%; }
-#settingsNotificationsSlot .browser-notification-button { display:none; }
+#settingsNotificationsSlot .browser-notification-button { display:flex; }
 #settingsNotificationsSlot .browser-notification-menu { position:static; width:auto; max-width:none; box-shadow:none; border:0; padding:0; background:transparent; display:flex; }
-#settingsNotificationsSlot .browser-notification-menu[hidden] { display:flex !important; }
 #settingsNotificationsSlot .browser-notification-menu-label { margin-top:8px; }
 #settingsNotificationsSlot .browser-notification-menu button { border:1px solid var(--border); border-radius:8px; min-height:36px; }
 #settingsNotificationsSlot .browser-notification-menu button[hidden] { display:none !important; }
