@@ -1336,6 +1336,63 @@ async fn handle_op(
             let _ = sink.send(Message::Text(out.to_string())).await;
         }
 
+        "ch_role_set" => {
+            let id = v.get("channel").and_then(Value::as_str).ok_or("missing channel")?;
+            let target = v.get("userId").and_then(Value::as_str).ok_or("missing userId")?;
+            let role = v.get("role").and_then(Value::as_str).ok_or("missing role")?;
+            if !matches!(role, "moderator" | "member") { return Err("invalid target role".into()); }
+            let ch = state.channels.get(id).ok_or("no such channel")?;
+            if !matches!(ch.kind, ChannelKind::Group) { return Err("roles are only available in groups".into()); }
+            if ch.created_by != user_id { return Err("only the group owner can change roles".into()); }
+            if !ch.members.contains(target) { return Err("target is not a group member".into()); }
+            let changed = state.db.set_member_role(id, target, role).await
+                .map_err(|_| "could not save member role".to_string())?;
+            if !changed { return Err("member role was not changed".into()); }
+            let out = json!({"ev":"ch_role_updated","channel":id,"userId":target,"role":role});
+            let _ = sink.send(Message::Text(out.to_string())).await;
+        }
+
+        "ch_member_remove" => {
+            let id = v.get("channel").and_then(Value::as_str).ok_or("missing channel")?;
+            let target = v.get("userId").and_then(Value::as_str).ok_or("missing userId")?;
+            if target == user_id.as_str() { return Err("use Leave group to remove yourself".into()); }
+            let ch = state.channels.get(id).ok_or("no such channel")?;
+            if !matches!(ch.kind, ChannelKind::Group) { return Err("member removal is only available in groups".into()); }
+            if !ch.members.contains(&user_id) { return Err("not a member".into()); }
+            let actor_role = state.db.member_role(id, user_id.as_str()).await
+                .ok().flatten().unwrap_or_else(|| if ch.created_by == user_id { "owner".to_string() } else { "member".to_string() });
+            let target_role = state.db.member_role(id, target).await
+                .ok().flatten().unwrap_or_else(|| if ch.created_by.as_str() == target { "owner".to_string() } else { "member".to_string() });
+            if actor_role != "owner" && actor_role != "moderator" { return Err("only owners and moderators can remove members".into()); }
+            if target_role == "owner" { return Err("the group owner cannot be removed".into()); }
+            if actor_role == "moderator" && target_role != "member" { return Err("moderators can only remove regular members".into()); }
+            let target_id = target.to_compact_string();
+            ch.members.remove(&target_id);
+            state.channels.remove_user_channel(target_id.clone(), id);
+            state.db.remove_member(id, target_id.clone()).await
+                .map_err(|_| "could not remove group member".to_string())?;
+            if let Some(lobby) = state.channels.get(LOBBY_ID) {
+                let payload = json!({"channel":id,"forUserId":target,"byUserId":user_id.as_str()});
+                let _ = lobby.tx.send(Arc::new(WireMsg {
+                    id: 0,
+                    channel: lobby.id.clone(),
+                    kind: MsgKind::System,
+                    user_id: user_id.clone(),
+                    username: CompactString::const_new("__ch_member_removed"),
+                    avatar: CompactString::const_new(""),
+                    color: CompactString::const_new(""),
+                    ts: now_secs(),
+                    text: payload.to_string(),
+                    file: None,
+                    reply_to: None,
+                    edited_at: None,
+                    deleted: true,
+                }));
+            }
+            let out = json!({"ev":"ch_member_removed","channel":id,"userId":target});
+            let _ = sink.send(Message::Text(out.to_string())).await;
+        }
+
         "ch_update" => {
             let id = v.get("channel").and_then(Value::as_str).ok_or("missing channel")?;
             let description = v.get("description").and_then(Value::as_str).unwrap_or("").trim();
