@@ -1098,7 +1098,7 @@ async function onWireMsg(m) {
     return;
   }
   if (m.username === "__ch_updated") {
-    try { onChannelUpdated(JSON.parse(m.text)); } catch {}
+    try { onChannelUpdated({ ...JSON.parse(m.text), silent: true }); } catch {}
     return;
   }
   if (m.username === "__ch_photo_updated") {
@@ -4410,7 +4410,7 @@ function onChannelUpdated(e) {
   ch.name = e.name || ch.name;
   renderChannels();
   if (S.active === e.channel && !$("channelInfoDrawer")?.classList.contains("hidden")) renderChannelInfo();
-  if (typeof toast === "function") toast("Group details saved.");
+  if (!e.silent && typeof toast === "function") toast("Group details saved.");
 }
 function onChannelRoleUpdated(e) {
   const ch = S.channels.get(e.channel);
