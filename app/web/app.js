@@ -4300,10 +4300,12 @@ async function renderChannelInfoItems() {
       const download = document.createElement("a");
       download.className = "btn btn-ghost btn-sm";
       download.href = item.url;
-      download.target = "_blank";
+      // Uploads are served by this app, so the download attribute requests
+      // a file save instead of navigating away from Chat Info.
+      download.download = item.title || "attachment";
       download.rel = "noopener noreferrer";
-      download.textContent = "Open file";
-      download.setAttribute("aria-label", "Open shared file " + (item.title || "attachment"));
+      download.textContent = "Download";
+      download.setAttribute("aria-label", "Download shared file " + (item.title || "attachment"));
       footer.append(download);
     }
     footer.append(view); main.append(footer); card.append(main); root.append(card);
