@@ -77,6 +77,48 @@ function isJumbo(text) {
     return false;
   }
 }
+
+const LINK_TOKEN_RE = /(?:https?:\/\/[^\s<>"']+|www\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+(?:\/[^\s<>"']*)?|(?<![\w@.-])(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}(?::\d{1,5})?(?:\/[^\s<>"']*)?)/gi;
+function normalizeChatUrl(raw) {
+  let value = String(raw || "").replace(/[),.!?;:]+$/, "");
+  if (!value) return null;
+  if (/^www\./i.test(value) || !/^https?:\/\//i.test(value)) value = "https://" + value;
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    if (!parsed.hostname || !parsed.hostname.includes(".")) return null;
+    return parsed.href;
+  } catch { return null; }
+}
+function extractChatUrls(text) {
+  const found = [];
+  LINK_TOKEN_RE.lastIndex = 0;
+  for (const match of String(text || "").matchAll(LINK_TOKEN_RE)) {
+    const raw = match[0].replace(/[),.!?;:]+$/, "");
+    const url = normalizeChatUrl(raw);
+    if (url && !found.some(item => item.url === url)) found.push({ raw, url, index: match.index });
+  }
+  return found;
+}
+function appendLinkedText(container, text) {
+  const source = String(text || "");
+  const links = extractChatUrls(source);
+  let cursor = 0;
+  for (const item of links) {
+    if (item.index > cursor) container.append(document.createTextNode(source.slice(cursor, item.index)));
+    const anchor = document.createElement("a");
+    anchor.className = "message-link";
+    anchor.href = item.url;
+    anchor.target = "_blank";
+    anchor.rel = "noopener noreferrer";
+    anchor.textContent = item.raw;
+    anchor.setAttribute("aria-label", "Open link " + item.raw);
+    container.append(anchor);
+    cursor = item.index + item.raw.length;
+  }
+  if (cursor < source.length) container.append(document.createTextNode(source.slice(cursor)));
+}
+
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
@@ -1995,11 +2037,15 @@ async function renderMessage(m, { follow, peer, ch }) {
     }
     bubble.append(att);
     if (displayText) {
-      bubble.append(el("div", { class: "text" }, displayText));
+      const textNode = el("div", { class: "text" });
+      appendLinkedText(textNode, displayText);
+      bubble.append(textNode);
     }
   } else if (displayText) {
     const cls = isJumbo(displayText) ? "text jumbo" : "text";
-    bubble.append(el("div", { class: cls }, displayText));
+    const textNode = el("div", { class: cls });
+    appendLinkedText(textNode, displayText);
+    bubble.append(textNode);
   }
 
   // Inline meta inside bubble: only ticks (own) + lock (E2EE). Time is in the header above.
@@ -4008,7 +4054,6 @@ async function renderChannelInfoItems() {
   const peer = ch.kind === "dm" ? _ciPeer(ch) : null;
   const messages = S.msgs.get(ch.id) || [];
   const items = [];
-  const urlRe = /https?:\/\/[^\s<>"']+/gi;
   for (const m of messages) {
     if (m.deleted || m.kind === "system") continue;
     let text = m.text || "";
@@ -4024,10 +4069,8 @@ async function renderChannelInfoItems() {
       items.push({ type: "media", id: m.id, ts: m.ts, sender: m.username, title: m.file.originalName || "Media", detail: m.file.mimeType || "Media", url: m.file.url, icon: (m.file.mimeType || "").startsWith("video/") ? "🎬" : "🖼️" });
     }
     if (_channelInfoTab === "links") {
-      for (const raw of text.match(urlRe) || []) {
-        const url = raw.replace(/[),.!?;:]+$/, "");
-        try { const parsed = new URL(url); if (!["http:", "https:"].includes(parsed.protocol)) continue; } catch { continue; }
-        items.push({ type: "link", id: m.id, ts: m.ts, sender: m.username, title: url, detail: "Shared link", url, icon: "🔗" });
+      for (const found of extractChatUrls(text)) {
+        items.push({ type: "link", id: m.id, ts: m.ts, sender: m.username, title: found.raw, detail: new URL(found.url).hostname, url: found.url, icon: "🔗" });
       }
     }
   }
