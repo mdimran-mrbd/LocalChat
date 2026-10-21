@@ -517,7 +517,7 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
                                             let invited = json!({
                                                 "ev":"ch_invited",
                                                 "channel": ch.id,
-                                                "channelName": ch.name,
+                                                "channelName": ch.name(),
                                                 "inviter": v.get("inviter").and_then(Value::as_str).unwrap_or("")
                                             });
                                             let _ = sink.send(Message::Text(invited.to_string())).await;
@@ -1026,7 +1026,7 @@ async fn handle_op(
 
             let out = json!({"ev":"ch_created","channel":ch.meta()});
             let _ = sink.send(Message::Text(out.to_string())).await;
-            broadcast_system(state, &ch, &format!("Channel #{} created", ch.name)).await;
+            broadcast_system(state, &ch, &format!("Channel #{} created", ch.name())).await;
             let _ = state.db.upsert_channel(&ch.meta()).await;
             let _ = state.db.add_member(&ch.id, user_id, now_secs()).await;
         }
@@ -1052,7 +1052,7 @@ async fn handle_op(
                 .get(&user_id)
                 .map(|u| u.value().username.to_string())
                 .unwrap_or_default();
-            broadcast_system(state, &ch, &format!("{} joined #{}", username, ch.name)).await;
+            broadcast_system(state, &ch, &format!("{} joined #{}", username, ch.name())).await;
             let _ = state.db.add_member(&ch.id, user_id, now_secs()).await;
         }
 
@@ -1120,7 +1120,7 @@ async fn handle_op(
                             "channel": ch.id,
                             "forUserId": uid.as_str(),
                             "inviter": inviter_name,
-                            "channelName": ch.name,
+                            "channelName": ch.name(),
                         });
                         let _ = lobby.tx.send(Arc::new(WireMsg {
                             id: 0,
@@ -1151,7 +1151,7 @@ async fn handle_op(
                             format!("{}, and {}", head.join(", "), last)
                         }
                     };
-                    let text = format!("{} added {} to #{}", inviter_name, joined, ch.name);
+                    let text = format!("{} added {} to #{}", inviter_name, joined, ch.name());
                     broadcast_system(state, &ch, &text).await;
                 }
                 let now = now_secs();
@@ -1293,7 +1293,7 @@ async fn handle_op(
             if !can_send(&ch, &user_id) { return Err("not a member".into()); }
             let (name, description, photo_url) = state.db.channel_details(id).await
                 .map_err(|_| "could not load chat details".to_string())?
-                .unwrap_or_else(|| (ch.name.to_string(), String::new(), String::new()));
+                .unwrap_or_else(|| (ch.name().to_string(), String::new(), String::new()));
             let member_ids: Vec<String> = ch.members.iter().map(|uid| uid.key().to_string()).collect();
             let mut members = Vec::new();
             for uid in member_ids {
@@ -1395,9 +1395,18 @@ async fn handle_op(
 
         "ch_update" => {
             let id = v.get("channel").and_then(Value::as_str).ok_or("missing channel")?;
+            let ch = state.channels.get(id).ok_or("no such channel")?;
+            if !matches!(ch.kind, ChannelKind::Group) { return Err("only groups have editable details".into()); }
+            if ch.created_by != user_id { return Err("only the group owner can edit details".into()); }
+
+            let current_name = ch.name();
+            let name = v.get("name").and_then(Value::as_str).unwrap_or(current_name.as_str()).trim();
+            if name.chars().count() < 2 || name.chars().count() > 48 {
+                return Err("channel name must be between 2 and 48 characters".into());
+            }
             let description = v.get("description").and_then(Value::as_str).unwrap_or("").trim();
             if description.chars().count() > 500 { return Err("description is too long (max 500 characters)".into()); }
-            let ch = state.channels.get(id).ok_or("no such channel")?;
+
             // Description edits must not overwrite or revalidate the existing photo URL.
             // Group photos uploaded by the app use local /uploads/... paths, not remote HTTP(S) URLs.
             let photo_url = if let Some(value) = v.get("photoUrl").and_then(Value::as_str) {
@@ -1412,16 +1421,29 @@ async fn handle_op(
                     .map(|details| details.2)
                     .unwrap_or_default()
             };
-            if !matches!(ch.kind, ChannelKind::Group) { return Err("only groups have editable details".into()); }
-            if ch.created_by != user_id { return Err("only the group owner can edit details".into()); }
-            let updated = state.db.update_channel_details(id, ch.name.as_str(), description, &photo_url).await
+            let updated = state.db.update_channel_details(id, name, description, &photo_url).await
                 .map_err(|_| "could not save group details".to_string())?;
             if !updated { return Err("group no longer exists".into()); }
+            ch.set_name(name);
             let (name, description, photo_url) = state.db.channel_details(id).await
                 .map_err(|_| "could not load updated group details".to_string())?
-                .unwrap_or_else(|| (ch.name.to_string(), description.to_string(), photo_url.to_string()));
-            let out = json!({"ev":"ch_updated","channel":id,"name":name,"description":description,"photoUrl":photo_url});
-            let _ = sink.send(Message::Text(out.to_string())).await;
+                .unwrap_or_else(|| (name.to_string(), description.to_string(), photo_url.to_string()));
+            let payload = json!({"channel":id,"name":name,"description":description,"photoUrl":photo_url});
+            let _ = ch.tx.send(Arc::new(WireMsg {
+                id: 0,
+                channel: ch.id.clone(),
+                kind: MsgKind::System,
+                user_id: user_id.clone(),
+                username: CompactString::const_new("__ch_updated"),
+                avatar: CompactString::const_new(""),
+                color: CompactString::const_new(""),
+                ts: now_secs(),
+                text: payload.to_string(),
+                file: None,
+                reply_to: None,
+                edited_at: None,
+                deleted: false,
+            }));
         }
 
         "ch_notification_set" => {
