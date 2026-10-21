@@ -209,8 +209,10 @@ function scheduleUpdateBannerDismiss() {
 $("dismissUpdateBanner")?.addEventListener("click", dismissUpdateBanner);
 
 // Update checks are explicitly opt-in; the install action remains separately user-confirmed.
+const updateConsentSection = $("updateConsentSection");
+if (updateConsentSection) updateConsentSection.hidden = !["localhost", "127.0.0.1", "[::1]", "::1"].includes(location.hostname.toLowerCase());
 const updateChecksOptIn = $("updateChecksOptIn");
-if (updateChecksOptIn) {
+if (updateChecksOptIn && updateConsentSection && !updateConsentSection.hidden) {
   try { updateChecksOptIn.checked = localStorage.getItem("localchat-update-checks") === "yes"; } catch {}
   updateChecksOptIn.addEventListener("change", async () => {
     try {
@@ -1581,6 +1583,7 @@ function _sbGroup(key, title, count, items) {
 
 function _channelItem(c) {
   const active = c.id === S.active ? "active" : "";
+  const pinned = isChatPinned(c.id);
   const unread = S.unread.get(c.id) || 0;
   const isMember = !!(S.me && (c.members || []).includes(S.me.id));
   const canDelete = c.kind === "group" && S.me && c.createdBy === S.me.id;
@@ -1614,11 +1617,12 @@ function _channelItem(c) {
   }, [
     el("div", { class: "avatar", style: `background:var(--brand)` }, "#"),
     el("div", { class: "chat-meta" }, [
-      el("div", { class: "chat-name" }, c.name || c.id),
+      el("div", { class: "chat-name" }, [pinned ? el("span", { class: "chat-pin-mark", title: "Pinned chat" }, "📌 ") : null, c.name || c.id]),
       el("div", { class: "chat-sub muted xs" },
         c.kind === "lobby" ? "lobby \u00b7 everyone" : (c.isPrivate ? "private channel" : "channel")),
     ]),
     unread ? el("span", { class: "badge badge-unread" }, String(unread)) : null,
+    el("button", { class: "chat-pin", type: "button", title: pinned ? "Unpin chat" : "Pin chat", "aria-label": pinned ? "Unpin chat" : "Pin chat", onclick: (ev) => { ev.stopPropagation(); toggleChatPin(c.id); }, textContent: pinned ? "📌" : "📍" }),
     canDelete ? el("button", {
       class: "chat-del",
       title: `Delete #${c.name || c.id}`,
@@ -1661,6 +1665,7 @@ function leaveChannel(channelId) {
 
 function _dmItem(c) {
   const u = dmPeer(c);
+  const pinned = isChatPinned(c.id);
   const active = c.id === S.active ? "active" : "";
   const unread = S.unread.get(c.id) || 0;
   const online = !!(u && !u.offline);
@@ -1684,10 +1689,11 @@ function _dmItem(c) {
       el("span", { class: "presence-dot" }),
     ]),
     el("div", { class: "chat-meta" }, [
-      el("div", { class: "chat-name" }, peerName),
+      el("div", { class: "chat-name" }, [pinned ? el("span", { class: "chat-pin-mark", title: "Pinned chat" }, "📌 ") : null, peerName]),
       el("div", { class: "chat-sub muted xs" }, online ? "online" : "offline"),
     ]),
     unread ? el("span", { class: "badge badge-unread" }, String(unread)) : null,
+    el("button", { class: "chat-pin", type: "button", title: pinned ? "Unpin chat" : "Pin chat", "aria-label": pinned ? "Unpin chat" : "Pin chat", onclick: (ev) => { ev.stopPropagation(); toggleChatPin(c.id); }, textContent: pinned ? "📌" : "📍" }),
     el("button", {
       class: "chat-del",
       title: `Delete conversation with ${peerName}`,
@@ -1750,6 +1756,21 @@ function _personItem(u, online) {
   ]);
 }
 
+function isChatPinned(channelId) {
+  try { return (JSON.parse(lstore.get("pinned-chats") || "[]") || []).includes(channelId); } catch { return false; }
+}
+function toggleChatPin(channelId) {
+  let pinned = [];
+  try { pinned = JSON.parse(lstore.get("pinned-chats") || "[]") || []; } catch {}
+  if (pinned.includes(channelId)) pinned = pinned.filter(id => id !== channelId);
+  else {
+    if (pinned.length >= 5) { toast("You can pin up to 5 chats. Unpin one first.", 3000); return; }
+    pinned.push(channelId);
+  }
+  lstore.set("pinned-chats", JSON.stringify(pinned));
+  renderChannels();
+}
+
 function renderChannels() {
   const root = $("sbGroups");
   if (!root) return;
@@ -1766,6 +1787,8 @@ function renderChannels() {
     channels.push(c);
   }
   channels.sort((a, b) => {
+    const pinDiff = Number(isChatPinned(b.id)) - Number(isChatPinned(a.id));
+    if (pinDiff) return pinDiff;
     if (a.kind === "lobby") return -1;
     if (b.kind === "lobby") return 1;
     return (a.name || a.id).localeCompare(b.name || b.id);
@@ -1802,7 +1825,7 @@ function renderChannels() {
   const dmGroupedOffline = dmList.filter((c) => {
     const p = dmPeer(c); return !(p && !p.offline) && matches(p?.username);
   });
-  const sortDm = (a, b) => (dmPeer(a)?.username || "").localeCompare(dmPeer(b)?.username || "");
+  const sortDm = (a, b) => Number(isChatPinned(b.id)) - Number(isChatPinned(a.id)) || (dmPeer(a)?.username || "").localeCompare(dmPeer(b)?.username || "");
   dmGroupedOnline.sort(sortDm); dmGroupedOffline.sort(sortDm);
 
   // ── Render based on tab ──────────────────────────────────
