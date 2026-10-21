@@ -12,6 +12,14 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Stable avatar color from a username — mirrors server's pick_color_for (FNV-1a 32, lowercased).
 const _AVATAR_COLORS = ["#6366f1","#8b5cf6","#ec4899","#ef4444","#f97316","#eab308","#22c55e","#14b8a6","#06b6d4","#3b82f6"];
+function userNameNode(user) {
+  const profile = typeof user === "string" ? { username: user } : (user || {});
+  const root = el("span", { class: "user-name-display" });
+  root.append(document.createTextNode(profile.username || "Unknown"));
+  if (profile.designation) root.append(el("span", { class: "user-designation" }, " • " + profile.designation));
+  return root;
+}
+
 function colorForName(name) {
   if (!name) return _AVATAR_COLORS[0];
   let h = 0x811c9dc5 >>> 0;
@@ -969,7 +977,7 @@ function onWelcome(e) {
   $("meChip").append(
     el("div", { class: "avatar xs", style: `background:${e.user.color}` }, e.user.avatar || "?"),
     el("div", { class: "me-info" }, [
-      el("div", { class: "name" }, e.user.username),
+      el("div", { class: "name" }, userNameNode(e.user)),
     ]),
     el("button", {
       id: "themeToggle",
@@ -1004,6 +1012,8 @@ function onWelcome(e) {
   S.lobby = e.lobby || "pub:general";
   if (e.mustChangePassword) {
     setTimeout(() => openChangePasswordModal({ forced: true }), 200);
+  } else if (!e.user.designation) {
+    setTimeout(openDesignationModal, 250);
   }
 }
 
@@ -1017,6 +1027,13 @@ function onUsers(list) {
   }
   S.users.clear();
   for (const u of list) S.users.set(u.id, u);
+  const updatedMe = list.find(u => u.id === S.me?.id);
+  if (updatedMe) {
+    S.me = updatedMe;
+    const ownName = $("meChip")?.querySelector(".me-info .name");
+    if (ownName) ownName.replaceChildren(userNameNode(updatedMe));
+    if (updatedMe.designation) closeModal("designationModal");
+  }
   const uc = $("userCount"); if (uc) uc.textContent = "";
   renderMembers();
   renderChannels();
@@ -1711,7 +1728,7 @@ function _dmItem(c) {
       el("span", { class: "presence-dot" }),
     ]),
     el("div", { class: "chat-meta" }, [
-      el("div", { class: "chat-name" }, [pinned ? el("span", { class: "chat-pin-mark", title: "Pinned chat" }, "📌 ") : null, peerName]),
+      el("div", { class: "chat-name" }, [pinned ? el("span", { class: "chat-pin-mark", title: "Pinned chat" }, "📌 ") : null, userNameNode(u || { username: peerName })]),
       el("div", { class: "chat-sub muted xs" }, online ? "online" : "offline"),
     ]),
     unread ? el("span", { class: "badge badge-unread" }, String(unread)) : null,
@@ -1772,7 +1789,7 @@ function _personItem(u, online) {
       el("span", { class: "presence-dot" }),
     ]),
     el("div", { class: "chat-meta" }, [
-      el("div", { class: "chat-name" }, u.username),
+      el("div", { class: "chat-name" }, userNameNode(u)),
       el("div", { class: "chat-sub muted xs" }, online ? "online" : "offline"),
     ]),
   ]);
@@ -2117,7 +2134,7 @@ async function renderMessage(m, { follow, peer, ch }) {
             ev.stopPropagation();
             openDmWithUserId(m.userId, m.username);
           },
-        }, m.username),
+        }, userNameNode(S.users.get(m.userId) || { username: m.username })),
         el("span", { class: "header-time" }, fmtTime(m.ts)),
       ]);
     } else {
@@ -3379,7 +3396,7 @@ function onPasswordChanged() {
     status.classList.add("ok");
   }
   toast("Password changed.");
-  setTimeout(() => closeModal("changePwModal"), 700);
+  setTimeout(() => { closeModal("changePwModal"); if (!S.me?.designation) openDesignationModal(); }, 700);
 }
 
 // ── Lightbox ─────────────────────────────────────────────────────────
@@ -4283,7 +4300,7 @@ function renderChannelInfoMembers(members) {
     const row = document.createElement("div"); row.className = "ci-member";
     const avatar = document.createElement("div"); avatar.className = "ci-member-avatar"; avatar.style.background = u.color || "#6366f1"; avatar.textContent = u.avatar || (u.username || "?").slice(0,1).toUpperCase();
     const main = document.createElement("div"); main.className = "ci-member-main";
-    const name = document.createElement("div"); name.className = "ci-member-name"; name.textContent = u.id === S.me?.id ? (u.username + " (you)") : (u.username || "Unknown member");
+    const name = document.createElement("div"); name.className = "ci-member-name"; name.append(userNameNode(u)); if (u.id === S.me?.id) name.append(document.createTextNode(" (you)"));
     const role = document.createElement("div"); role.className = "ci-member-role"; role.textContent = u.role === "owner" || u.id === S.channels.get(S.active)?.createdBy ? "Group owner" : (u.role === "moderator" ? "Moderator" : (u.online ? "Online" : "Member"));
     main.append(name, role); row.append(avatar, main);
     const canMessage = u.id !== S.me?.id && u.id && u.username && typeof openDmWithUserId === "function";
