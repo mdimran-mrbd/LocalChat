@@ -704,6 +704,7 @@ function updateBrowserNotificationButton() {
   button.innerHTML = enabled
     ? '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg>'
     : '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/><path d="m3 3 18 18"/></svg>';
+  button.insertAdjacentHTML("beforeend", '<span>Browser notifications: ' + (enabled ? 'On' : 'Off') + '</span>');
 }
 
 async function toggleBrowserNotifications() {
@@ -2132,9 +2133,8 @@ async function renderMessage(m, { follow, peer, ch }) {
     const cls = isJumbo(displayText) ? "text jumbo" : "text";
     const textNode = el("div", { class: cls });
     appendLinkedText(textNode, displayText, m.channel);
-      bubble.append(textNode);
-      appendMessageLinkPreview(bubble, displayText);
     bubble.append(textNode);
+    appendMessageLinkPreview(bubble, displayText);
   }
 
   // Inline meta inside bubble: only ticks (own) + lock (E2EE). Time is in the header above.
