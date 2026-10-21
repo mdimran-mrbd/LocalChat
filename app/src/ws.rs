@@ -1311,6 +1311,7 @@ async fn handle_op(
                         "username": profile.username,
                         "avatar": profile.avatar,
                         "color": profile.color,
+                        "designation": profile.designation,
                         "online": state.users.contains_key(uid.as_str()),
                         "role": role
                     }));
