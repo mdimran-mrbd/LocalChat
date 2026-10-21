@@ -2921,3 +2921,15 @@ html, body.admin-shell { height: 100%; overflow: hidden; }
 [data-theme="light"] .ci-subtitle, [data-theme="light"] .ci-item-sub { color: #6b7280; }
 [data-theme="light"] .ci-browser-tab { color: #6b7280; }
 [data-theme="light"] .ci-browser-tab.active { color: #3730a3; background: #eef2ff; border-color: #6366f1; }
+
+
+/* Compact shared-media preview in Chat Info. */
+.ci-media-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+.ci-media-tile { display:flex; flex-direction:column; align-items:stretch; gap:0; min-width:0; padding:0; overflow:hidden; }
+.ci-media-thumb { display:block; width:100%; aspect-ratio:1 / 1; object-fit:cover; background:var(--bg-2,#181c26); }
+.ci-media-tile .ci-item-main { width:100%; box-sizing:border-box; padding:7px 8px 8px; }
+.ci-media-tile .ci-item-sub { font-size:10px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ci-media-tile .ci-item-footer { margin-top:5px; }
+.ci-media-tile .ci-item-footer .btn { width:100%; padding-inline:4px; font-size:10px; }
+.ci-view-all { grid-column:1 / -1; justify-self:stretch; }
+@media (max-width:520px) { .ci-media-grid { grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; } }
