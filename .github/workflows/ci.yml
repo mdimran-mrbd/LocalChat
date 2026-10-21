@@ -26,6 +26,8 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Check Rust code
         run: cargo check --manifest-path app/Cargo.toml --no-default-features
+      - name: Run Rust tests
+        run: cargo test --manifest-path app/Cargo.toml --no-default-features
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
