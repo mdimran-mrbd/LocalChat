@@ -1396,12 +1396,22 @@ async fn handle_op(
         "ch_update" => {
             let id = v.get("channel").and_then(Value::as_str).ok_or("missing channel")?;
             let description = v.get("description").and_then(Value::as_str).unwrap_or("").trim();
-            let photo_url = v.get("photoUrl").and_then(Value::as_str).unwrap_or("").trim();
             if description.chars().count() > 500 { return Err("description is too long (max 500 characters)".into()); }
-            if photo_url.len() > 2048 || (!photo_url.is_empty() && !(photo_url.starts_with("https://") || photo_url.starts_with("http://"))) {
-                return Err("photo URL must be an HTTP(S) URL under 2048 characters".into());
-            }
             let ch = state.channels.get(id).ok_or("no such channel")?;
+            // Description edits must not overwrite or revalidate the existing photo URL.
+            // Group photos uploaded by the app use local /uploads/... paths, not remote HTTP(S) URLs.
+            let photo_url = if let Some(value) = v.get("photoUrl").and_then(Value::as_str) {
+                let value = value.trim();
+                if value.len() > 2048 || (!value.is_empty() && !(value.starts_with("https://") || value.starts_with("http://") || value.starts_with("/uploads/"))) {
+                    return Err("photo URL must be an HTTP(S) URL or an app upload path under 2048 characters".into());
+                }
+                value.to_string()
+            } else {
+                state.db.channel_details(id).await
+                    .map_err(|_| "could not load current group details".to_string())?
+                    .map(|details| details.2)
+                    .unwrap_or_default()
+            };
             if !matches!(ch.kind, ChannelKind::Group) { return Err("only groups have editable details".into()); }
             if ch.created_by != user_id { return Err("only the group owner can edit details".into()); }
             let updated = state.db.update_channel_details(id, ch.name.as_str(), description, photo_url).await
