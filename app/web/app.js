@@ -694,6 +694,7 @@ function updateBrowserNotificationButton() {
     : snoozed ? "Notifications snoozed" : "Browser notifications enabled";
   button.setAttribute("aria-label", button.title);
   button.setAttribute("aria-pressed", String(enabled));
+  button.setAttribute("aria-expanded", String(!!$("browserNotificationMenu") && !$("browserNotificationMenu").hidden));
   button.innerHTML = enabled
     ? '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg>'
     : snoozed
@@ -758,7 +759,9 @@ function snoozeBrowserNotifications(minutes) {
 
 function toggleBrowserNotifications() {
   const menu = $("browserNotificationMenu");
-  if (menu) menu.hidden = !menu.hidden;
+  if (!menu) return;
+  menu.hidden = !menu.hidden;
+  $("browserNotificationsBtn")?.setAttribute("aria-expanded", String(!menu.hidden));
 }
 $("browserNotificationsBtn")?.addEventListener("click", ev => {
   ev.stopPropagation();
@@ -775,6 +778,7 @@ $("browserNotificationMenu")?.addEventListener("click", async ev => {
     toast("Browser notifications resumed.");
   } else if (action.dataset.snoozeMinutes) snoozeBrowserNotifications(action.dataset.snoozeMinutes);
   $("browserNotificationMenu").hidden = true;
+  $("browserNotificationsBtn")?.setAttribute("aria-expanded", "false");
 });
 document.addEventListener("click", ev => {
   if (!ev.target.closest("#browserNotificationControl") && $("browserNotificationMenu")) {
@@ -986,7 +990,7 @@ function onWelcome(e) {
   // Load each member chat's persisted notification preference on every session,
   // not only after the user opens that chat's Info panel.
   for (const channel of S.channels.values()) {
-    if (channel.kind !== "lobby" && (channel.members || []).includes(S.me.id)) {
+    if ((channel.members || []).includes(S.me.id)) {
       sendOp({ op: "ch_info", channel: channel.id });
     }
   }
@@ -4115,7 +4119,7 @@ async function renderChannelInfo() {
       <button id="browserNotificationsBtn" class="btn btn-ghost btn-sm ci-browser-notifications" type="button" title="Enable browser notifications" aria-label="Enable browser notifications" onclick="toggleBrowserNotifications()">Enable browser notifications</button>
       <select id="ciNotificationMode" class="ci-search" aria-label="Chat notification preference">
         <option value="all" ${_ciNotificationMode === "all" ? "selected" : ""}>All messages</option>
-        <option value="mentions" ${_ciNotificationMode === "mentions" ? "selected" : ""}>Mentions only</option>
+        <option value="mentions" ${_ciNotificationMode === "mentions" ? "selected" : ""}>Mention or reply only</option>
         <option value="mute" ${_ciNotificationMode === "mute" ? "selected" : ""}>Muted</option>
       </select>
     </section>
