@@ -2896,3 +2896,7 @@ html, body.admin-shell { height: 100%; overflow: hidden; }
 .ci-edit-group label { font-size:12px; font-weight:600; color:var(--muted, #777); }
 .ci-edit-group input, .ci-edit-group textarea { width:100%; box-sizing:border-box; border:1px solid var(--border, rgba(128,128,128,.3)); border-radius:8px; padding:9px 10px; color:var(--text, inherit); background:var(--panel, transparent); font:inherit; font-size:13px; resize:vertical; }
 .ci-edit-group button { align-self:flex-start; }
+
+.ci-role-select { max-width:112px; min-width:88px; border:1px solid var(--border, rgba(128,128,128,.3)); border-radius:7px; padding:6px 7px; background:var(--panel, transparent); color:var(--text, inherit); font:inherit; font-size:12px; }
+.ci-member { min-width:0; }
+.ci-member-action { white-space:nowrap; }
