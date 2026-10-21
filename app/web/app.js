@@ -4411,6 +4411,7 @@ function onChannelUpdated(e) {
   ch.photoUrl = e.photoUrl || "";
   ch.name = e.name || ch.name;
   renderChannels();
+  if (S.active === e.channel) updateHeader();
   if (S.active === e.channel && !$("channelInfoDrawer")?.classList.contains("hidden")) renderChannelInfo();
   if (!e.silent && typeof toast === "function") toast("Group details saved.");
 }
