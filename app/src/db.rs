@@ -444,7 +444,7 @@ impl Db {
         let lname = username.to_lowercase();
         self.with(move |c| {
             c.query_row(
-                "SELECT id, username, avatar, color, pubkey, joined_at,
+                "SELECT id, username, username_lower, avatar, color, pubkey, joined_at,
                         last_connect, last_seen, last_ip,
                         total_sessions, msg_count, bytes_uploaded, designation
                    FROM users WHERE username_lower = ?1",
@@ -461,7 +461,7 @@ impl Db {
         let id = id.to_string();
         self.with(move |c| {
             c.query_row(
-                "SELECT id, username, avatar, color, pubkey, joined_at,
+                "SELECT id, username, username_lower, avatar, color, pubkey, joined_at,
                         last_connect, last_seen, last_ip,
                         total_sessions, msg_count, bytes_uploaded, designation
                    FROM users WHERE id = ?1",
@@ -600,7 +600,7 @@ impl Db {
     pub async fn list_users(&self) -> rusqlite::Result<Vec<UserInfo>> {
         self.with(|c| {
             let mut stmt = c.prepare(
-                "SELECT id, username, avatar, color, pubkey, joined_at,
+                "SELECT id, username, username_lower, avatar, color, pubkey, joined_at,
                         last_connect, last_seen, last_ip,
                         total_sessions, msg_count, bytes_uploaded, designation
                    FROM users ORDER BY joined_at",
