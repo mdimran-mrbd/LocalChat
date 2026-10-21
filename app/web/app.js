@@ -4116,7 +4116,6 @@ async function renderChannelInfo() {
     </section>
     <section class="ci-section">
       <div class="ci-section-head"><span>Notifications</span><span>Only for you</span></div>
-      <button id="browserNotificationsBtn" class="btn btn-ghost btn-sm ci-browser-notifications" type="button" title="Enable browser notifications" aria-label="Enable browser notifications" onclick="toggleBrowserNotifications()">Enable browser notifications</button>
       <select id="ciNotificationMode" class="ci-search" aria-label="Chat notification preference">
         <option value="all" ${_ciNotificationMode === "all" ? "selected" : ""}>All messages</option>
         <option value="mentions" ${_ciNotificationMode === "mentions" ? "selected" : ""}>Mention or reply only</option>
