@@ -1009,7 +1009,12 @@ input:focus, textarea:focus {
   color: white; font-size: 12px;
   cursor: default;
 }
+.lightbox .lb-bar { max-width: min(90vw, 720px); }
+.lightbox .lb-bar span { max-width: 52vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lightbox .lb-bar a { color: white; }
+.lightbox .lb-download { display:inline-flex; align-items:center; justify-content:center; padding:7px 11px; border:1px solid rgba(255,255,255,.28); border-radius:999px; text-decoration:none; font-weight:650; }
+.lightbox .lb-download:hover, .lightbox .lb-download:focus-visible { background:rgba(255,255,255,.16); outline:2px solid white; outline-offset:2px; }
+.lightbox .lb-image-error { width:min(70vw, 480px); min-height:160px; object-fit:contain; }
 
 /* Encrypted marker on DM messages */
 .msg .enc-tag {
