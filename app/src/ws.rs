@@ -1444,6 +1444,7 @@ async fn handle_op(
                 "ev":"shared_items_list",
                 "channel":id,
                 "type":item_type,
+                "requestId":v.get("requestId").cloned().unwrap_or(Value::Null),
                 "items":items,
                 "counts":{"media":counts.0,"links":counts.1,"files":counts.2},
                 "nextCursor":next_cursor,
