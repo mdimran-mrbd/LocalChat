@@ -3201,3 +3201,5 @@ html, body.admin-shell { height: 100%; overflow: hidden; }
 .chat-pin{border:0;background:transparent;color:var(--fg-2);font-size:12px;line-height:1;padding:5px 3px;border-radius:5px;cursor:pointer;opacity:.65;flex:0 0 auto}
 .chat-pin:hover,.chat-pin:focus-visible{opacity:1;background:var(--bg-hover);color:var(--fg-0)}
 .chat-pin-mark{font-size:10px;vertical-align:1px;margin-right:2px}
+
+.chat-unread-signal{font-size:11px;font-weight:750;line-height:1;flex:0 0 auto;margin-left:1px}.mention-signal{color:#d97706}.reply-signal{color:var(--brand)}.search-result-item{cursor:pointer}.search-result-item .chat-sub{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px}
