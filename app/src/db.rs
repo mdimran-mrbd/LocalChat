@@ -1069,8 +1069,15 @@ impl Db {
         let cid = channel.to_string();
         self.with(move |c| {
             let mut counts = [0_u64; 3];
+            // Soft-deleted messages retain their rows for history ordering, so
+            // counts must join messages and exclude deleted rows just like the
+            // paginated item query does.
             let mut stmt = c.prepare(
-                "SELECT item_type, COUNT(*) FROM shared_items WHERE channel_id=?1 GROUP BY item_type"
+                "SELECT si.item_type, COUNT(*)
+                   FROM shared_items si
+                   JOIN messages m ON m.id=si.message_id AND m.channel_id=si.channel_id
+                  WHERE si.channel_id=?1 AND m.deleted=0
+                  GROUP BY si.item_type"
             )?;
             let rows = stmt.query_map(params![cid], |r| Ok((r.get::<_, String>(0)?, r.get::<_, u64>(1)?)))?;
             for row in rows {
