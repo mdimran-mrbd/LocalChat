@@ -401,7 +401,7 @@ async fn upload(
         state.db.update_channel_details(&ch_id, &name, &description, &photo_url).await
             .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "could not save group photo".into()))?;
         let uploaded_by_name = state.users.get(&uid).map(|u| u.username.to_string()).unwrap_or_default();
-        let _ = state.db.insert_upload(&info.filename, &info.original_name, info.mime_type.as_str(), file_size, Some(uid), &uploaded_by_name, now_secs()).await;
+        let _ = state.db.insert_upload(&info.filename, &info.original_name, info.mime_type.as_str(), file_size, Some(uid.clone()), &uploaded_by_name, now_secs()).await;
         if old_photo.starts_with("/uploads/") && old_photo != photo_url {
             let old_name = old_photo.trim_start_matches("/uploads/");
             if !old_name.contains('/') && !old_name.contains('\\') {
