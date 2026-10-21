@@ -3170,19 +3170,29 @@ html, body.admin-shell { height: 100%; overflow: hidden; }
 .sb-admin-link { flex: 0 0 auto; }
 .message-mention { color: var(--brand); font-weight: 650; text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--brand) 50%, transparent); text-underline-offset: 2px; cursor: pointer; }
 .message-mention:hover { text-decoration-color: currentColor; }
-.message-link-preview {
-  display: flex; align-items: center; gap: 10px; max-width: min(420px, 100%);
-  margin-top: 9px; padding: 9px 11px; border: 1px solid var(--border);
-  border-radius: 9px; background: var(--bg-2); color: var(--fg-0);
-  text-decoration: none; overflow: hidden;
+/* Browser notification control stays with the signed-in user's account panel. */
+.sb-foot-row { position: relative; }
+.browser-notification-control { position: relative; flex: 0 0 auto; }
+.browser-notification-button { width: 34px; height: 34px; padding: 0; }
+.browser-notification-button.active { color: var(--ok); }
+.browser-notification-button.snoozed { color: var(--warn, #d97706); }
+.browser-notification-menu {
+  position: absolute; z-index: 100; right: 0; bottom: calc(100% + 8px);
+  width: 224px; max-width: min(224px, 80vw); padding: 6px;
+  display: flex; flex-direction: column; gap: 2px;
+  border: 1px solid var(--border); border-radius: 10px;
+  background: var(--bg-1); box-shadow: 0 12px 32px rgba(0,0,0,.22);
 }
-.message-link-preview:hover { background: var(--bg-hover); text-decoration: none; border-color: var(--border-strong); }
-.message-link-preview-icon {
-  display: grid; place-items: center; flex: 0 0 34px; width: 34px; height: 34px;
-  border-radius: 7px; background: var(--brand-soft); color: var(--brand); font-size: 22px;
+.browser-notification-menu[hidden] { display: none !important; }
+.browser-notification-menu button {
+  display: block; width: 100%; padding: 8px 10px; border: 0; border-radius: 6px;
+  background: transparent; color: var(--fg-1); text-align: left; font: inherit;
+  font-size: 12px; cursor: pointer;
 }
-.message-link-preview-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.message-link-preview-copy strong { font-size: 12px; font-weight: 700; overflow-wrap: anywhere; }
-.message-link-preview-copy span { font-size: 11px; color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ci-browser-notifications { width: 100%; margin: 0 0 8px; justify-content: center; }
-.ci-browser-notifications.active { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, var(--border)); }
+.browser-notification-menu button:hover { background: var(--bg-2); color: var(--fg-0); }
+.browser-notification-menu button[hidden] { display: none !important; }
+.browser-notification-menu-label {
+  margin: 4px 8px 2px; padding-top: 7px; border-top: 1px solid var(--border);
+  color: var(--fg-3); font-size: 10px; font-weight: 700; letter-spacing: .04em;
+  text-transform: uppercase;
+}
