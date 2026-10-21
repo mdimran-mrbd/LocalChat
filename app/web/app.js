@@ -3214,9 +3214,15 @@ function openLightbox(src, name, downloadUrl) {
       event.preventDefault();
       closeLightbox();
     } else if (event.key === "Tab") {
-      // Keep keyboard focus inside the modal while it is open.
-      event.preventDefault();
-      close.focus();
+      // Keep keyboard focus inside the modal while allowing both controls.
+      const focusable = [...lb.querySelectorAll("button:not([disabled]), a[href]")];
+      if (!focusable.length) { event.preventDefault(); lb.focus(); return; }
+      const first = focusable[0], last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault(); last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault(); first.focus();
+      }
     }
   });
   document.body.append(lb);
