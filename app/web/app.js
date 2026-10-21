@@ -2478,31 +2478,36 @@ function renderTicks(state) {
   });
 }
 
-// Quick-reaction popover (small, fixed set)
-const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏", "🔥", "🎉"];
+// Six quick reactions stay visible; the plus button expands the full picker.
+const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
+const MORE_REACTIONS = ["🔥","🎉","👏","🙌","😍","🥰","😘","🤔","🤗","🤩","😎","😭","😡","🤬","😱","🥳","🤝","💯","✅","❌","👀","💡","💪","🤦","🤷","😴","🤮","🤒","😇","🥺","😬","🤯","🫡","🫶","💔","⭐","🎯","🚀","☕","🎂","🎁","🌹","🐱","🐶","💐"];
 function openReactionPicker(anchor, msgId) {
   closeReactionPicker();
   const pop = el("div", { class: "reaction-pop" });
-  for (const e of QUICK_REACTIONS) {
-    pop.append(el("button", {
-      class: "rp-btn",
-      onclick: (ev) => {
-        ev.stopPropagation();
-        toggleReaction(msgId, e);
-        closeReactionPicker();
-      },
-    }, e));
-  }
+  let expanded = false;
+  const renderChoices = () => {
+    pop.replaceChildren();
+    const choices = expanded ? [...QUICK_REACTIONS, ...MORE_REACTIONS] : QUICK_REACTIONS;
+    for (const emoji of choices) {
+      pop.append(el("button", {
+        class: "rp-btn", title: `React with ${emoji}`,
+        onclick: (ev) => { ev.stopPropagation(); toggleReaction(msgId, emoji); closeReactionPicker(); },
+      }, emoji));
+    }
+    if (!expanded) pop.append(el("button", {
+      class: "rp-btn rp-more", title: "More reactions", "aria-label": "More reactions",
+      onclick: (ev) => { ev.stopPropagation(); expanded = true; renderChoices(); pop.classList.add("expanded"); },
+    }, "+"));
+  };
+  renderChoices();
   document.body.append(pop);
   const r = anchor.getBoundingClientRect();
-  // Position above the button, clamped to viewport.
   const popW = 280;
-  let left = Math.min(window.innerWidth - popW - 8, Math.max(8, r.left + r.width / 2 - popW / 2));
-  let top  = r.top - 48;
+  const left = Math.min(window.innerWidth - popW - 8, Math.max(8, r.left + r.width / 2 - popW / 2));
+  let top = r.top - 48;
   if (top < 8) top = r.bottom + 6;
   pop.style.left = `${left}px`;
-  pop.style.top  = `${top}px`;
-  // Dismiss on outside click / escape.
+  pop.style.top = `${top}px`;
   setTimeout(() => {
     document.addEventListener("click", _rpDismiss, { once: true, capture: true });
     document.addEventListener("keydown", _rpKey);
@@ -4268,9 +4273,9 @@ async function renderChannelInfo() {
     <section class="ci-profile">
       <div class="ci-avatar">${ch.photoUrl && !isDm ? `<img src="${_ciEsc(ch.photoUrl)}" alt="${_ciEsc(title)} group photo" loading="lazy">` : _ciEsc(profileAvatar)}${canEditPhoto ? '<button type="button" id="ciPhotoEditBtn" class="ci-avatar-edit" aria-label="Change group photo" title="Change group photo"><svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>' : ""}</div>
       ${canEditPhoto ? '<input id="ciPhotoFileInput" type="file" accept="image/png,image/jpeg,image/webp" hidden aria-label="Choose group photo">' : ""}
-      <div class="ci-name">${_ciEsc(title)}</div>
+      <div class="ci-name-row"><div class="ci-name">${_ciEsc(title)}</div>${canEditDescription ? '<button type="button" id="ciDescriptionEditBtn" class="ci-name-edit" aria-label="Edit channel name" title="Edit channel name" aria-expanded="false"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>' : ""}</div>
       <div class="ci-subtitle">${isDm ? "Direct message · End-to-end encryption when available" : (ch.kind === "lobby" ? "Public channel" : (ch.isPrivate ? "Private group" : "Group conversation")) + " · " + members.length + " member" + (members.length === 1 ? "" : "s")}</div>
-      ${!isDm && ch.kind !== "lobby" ? `<div class="ci-description-row"><div class="ci-description" id="ciDescriptionText">${_ciEsc(description || "No group description yet.")}</div>${canEditDescription ? '<button type="button" id="ciDescriptionEditBtn" class="ci-description-edit" aria-label="Edit group details" title="Edit group name and description"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>' : ""}</div>` : ""}
+      ${!isDm && ch.kind !== "lobby" ? `<div class="ci-description-row"><div class="ci-description" id="ciDescriptionText">${_ciEsc(description || "No group description yet.")}</div></div>` : ""}
       ${canEditDescription ? `
         <form id="ciEditGroupForm" class="ci-edit-group" hidden>
           <label for="ciNameInput">Channel name</label>
