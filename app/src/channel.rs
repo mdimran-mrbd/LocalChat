@@ -7,6 +7,7 @@ use compact_str::{CompactString, ToCompactString};
 use dashmap::{DashMap, DashSet};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{broadcast, RwLock};
+use std::sync::RwLock as StdRwLock;
 
 use crate::message::{ChannelId, WireMsg};
 use crate::user::UserId;
@@ -41,7 +42,7 @@ pub struct ChannelMeta {
 pub struct Channel {
     pub id: ChannelId,
     pub kind: ChannelKind,
-    pub name: CompactString,
+    pub name: StdRwLock<CompactString>,
     pub is_private: bool,
     pub members: DashSet<UserId>,
     pub created_by: UserId,
@@ -70,7 +71,7 @@ impl Channel {
         Self {
             id,
             kind,
-            name,
+            name: StdRwLock::new(name),
             is_private,
             members: DashSet::new(),
             created_by,
@@ -82,11 +83,19 @@ impl Channel {
         }
     }
 
+    pub fn name(&self) -> CompactString {
+        self.name.read().map(|name| name.clone()).unwrap_or_default()
+    }
+
+    pub fn set_name(&self, name: &str) {
+        if let Ok(mut current) = self.name.write() { *current = name.to_compact_string(); }
+    }
+
     pub fn meta(&self) -> ChannelMeta {
         ChannelMeta {
             id: self.id.clone(),
             kind: self.kind,
-            name: self.name.clone(),
+            name: self.name(),
             is_private: self.is_private,
             members: self.members.iter().map(|e| e.clone()).collect(),
             created_by: self.created_by.clone(),
