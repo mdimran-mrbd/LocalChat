@@ -990,7 +990,7 @@ function onWelcome(e) {
   // Load each member chat's persisted notification preference on every session,
   // not only after the user opens that chat's Info panel.
   for (const channel of S.channels.values()) {
-    if ((channel.members || []).includes(S.me.id)) {
+    if (channel.kind === "lobby" || (channel.members || []).includes(S.me.id)) {
       sendOp({ op: "ch_info", channel: channel.id });
     }
   }
