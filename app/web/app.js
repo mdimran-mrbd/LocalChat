@@ -4004,6 +4004,8 @@ async function renderChannelInfo() {
       <div id="ciMembers" class="ci-members"></div>
     </section>
   `;
+  const descriptionNode = root.querySelector(".ci-description");
+  if (descriptionNode && description) { descriptionNode.replaceChildren(); appendLinkedText(descriptionNode, description); }
   root.querySelectorAll("[data-ci-tab]").forEach(btn => btn.addEventListener("click", async () => {
     _channelInfoTab = btn.dataset.ciTab;
     root.querySelectorAll("[data-ci-tab]").forEach(b => b.classList.toggle("active", b === btn));
@@ -4015,7 +4017,7 @@ async function renderChannelInfo() {
   if (editForm) editForm.addEventListener("submit", ev => {
     ev.preventDefault();
     const descriptionInput = $("ciDescriptionInput");
-    sendOp({ op: "ch_update", channel: ch.id, description: descriptionInput?.value || "", photoUrl: ch.photoUrl || "" });
+    sendOp({ op: "ch_update", channel: ch.id, description: descriptionInput?.value || "" });
   });
   const photoEditButton = $("ciPhotoEditBtn");
   const photoInput = $("ciPhotoFileInput");
@@ -4058,24 +4060,45 @@ function renderChannelInfoMembers(members) {
     const name = document.createElement("div"); name.className = "ci-member-name"; name.textContent = u.id === S.me?.id ? (u.username + " (you)") : (u.username || "Unknown member");
     const role = document.createElement("div"); role.className = "ci-member-role"; role.textContent = u.role === "owner" || u.id === S.channels.get(S.active)?.createdBy ? "Group owner" : (u.role === "moderator" ? "Moderator" : (u.online ? "Online" : "Member"));
     main.append(name, role); row.append(avatar, main);
-    if (u.id !== S.me?.id && u.id && u.username && typeof openDmWithUserId === "function") {
-      const action = document.createElement("button"); action.type = "button"; action.className = "btn btn-ghost btn-sm ci-member-action"; action.textContent = "Message"; action.title = "Open a direct message"; action.addEventListener("click", () => { closeChannelInfo(); openDmWithUserId(u.id, u.username); }); row.append(action);
-    }
-    if (activeChannel?.kind === "group" && u.id !== S.me?.id && u.role !== "owner" && canRemove) {
-      if (isOwner) {
+    const canMessage = u.id !== S.me?.id && u.id && u.username && typeof openDmWithUserId === "function";
+    const canManageMember = activeChannel?.kind === "group" && u.id !== S.me?.id && u.role !== "owner" && canRemove
+      && (isOwner || u.role !== "moderator");
+    if (canMessage || canManageMember) {
+      const actions = document.createElement("div"); actions.className = "ci-member-actions";
+      const trigger = document.createElement("button"); trigger.type = "button"; trigger.className = "ci-member-menu-trigger";
+      trigger.textContent = "⋯"; trigger.title = "Member actions"; trigger.setAttribute("aria-label", "Actions for " + (u.username || "member"));
+      trigger.setAttribute("aria-haspopup", "true"); trigger.setAttribute("aria-expanded", "false");
+      const menu = document.createElement("div"); menu.className = "ci-member-menu"; menu.hidden = true;
+      const closeMenu = () => { menu.hidden = true; trigger.setAttribute("aria-expanded", "false"); };
+      trigger.addEventListener("click", ev => {
+        ev.stopPropagation();
+        const opening = menu.hidden;
+        root.querySelectorAll(".ci-member-menu").forEach(other => { other.hidden = true; });
+        root.querySelectorAll(".ci-member-menu-trigger").forEach(other => other.setAttribute("aria-expanded", "false"));
+        menu.hidden = !opening; trigger.setAttribute("aria-expanded", String(opening));
+      });
+      if (canMessage) {
+        const message = document.createElement("button"); message.type = "button"; message.className = "ci-member-menu-item"; message.textContent = "Message";
+        message.addEventListener("click", () => { closeMenu(); closeChannelInfo(); openDmWithUserId(u.id, u.username); });
+        menu.append(message);
+      }
+      if (canManageMember && isOwner) {
+        const roleLabel = document.createElement("label"); roleLabel.className = "ci-member-menu-label"; roleLabel.textContent = "Role";
         const roleSelect = document.createElement("select"); roleSelect.className = "ci-role-select"; roleSelect.setAttribute("aria-label", "Role for " + (u.username || "member"));
         roleSelect.innerHTML = '<option value="member">Member</option><option value="moderator">Moderator</option>';
         roleSelect.value = u.role === "moderator" ? "moderator" : "member";
-        roleSelect.addEventListener("change", () => sendOp({ op: "ch_role_set", channel: activeChannel.id, userId: u.id, role: roleSelect.value }));
-        row.append(roleSelect);
+        roleSelect.addEventListener("change", () => { sendOp({ op: "ch_role_set", channel: activeChannel.id, userId: u.id, role: roleSelect.value }); closeMenu(); });
+        roleLabel.append(roleSelect); menu.append(roleLabel);
       }
-      if (u.role !== "moderator" || isOwner) {
-        const remove = document.createElement("button"); remove.type = "button"; remove.className = "btn btn-ghost btn-sm ci-member-action"; remove.textContent = "Remove"; remove.title = "Remove member from group";
+      if (canManageMember) {
+        const remove = document.createElement("button"); remove.type = "button"; remove.className = "ci-member-menu-item danger"; remove.textContent = "Remove member";
         remove.addEventListener("click", () => {
+          closeMenu();
           if (confirm("Remove " + (u.username || "this member") + " from the group?")) sendOp({ op: "ch_member_remove", channel: activeChannel.id, userId: u.id });
         });
-        row.append(remove);
+        menu.append(remove);
       }
+      actions.append(trigger, menu); row.append(actions);
     }
     root.append(row);
   }
@@ -4223,6 +4246,44 @@ function onSharedItemsList(e) {
   if (S.active === e.channel && _channelInfoTab === e.type && !$("channelInfoDrawer")?.classList.contains("hidden")) renderChannelInfoItems();
 }
 let _ciVisibleItems = 12;
+let _ciExpandedOverlay = null;
+function closeSharedItemsOverlay() { _ciExpandedOverlay?.remove(); _ciExpandedOverlay = null; }
+function openSharedItemsOverlay(type, items, loadMore) {
+  closeSharedItemsOverlay();
+  const drawer = $("channelInfoDrawer"); if (!drawer) return;
+  const labels = { media: "Shared media", links: "Shared links", files: "Shared files" };
+  const overlay = document.createElement("div"); overlay.className = "ci-expanded-overlay"; overlay.setAttribute("role", "dialog"); overlay.setAttribute("aria-modal", "true"); overlay.setAttribute("aria-label", labels[type] || "Shared items");
+  const panel = document.createElement("section"); panel.className = "ci-expanded-panel";
+  const head = document.createElement("header"); head.className = "ci-expanded-head";
+  const heading = document.createElement("h3"); heading.textContent = labels[type] || "Shared items";
+  const close = document.createElement("button"); close.type = "button"; close.className = "ci-expanded-close"; close.textContent = "×"; close.setAttribute("aria-label", "Close shared items"); close.addEventListener("click", closeSharedItemsOverlay);
+  head.append(heading, close);
+  const grid = document.createElement("div"); grid.className = "ci-expanded-grid";
+  for (const item of items) {
+    const tile = document.createElement("article"); tile.className = "ci-expanded-tile";
+    if (type === "media" && item.url && (item.detail || "").startsWith("image/")) {
+      const image = document.createElement("img"); image.className = "ci-expanded-thumb"; image.src = item.url; image.alt = "Shared image"; image.loading = "lazy"; image.referrerPolicy = "no-referrer";
+      image.addEventListener("error", () => { image.removeAttribute("src"); image.alt = "Image unavailable"; tile.classList.add("is-unavailable"); });
+      image.addEventListener("click", () => openLightbox(item.url, "Shared image", item.url)); tile.append(image);
+    } else {
+      const icon = document.createElement("div"); icon.className = "ci-expanded-icon"; icon.textContent = item.icon || (type === "links" ? "🔗" : "📄"); tile.append(icon);
+    }
+    const label = document.createElement("div"); label.className = "ci-expanded-label"; label.textContent = type === "media" ? (item.title || "Media") : (item.title || item.detail || "Shared item"); tile.append(label);
+    const meta = document.createElement("div"); meta.className = "ci-expanded-meta"; meta.textContent = item.sender || "Unknown sender"; tile.append(meta);
+    if (type === "links" && item.url) { const link = document.createElement("a"); link.href = item.url; link.target = "_blank"; link.rel = "noopener noreferrer"; link.className = "ci-expanded-open"; link.textContent = "Open link"; tile.append(link); }
+    if (type === "files" && item.url) { const link = document.createElement("a"); link.href = item.url; link.download = item.title || "attachment"; link.rel = "noopener noreferrer"; link.className = "ci-expanded-open"; link.textContent = "Download"; tile.append(link); }
+    const view = document.createElement("button"); view.type = "button"; view.className = "ci-expanded-open"; view.textContent = "View in chat"; view.addEventListener("click", () => {
+      const channelId = S.active, messageId = item.id; closeSharedItemsOverlay(); closeChannelInfo();
+      const loaded = (S.msgs.get(channelId) || []).some(m => Number(m.id) === Number(messageId));
+      if (loaded) jumpToMessage(channelId, messageId); else { _ciPendingJump = { channelId, messageId }; sendOp({ op: "history_before", channel: channelId, beforeId: Number(messageId) + 1, limit: 100 }); }
+    }); tile.append(view); grid.append(tile);
+  }
+  panel.append(head, grid);
+  if (loadMore) { const more = document.createElement("button"); more.type = "button"; more.className = "ci-expanded-load"; more.textContent = "Load more"; more.addEventListener("click", () => { closeSharedItemsOverlay(); loadMore(); }); panel.append(more); }
+  overlay.append(panel); overlay.addEventListener("click", ev => { if (ev.target === overlay) closeSharedItemsOverlay(); });
+  drawer.append(overlay); _ciExpandedOverlay = overlay; close.focus();
+  overlay.addEventListener("keydown", ev => { if (ev.key === "Escape") closeSharedItemsOverlay(); });
+}
 async function renderChannelInfoItems() {
   const root = $("ciSharedItems");
   const ch = S.channels.get(S.active);
@@ -4289,93 +4350,38 @@ async function renderChannelInfoItems() {
     root.append(empty);
     return;
   }
-  const isMedia = _channelInfoTab === "media";
-  const pageSize = isMedia ? 12 : 6;
-  const shown = items.slice(0, Math.max(pageSize, _ciVisibleItems));
-  if (isMedia) root.classList.add("ci-media-grid"); else root.classList.remove("ci-media-grid");
-  for (const item of shown) {
-    const card = document.createElement("article");
-    card.className = isMedia ? "ci-item ci-media-tile" : "ci-item";
+  const type = _channelInfoTab;
+  const limit = type === "links" ? 2 : 6;
+  const isMedia = type === "media";
+  root.classList.add("ci-media-grid");
+  root.classList.toggle("ci-links-grid", type === "links");
+  root.classList.toggle("ci-files-grid", type === "files");
+  const shown = items.slice(0, limit);
+  const needsMore = items.length > limit || !!serverCache?.hasMore;
+  const makeTile = (item) => {
+    const card = document.createElement("article"); card.className = "ci-item ci-preview-tile";
+    const open = document.createElement("button"); open.type = "button"; open.className = "ci-preview-open";
     if (isMedia && item.url && (item.detail || "").startsWith("image/")) {
-      const openPreview = document.createElement("button");
-      openPreview.type = "button";
-      openPreview.className = "ci-media-open";
-      openPreview.setAttribute("aria-label", "Preview shared image");
-      const thumb = document.createElement("img");
-      thumb.className = "ci-media-thumb";
-      thumb.src = item.url;
-      thumb.alt = "Shared image — open preview";
-      thumb.loading = "lazy";
-      thumb.decoding = "async";
-      thumb.referrerPolicy = "no-referrer";
-      thumb.addEventListener("error", () => {
-        thumb.removeAttribute("src");
-        thumb.alt = "Image preview unavailable";
-        openPreview.disabled = true;
-        openPreview.setAttribute("aria-label", "Image preview unavailable");
-      });
-      openPreview.addEventListener("click", () => openLightbox(item.url, "Shared image", item.url));
-      openPreview.append(thumb);
-      card.append(openPreview);
+      const thumb = document.createElement("img"); thumb.className = "ci-media-thumb"; thumb.src = item.url; thumb.alt = "Shared image"; thumb.loading = "lazy"; thumb.decoding = "async"; thumb.referrerPolicy = "no-referrer";
+      thumb.addEventListener("error", () => { thumb.removeAttribute("src"); thumb.alt = "Image unavailable"; card.classList.add("is-unavailable"); });
+      open.append(thumb); open.addEventListener("click", () => openLightbox(item.url, "Shared image", item.url));
     } else {
-      const icon = document.createElement("div"); icon.className = "ci-item-icon"; icon.textContent = item.icon; card.append(icon);
+      const icon = document.createElement("span"); icon.className = "ci-preview-icon"; icon.textContent = item.icon || (type === "links" ? "🔗" : "📄"); open.append(icon);
+      if (type === "links" && item.url) open.addEventListener("click", () => window.open(item.url, "_blank", "noopener,noreferrer"));
+      else if (type === "files" && item.url) open.addEventListener("click", () => { const a = document.createElement("a"); a.href = item.url; a.download = item.title || "attachment"; a.rel = "noopener noreferrer"; a.click(); });
+      else open.addEventListener("click", () => openSharedItemsOverlay(type, items, serverCache?.hasMore ? () => requestChannelSharedItems(false) : null));
     }
-    const main = document.createElement("div"); main.className = "ci-item-main";
-    if (!isMedia) {
-      const title = document.createElement("div"); title.className = "ci-item-title";
-      title.textContent = item.type === "media" ? "Shared media" : item.title;
-      main.append(title);
-    }
-    const sub = document.createElement("div"); sub.className = "ci-item-sub";
-    sub.textContent = (item.sender || "Unknown") + " · " + new Date((item.ts || 0) * 1000).toLocaleString();
-    main.append(sub);
-    if (item.type === "link") {
-      const link = document.createElement("a"); link.className = "ci-item-link"; link.href = item.url; link.target = "_blank"; link.rel = "noopener noreferrer"; link.textContent = item.detail; link.setAttribute("aria-label", "Open " + item.title); main.append(link);
-    }
-    if (item.type === "file" && item.size != null) {
-      const size = document.createElement("div"); size.className = "ci-item-sub";
-      size.textContent = Number(item.size) < 1024 ? item.size + " B" : (Number(item.size) / 1024).toFixed(1) + " KB";
-      main.append(size);
-    }
-    const footer = document.createElement("div"); footer.className = "ci-item-footer";
-    const view = document.createElement("button"); view.type = "button"; view.className = "btn btn-ghost btn-sm"; view.textContent = "View in chat";
-    view.addEventListener("click", () => {
-      const channelId = ch.id, messageId = item.id;
-      closeChannelInfo();
-      if (S.active !== channelId) switchChannel(channelId);
-      const loadedMessages = S.msgs.get(channelId) || [];
-      const loaded = loadedMessages.some(m => Number(m.id) === Number(messageId));
-      if (loaded) jumpToMessage(channelId, messageId);
-      else {
-        _ciPendingJump = { channelId, messageId };
-        if (!loadedMessages.length) sendOp({ op: "history", channel: channelId, limit: 500 });
-        else sendOp({ op: "history_before", channel: channelId, beforeId: Number(loadedMessages[0].id), limit: 100 });
-      }
-    });
-    if (item.type === "file" && item.url) {
-      const download = document.createElement("a");
-      download.className = "btn btn-ghost btn-sm";
-      download.href = item.url;
-      // Uploads are served by this app, so the download attribute requests
-      // a file save instead of navigating away from Chat Info.
-      download.download = item.title || "attachment";
-      download.rel = "noopener noreferrer";
-      download.textContent = "Download";
-      download.setAttribute("aria-label", "Download shared file " + (item.title || "attachment"));
-      footer.append(download);
-    }
-    footer.append(view); main.append(footer); card.append(main); root.append(card);
-  }
-  if (serverCache ? serverCache.hasMore : items.length > shown.length) {
-    const more = document.createElement("button");
-    more.type = "button";
-    more.className = "btn btn-ghost btn-sm ci-view-all";
-    more.textContent = serverCache ? (serverCache.loading ? "Loading…" : "Load more shared items") : ("Load more (" + (items.length - shown.length) + " remaining)");
-    more.disabled = !!serverCache?.loading;
-    more.addEventListener("click", () => {
-      if (serverCache) requestChannelSharedItems(false);
-      else { _ciVisibleItems = shown.length + 48; renderChannelInfoItems(); }
-    });
+    const overlay = document.createElement("span"); overlay.className = "ci-preview-caption";
+    overlay.textContent = type === "media" ? (item.title || "Photo") : (item.title || item.detail || (type === "links" ? "Link" : "File"));
+    open.append(overlay); card.append(open);
+    return card;
+  };
+  for (const item of shown) root.append(makeTile(item));
+  if (needsMore) {
+    const more = document.createElement("button"); more.type = "button"; more.className = "ci-preview-tile ci-preview-more";
+    more.setAttribute("aria-label", "View more " + type);
+    const caption = document.createElement("span"); caption.className = "ci-preview-more-caption"; caption.textContent = "View more"; more.append(caption);
+    more.addEventListener("click", () => openSharedItemsOverlay(type, items, serverCache?.hasMore ? () => requestChannelSharedItems(false) : null));
     root.append(more);
   }
 }
