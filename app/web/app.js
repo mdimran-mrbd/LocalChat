@@ -982,25 +982,16 @@ function onWelcome(e) {
   $("meChip").innerHTML = "";
   $("meChip").append(
     el("div", { class: "avatar xs", style: `background:${e.user.color}` }, e.user.avatar || "?"),
-    el("div", { class: "me-info" }, [
-      el("div", { class: "name" }, userNameNode(e.user)),
-    ]),
+    el("div", { class: "me-info" }, [el("div", { class: "name" }, userNameNode(e.user))]),
     el("button", {
-      id: "themeToggle",
-      class: "icon-btn", title: "Toggle theme", "aria-label": "Toggle theme",
-      onclick: toggleTheme,
-    }),
-    el("button", {
-      class: "icon-btn", title: "Change password", "aria-label": "Change password",
-      onclick: () => openChangePasswordModal({ forced: false }),
-      html: `<svg viewBox="0 0 24 24" width="14" height="14"><path d="M12 2a5 5 0 00-5 5v3H6a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2v-8a2 2 0 00-2-2h-1V7a5 5 0 00-5-5zm-3 8V7a3 3 0 016 0v3H9z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>`,
-    }),
-    el("button", {
-      class: "icon-btn", title: "Sign out", "aria-label": "Sign out",
-      onclick: signOut,
-      html: `<svg viewBox="0 0 24 24" width="14" height="14"><path d="M15 17l5-5-5-5M20 12H9M12 19H5a2 2 0 01-2-2V7a2 2 0 012-2h7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+      id: "settingsOpenBtn", class: "icon-btn settings-open-btn", title: "Settings", "aria-label": "Open settings",
+      onclick: openSettingsPanel,
+      html: `<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-1.7 2.94-.08-.02a1.7 1.7 0 0 0-1.78.58l-.05.07h-3.4l-.04-.08a1.7 1.7 0 0 0-1.56-1.02 1.7 1.7 0 0 0-.79.2l-.08.04-2.94-1.7.02-.08a1.7 1.7 0 0 0-.58-1.78l-.07-.05v-3.4l.08-.04a1.7 1.7 0 0 0 .82-1.47 1.7 1.7 0 0 0-.2-.79l-.04-.08 1.7-2.94.08.02a1.7 1.7 0 0 0 1.78-.58l.05-.07h3.4l.04.08a1.7 1.7 0 0 0 1.56 1.02 1.7 1.7 0 0 0 .79-.2l.08-.04 2.94 1.7-.02.08a1.7 1.7 0 0 0 .58 1.78l.07.05v3.4z"/></svg>`,
     }),
   );
+  const notificationControl = $("browserNotificationControl");
+  const notificationSlot = $("settingsNotificationsSlot");
+  if (notificationControl && notificationSlot && notificationControl.parentElement !== notificationSlot) notificationSlot.append(notificationControl);
 
   updateThemeIcon();
 
@@ -3368,6 +3359,51 @@ document.addEventListener("visibilitychange", () => {
   if (!document.hidden) scheduleReadReceipt();
 });
 window.addEventListener("focus", scheduleReadReceipt);
+
+function openSettingsPanel() {
+  if (!S.me) return;
+  $("profileUsername").value = S.me.username || "";
+  $("profileDesignation").value = S.me.designation || "CSA";
+  $("profileSettingsStatus").textContent = "";
+  $("profileSettingsStatus").classList.remove("err", "ok");
+  $("settingsBackdrop").classList.remove("hidden");
+  $("settingsPanel").classList.add("open");
+  $("settingsPanel").setAttribute("aria-hidden", "false");
+  document.body.classList.add("settings-open");
+  document.addEventListener("keydown", _settingsEscape);
+  setTimeout(() => $("profileUsername")?.focus(), 40);
+}
+function closeSettingsPanel() {
+  $("settingsBackdrop")?.classList.add("hidden");
+  $("settingsPanel")?.classList.remove("open");
+  $("settingsPanel")?.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("settings-open");
+  document.removeEventListener("keydown", _settingsEscape);
+  $("settingsOpenBtn")?.focus();
+}
+function _settingsEscape(ev) { if (ev.key === "Escape") closeSettingsPanel(); }
+function submitProfileSettings(ev) {
+  ev.preventDefault();
+  const username = ($("profileUsername")?.value || "").trim();
+  const designation = $("profileDesignation")?.value || "";
+  const status = $("profileSettingsStatus");
+  status.classList.remove("err", "ok");
+  if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{2,23}$/.test(username)) {
+    status.textContent = "Use 3–24 characters: letters, digits, underscore, hyphen, or dot; start with a letter or digit.";
+    status.classList.add("err"); return;
+  }
+  if (!["AM","TL","STL","QDE","LRD","EE","CSA"].includes(designation)) {
+    status.textContent = "Choose a valid designation."; status.classList.add("err"); return;
+  }
+  if (!S.ws || S.ws.readyState !== WebSocket.OPEN) {
+    status.textContent = "Not connected. Please try again."; status.classList.add("err"); return;
+  }
+  const save = $("profileSettingsSave");
+  save.disabled = true; save.textContent = "Saving…";
+  status.textContent = "Saving profile…";
+  sendOp({ op: "profile_update", username, designation });
+  setTimeout(() => { if (save.isConnected) { save.disabled = false; save.textContent = "Save profile"; } }, 2500);
+}
 
 function signOut() {
   lstore.remove("username");
