@@ -680,6 +680,7 @@ function handleEvent(e) {
     case "pin_update":   return onPinUpdate(e);
     case "ch_created":   return onChannelCreated(e.channel);
     case "ch_info":      return onChannelInfo(e);
+    case "ch_updated":   return onChannelUpdated(e);
     case "ch_notification_set": return onChannelNotificationSet(e);
     case "ch_invited":   return onChannelInvited(e);
     case "ch_deleted":   return onChannelDeleted(e.channel);
@@ -3841,6 +3842,14 @@ async function renderChannelInfo() {
       <div class="ci-name">${_ciEsc(title)}</div>
       <div class="ci-subtitle">${isDm ? "Direct message · End-to-end encryption when available" : (ch.kind === "lobby" ? "Public channel" : (ch.isPrivate ? "Private group" : "Group conversation")) + " · " + members.length + " member" + (members.length === 1 ? "" : "s")}</div>
       ${!isDm && ch.kind !== "lobby" ? `<div class="ci-description">${_ciEsc(description || "No group description yet.")}</div>` : ""}
+      ${!isDm && ch.kind === "group" && ch.createdBy === S.me?.id ? `
+        <form id="ciEditGroupForm" class="ci-edit-group">
+          <label for="ciDescriptionInput">Group description</label>
+          <textarea id="ciDescriptionInput" maxlength="500" rows="3" placeholder="Add a group description…">${_ciEsc(description)}</textarea>
+          <label for="ciPhotoUrlInput">Group photo URL (optional)</label>
+          <input id="ciPhotoUrlInput" type="url" maxlength="2048" placeholder="https://…" value="${_ciEsc(ch.photoUrl || "")}">
+          <button class="btn btn-primary btn-sm" type="submit">Save group details</button>
+        </form>` : ""}
     </section>
     <section class="ci-section">
       <div class="ci-section-head"><span>Notifications</span><span>Only for you</span></div>
@@ -3871,6 +3880,13 @@ async function renderChannelInfo() {
     root.querySelectorAll("[data-ci-tab]").forEach(b => b.classList.toggle("active", b === btn));
     await renderChannelInfoItems();
   }));
+  const editForm = $("ciEditGroupForm");
+  if (editForm) editForm.addEventListener("submit", ev => {
+    ev.preventDefault();
+    const descriptionInput = $("ciDescriptionInput");
+    const photoInput = $("ciPhotoUrlInput");
+    sendOp({ op: "ch_update", channel: ch.id, description: descriptionInput?.value || "", photoUrl: photoInput?.value.trim() || "" });
+  });
   const notificationSelect = $("ciNotificationMode");
   if (notificationSelect) notificationSelect.addEventListener("change", () => {
     _ciNotificationMode = notificationSelect.value;
@@ -3919,6 +3935,15 @@ function onChannelInfo(e) {
     _ciNotificationMode = ch.notificationMode;
     renderChannelInfo();
   }
+}
+function onChannelUpdated(e) {
+  const ch = S.channels.get(e.channel);
+  if (!ch) return;
+  ch.description = e.description || "";
+  ch.photoUrl = e.photoUrl || "";
+  ch.name = e.name || ch.name;
+  if (S.active === e.channel && !$("channelInfoDrawer")?.classList.contains("hidden")) renderChannelInfo();
+  if (typeof toast === "function") toast("Group details saved.");
 }
 function onChannelNotificationSet(e) {
   const ch = S.channels.get(e.channel);
