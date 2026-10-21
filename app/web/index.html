@@ -209,6 +209,7 @@
           </span>
           <button id="browserNotificationsBtn" class="icon-btn ch-tool-btn" title="Enable browser notifications" aria-label="Enable browser notifications" onclick="toggleBrowserNotifications()"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg></button>
           <button id="savedMessagesBtn" class="icon-btn ch-tool-btn" title="View saved messages" aria-label="View saved messages" onclick="openSavedMessages()"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/></svg><span id="savedMessagesCount" class="saved-count hidden"></span></button>
+          <button id="channelInfoBtn" class="icon-btn ch-tool-btn" title="Chat info" aria-label="Chat info" onclick="openChannelInfo()"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7h.01"/></svg></button>
           <button id="messageSearchBtn" class="icon-btn ch-tool-btn" title="Search this channel's messages" aria-label="Search this channel's messages" onclick="openMessageSearch()"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg></button>
           <form id="messageSearchBar" class="message-search-bar hidden" onsubmit="runMessageSearch(event)" role="search" aria-label="Search channel messages">
             <input id="messageSearchInput" type="search" placeholder="Search messages…" minlength="2" maxlength="100" autocomplete="off" aria-label="Search messages" onkeydown="handleMessageSearchKeydown(event)" />
@@ -499,6 +500,16 @@
     </div>
   </div>
 
+  <!-- Chat information drawer -->
+  <div id="channelInfoBackdrop" class="channel-info-backdrop hidden" onclick="closeChannelInfo()" aria-hidden="true"></div>
+  <aside id="channelInfoDrawer" class="channel-info-drawer hidden" role="dialog" aria-modal="true" aria-labelledby="channelInfoTitle">
+    <header class="channel-info-head">
+      <h2 id="channelInfoTitle">Chat info</h2>
+      <button type="button" class="icon-btn" onclick="closeChannelInfo()" aria-label="Close chat info">×</button>
+    </header>
+    <div id="channelInfoContent" class="channel-info-content"></div>
+  </aside>
+
   <!-- ═══════════════════ UPDATE NOTICE (host browser only) ═══════════════════ -->
   <div id="updateBanner" class="update-banner hidden" role="status" aria-live="polite">
     <div class="update-banner-copy">
@@ -561,6 +572,6 @@
     <audio id="remoteAudio" autoplay></audio>
   </div>
 
-  <script src="/app.js?v=20261018o"></script>
+  <script src="/app.js?v=20261021a"></script>
 </body>
 </html>
