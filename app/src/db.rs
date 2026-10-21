@@ -215,6 +215,21 @@ CREATE TABLE IF NOT EXISTS admin_events (
 CREATE INDEX IF NOT EXISTS idx_admin_events_ts ON admin_events(ts DESC);
 "#;
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SharedItem {
+    pub message_id: u64,
+    pub item_type: String,
+    pub item_key: String,
+    pub created_at: u64,
+    pub username: String,
+    pub text: String,
+    pub file_name: Option<String>,
+    pub file_size: Option<u64>,
+    pub mime_type: Option<String>,
+    pub url: Option<String>,
+}
+
 #[derive(Clone)]
 pub struct Db {
     inner: Arc<Mutex<Connection>>,
@@ -982,6 +997,65 @@ impl Db {
             Ok(out)
         })
         .await
+    }
+
+    /// Count indexed shared items by type. Callers must authorize channel membership.
+    pub async fn shared_item_counts(&self, channel: &str) -> rusqlite::Result<(u64, u64, u64)> {
+        let cid = channel.to_string();
+        self.with(move |c| {
+            let mut counts = [0_u64; 3];
+            let mut stmt = c.prepare(
+                "SELECT item_type, COUNT(*) FROM shared_items WHERE channel_id=?1 GROUP BY item_type"
+            )?;
+            let rows = stmt.query_map(params![cid], |r| Ok((r.get::<_, String>(0)?, r.get::<_, u64>(1)?)))?;
+            for row in rows {
+                let (kind, count) = row?;
+                match kind.as_str() {
+                    "media" => counts[0] = count,
+                    "link" => counts[1] = count,
+                    "file" => counts[2] = count,
+                    _ => {}
+                }
+            }
+            Ok((counts[0], counts[1], counts[2]))
+        }).await
+    }
+
+    /// Cursor-paginated shared items, newest message first. Cursor is a
+    /// message ID, so paging remains stable when timestamps collide.
+    pub async fn shared_items_page(&self, channel: &str, item_type: &str, before_id: Option<u64>, limit: usize) -> rusqlite::Result<Vec<SharedItem>> {
+        let cid = channel.to_string();
+        let kind = item_type.to_string();
+        self.with(move |c| {
+            let mut stmt = c.prepare(
+                "SELECT si.message_id, si.item_type, si.item_key, si.created_at,
+                        m.username, m.text, m.file_name, m.file_size, m.file_mime, m.file_url
+                   FROM shared_items si
+                   JOIN messages m ON m.id=si.message_id AND m.channel_id=si.channel_id
+                  WHERE si.channel_id=?1 AND si.item_type=?2 AND m.deleted=0
+                    AND (?3 IS NULL OR si.message_id < ?3)
+                  ORDER BY si.message_id DESC, si.item_key ASC
+                  LIMIT ?4"
+            )?;
+            let rows = stmt.query_map(
+                params![cid, kind, before_id.map(|id| id as i64), limit.clamp(1, 100) as i64],
+                |r| Ok(SharedItem {
+                    message_id: r.get::<_, i64>(0)? as u64,
+                    item_type: r.get(1)?,
+                    item_key: r.get(2)?,
+                    created_at: r.get::<_, i64>(3)? as u64,
+                    username: r.get(4)?,
+                    text: r.get(5)?,
+                    file_name: r.get(6)?,
+                    file_size: r.get::<_, Option<i64>>(7)?.map(|n| n.max(0) as u64),
+                    mime_type: r.get(8)?,
+                    url: r.get(9)?,
+                })
+            )?;
+            let mut items = Vec::new();
+            for row in rows { items.push(row?); }
+            Ok(items)
+        }).await
     }
 
     /// Search visible channel history by message text or attached file name.
