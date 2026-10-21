@@ -263,12 +263,15 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
     // If a password-wrapped key backup exists, keep the established public
     // key until the client restores the matching private key from that backup.
     let key_backup = state.db.get_e2ee_key_backup(&user_id).await.ok().flatten();
-    let pubkey = if key_backup.is_some() {
+    let has_existing_pubkey = prior.as_ref().map_or(false, |p| !p.pubkey.is_empty());
+    let pubkey = if key_backup.is_some() || has_existing_pubkey {
+        // Never replace an established DM identity with a fresh device key.
+        // A first device must upload its encrypted backup before another device can restore it.
         prior.as_ref().map(|p| p.pubkey.clone()).unwrap_or_default()
     } else if !join.pubkey.is_empty() {
         join.pubkey.chars().take(512).collect::<String>().to_compact_string()
     } else {
-        prior.as_ref().map(|p| p.pubkey.clone()).unwrap_or_default()
+        CompactString::const_new("")
     };
 
     let info = UserInfo {
@@ -895,7 +898,7 @@ async fn handle_op(
             let options_value = v.get("options").and_then(Value::as_array).ok_or("missing poll options")?;
             let ch = state.channels.get(&channel_id).ok_or("no such channel")?;
             if !can_send(&ch, &user_id) { return Err("not a member".into()); }
-            if ch.kind == ChannelKind::Dm { return Err("polls are only available in group chats".into()); }
+            if ch.kind != ChannelKind::Group || channel_id.starts_with("notes:") { return Err("polls are only available in group chats".into()); }
             if question.is_empty() || question.chars().count() > 180 { return Err("Poll question must be 1–180 characters".into()); }
             if options_value.len() < 2 || options_value.len() > 10 { return Err("Polls need 2–10 options".into()); }
             let mut options = Vec::new();
