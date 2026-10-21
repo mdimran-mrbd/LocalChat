@@ -3164,21 +3164,71 @@ function onPasswordChanged() {
 }
 
 // ── Lightbox ─────────────────────────────────────────────────────────
+let _lightboxPreviousFocus = null;
 function openLightbox(src, name, downloadUrl) {
   closeLightbox();
-  const lb = el("div", { class: "lightbox", id: "lightbox" }, [
-    el("button", {
-      class: "lb-close", "aria-label": "Close",
-      onclick: (e) => { e.stopPropagation(); closeLightbox(); },
-      html: `<svg viewBox="0 0 24 24" width="18" height="18"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`,
-    }),
-    el("img", { src, alt: name, onclick: (e) => e.stopPropagation() }),
-  ]);
+  _lightboxPreviousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  const lb = document.createElement("div");
+  lb.className = "lightbox";
+  lb.id = "lightbox";
+  lb.setAttribute("role", "dialog");
+  lb.setAttribute("aria-modal", "true");
+  lb.setAttribute("aria-label", name || "Image preview");
+  lb.tabIndex = -1;
+
+  const close = document.createElement("button");
+  close.type = "button";
+  close.className = "lb-close";
+  close.setAttribute("aria-label", "Close image preview");
+  close.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+  close.addEventListener("click", (event) => { event.stopPropagation(); closeLightbox(); });
+
+  const image = document.createElement("img");
+  image.src = src;
+  image.alt = name || "Shared image";
+  image.addEventListener("click", (event) => event.stopPropagation());
+  image.addEventListener("error", () => {
+    image.alt = "Image preview could not be loaded";
+    image.classList.add("lb-image-error");
+  });
+
+  lb.append(close, image);
+  if (downloadUrl) {
+    const bar = document.createElement("div");
+    bar.className = "lb-bar";
+    bar.addEventListener("click", (event) => event.stopPropagation());
+    const label = document.createElement("span");
+    label.textContent = name || "Shared image";
+    const download = document.createElement("a");
+    download.className = "lb-download";
+    download.href = downloadUrl;
+    download.download = (name && /\.[a-z0-9]{2,8}$/i.test(name)) ? name : "shared-image";
+    download.rel = "noopener noreferrer";
+    download.textContent = "Download";
+    bar.append(label, download);
+    lb.append(bar);
+  }
   lb.addEventListener("click", closeLightbox);
+  lb.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeLightbox();
+    } else if (event.key === "Tab") {
+      // Keep keyboard focus inside the modal while it is open.
+      event.preventDefault();
+      close.focus();
+    }
+  });
   document.body.append(lb);
+  close.focus();
 }
 function closeLightbox() {
-  document.getElementById("lightbox")?.remove();
+  const lb = document.getElementById("lightbox");
+  if (!lb) return;
+  lb.remove();
+  const previous = _lightboxPreviousFocus;
+  _lightboxPreviousFocus = null;
+  if (previous?.isConnected) previous.focus();
 }
 
 // ── Emoji picker ─────────────────────────────────────────────────────
