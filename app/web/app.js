@@ -1637,11 +1637,10 @@ function _channelItem(c) {
   const pinned = isChatPinned(c.id);
   const unread = S.unread.get(c.id) || 0;
   const isMember = !!(S.me && (c.members || []).includes(S.me.id));
-  const canDelete = c.kind === "group" && S.me && c.createdBy === S.me.id;
-  // Creators delete (which removes for everyone). Other members can leave.
-  // Lobby can't be left or deleted.
-  const canLeave = c.kind === "group" && isMember && !canDelete;
-  const askDelete = canDelete ? (ev) => {
+  const isNotes = c.id.startsWith("notes:");
+  const canDelete = !isNotes && c.kind === "group" && S.me && c.createdBy === S.me.id;
+  // Personal Notes are permanent and owner-only; ordinary groups can be deleted/left.
+  const canLeave = !isNotes && c.kind === "group" && isMember && !canDelete;
     ev.stopPropagation();
     ev.preventDefault();
     confirmDialog({
@@ -1666,11 +1665,11 @@ function _channelItem(c) {
     onclick: () => switchChannel(c.id),
     oncontextmenu: askDelete || askLeave || undefined,
   }, [
-    el("div", { class: "avatar", style: `background:var(--brand)` }, "#"),
+    el("div", { class: "avatar", style: `background:var(--brand)` }, isNotes ? "📝" : "#"),
     el("div", { class: "chat-meta" }, [
       el("div", { class: "chat-name" }, [pinned ? el("span", { class: "chat-pin-mark", title: "Pinned chat" }, "📌 ") : null, c.name || c.id]),
       el("div", { class: "chat-sub muted xs" },
-        c.kind === "lobby" ? "lobby \u00b7 everyone" : (c.isPrivate ? "private channel" : "channel")),
+        isNotes ? "Personal notes · only you" : (c.kind === "lobby" ? "lobby · everyone" : (c.isPrivate ? "private channel" : "channel"))),
     ]),
     c.kind === "group" && S.unreadIndicators.get(c.id)?.mention ? el("span", { class: "chat-unread-signal mention-signal", title: "Unread mention", "aria-label": "Unread mention" }, "@") : null,
     c.kind === "group" && S.unreadIndicators.get(c.id)?.reply ? el("span", { class: "chat-unread-signal reply-signal", title: "Unread reply to you", "aria-label": "Unread reply to you" }, "↩") : null,
@@ -4387,7 +4386,7 @@ async function renderChannelInfo() {
   const profileAvatar = isDm ? (peer?.avatar || "?") : (title.slice(0,1).toUpperCase() || "#");
   const canEditPhoto = ch.kind === "group" && (ch.createdBy === S.me?.id || ch.memberRoles?.[S.me?.id] === "moderator" || ch.memberRoles?.[S.me?.id] === "owner");
   const description = ch.description || "";
-  const canEditDescription = ch.kind === "group" && ch.createdBy === S.me?.id;
+  const canEditDescription = ch.kind === "group" && !String(ch.id).startsWith("notes:") && ch.createdBy === S.me?.id;
   _ciNotificationMode = ch.notificationMode || "all";
   root.innerHTML = `
     <section class="ci-profile">
