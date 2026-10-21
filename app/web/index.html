@@ -42,9 +42,12 @@
     })();
     // Apply saved theme before paint to avoid flash.
     (function () {
-      // Dark mode is disabled; always use light.
-      document.documentElement.setAttribute("data-theme", "light");
-      try { localStorage.setItem("localchat-theme", "light"); } catch (e) {}
+      var theme = "light";
+      try {
+        var savedTheme = localStorage.getItem("localchat-theme");
+        if (savedTheme === "light" || savedTheme === "dark") theme = savedTheme;
+      } catch (e) {}
+      document.documentElement.setAttribute("data-theme", theme);
     })();
   </script>
 </head>
