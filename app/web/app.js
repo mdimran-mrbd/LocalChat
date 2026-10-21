@@ -3339,6 +3339,29 @@ function signOut() {
 
 // ── Change password ─────────────────────────────────────────────────
 let _cpwForced = false;
+function openDesignationModal() {
+  if (S.me?.designation) { closeModal("designationModal"); return; }
+  openModal("designationModal");
+  const select = $("designationSelect");
+  if (select) select.focus();
+}
+function submitDesignation(event) {
+  event.preventDefault();
+  if (S.me?.designation) { closeModal("designationModal"); return; }
+  const designation = $("designationSelect")?.value || "";
+  if (!["AM", "TL", "STL", "QDE", "LRD", "EE", "CSA"].includes(designation)) {
+    toast("Please choose your designation.");
+    return;
+  }
+  if (!S.ws || S.ws.readyState !== WebSocket.OPEN) { toast("Not connected. Please try again."); return; }
+  sendOp({ op: "designation_set", designation });
+  const button = $("designationSubmit");
+  if (button) { button.disabled = true; button.textContent = "Saving…"; }
+  setTimeout(() => {
+    if (!S.me?.designation && button) { button.disabled = false; button.textContent = "Save designation"; }
+  }, 2500);
+}
+
 function openChangePasswordModal({ forced } = {}) {
   _cpwForced = !!forced;
   const intro = $("cpwIntro");
