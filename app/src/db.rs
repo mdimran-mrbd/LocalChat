@@ -617,7 +617,7 @@ impl Db {
         let uid = id.to_string();
         let designation = designation.to_string();
         self.with(move |c| {
-            let changed = c.execute("UPDATE users SET designation=?2 WHERE id=?1", params![uid, designation])?;
+            let changed = c.execute("UPDATE users SET designation=?2 WHERE id=?1 AND designation='' ", params![uid, designation])?;
             Ok(changed > 0)
         }).await
     }
