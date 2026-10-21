@@ -25,7 +25,7 @@ use crate::user::{UserId, UserInfo};
 
 /// Bumped whenever the schema changes incompatibly. Stored under
 /// `schema_meta(key='version')`.
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 2;
 
 const SCHEMA_SQL: &str = r#"
 PRAGMA foreign_keys = ON;
@@ -62,7 +62,9 @@ CREATE TABLE IF NOT EXISTS channels (
     created_by  TEXT    REFERENCES users(id) ON DELETE SET NULL,
     created_at  INTEGER NOT NULL,
     dm_user_a   TEXT,
-    dm_user_b   TEXT
+    dm_user_b   TEXT,
+    description TEXT NOT NULL DEFAULT '',
+    photo_url   TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_channels_kind ON channels(kind);
 
@@ -70,9 +72,31 @@ CREATE TABLE IF NOT EXISTS channel_members (
     channel_id  TEXT    NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
     user_id     TEXT    NOT NULL REFERENCES users(id)    ON DELETE CASCADE,
     joined_at   INTEGER NOT NULL,
+    role        TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('owner','moderator','member')),
     PRIMARY KEY (channel_id, user_id)
 );
 CREATE INDEX IF NOT EXISTS idx_members_user ON channel_members(user_id);
+
+CREATE TABLE IF NOT EXISTS channel_notification_settings (
+    channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    mode       TEXT NOT NULL DEFAULT 'all' CHECK (mode IN ('all','mentions','mute')),
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (channel_id, user_id)
+);
+
+-- Group shared-content metadata references existing messages/uploads only;
+-- no file bytes or decrypted DM content are duplicated here.
+CREATE TABLE IF NOT EXISTS shared_items (
+    channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+    message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+    item_type  TEXT NOT NULL CHECK (item_type IN ('media','link','file')),
+    item_key   TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (channel_id, message_id, item_type, item_key)
+);
+CREATE INDEX IF NOT EXISTS idx_shared_items_channel_type_time
+    ON shared_items(channel_id, item_type, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS messages (
     id          INTEGER PRIMARY KEY,
@@ -230,6 +254,21 @@ impl Db {
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_client_id ON messages(client_id) WHERE client_id IS NOT NULL",
                 [],
             );
+            // Additive, idempotent migrations for existing installations.
+            // SQLite reports a duplicate-column error on repeat boots; those
+            // are expected and intentionally ignored.
+            let _ = conn.execute("ALTER TABLE channels ADD COLUMN description TEXT NOT NULL DEFAULT ''", []);
+            let _ = conn.execute("ALTER TABLE channels ADD COLUMN photo_url TEXT NOT NULL DEFAULT ''", []);
+            let _ = conn.execute("ALTER TABLE channel_members ADD COLUMN role TEXT NOT NULL DEFAULT 'member'", []);
+            // Existing creators become owners; every other existing member remains a member.
+            conn.execute(
+                "UPDATE channel_members SET role='owner'
+                  WHERE EXISTS (SELECT 1 FROM channels c
+                                 WHERE c.id=channel_members.channel_id
+                                   AND c.created_by=channel_members.user_id
+                                   AND c.kind='group')",
+                [],
+            )?;
             // Stamp the schema version so future migrations can branch.
             conn.execute(
                 "INSERT INTO schema_meta(key,value) VALUES('version', ?1)
@@ -637,6 +676,87 @@ impl Db {
             Ok(())
         })
         .await
+    }
+
+    /// Persist editable group profile fields. Callers must authorize owners before invoking.
+    pub async fn update_channel_details(&self, channel_id: &str, name: &str, description: &str, photo_url: &str) -> rusqlite::Result<bool> {
+        let cid = channel_id.to_string();
+        let name = name.to_string();
+        let description = description.to_string();
+        let photo_url = photo_url.to_string();
+        self.with(move |c| {
+            let changed = c.execute(
+                "UPDATE channels SET name=?2, description=?3, photo_url=?4 WHERE id=?1 AND kind='group'",
+                params![cid, name, description, photo_url],
+            )?;
+            Ok(changed > 0)
+        }).await
+    }
+
+    pub async fn channel_details(&self, channel_id: &str) -> rusqlite::Result<Option<(String, String, String)>> {
+        let cid = channel_id.to_string();
+        self.with(move |c| {
+            c.query_row(
+                "SELECT name, description, photo_url FROM channels WHERE id=?1",
+                params![cid],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            ).optional()
+        }).await
+    }
+
+    pub async fn member_role(&self, channel_id: &str, user_id: &str) -> rusqlite::Result<Option<String>> {
+        let cid = channel_id.to_string();
+        let uid = user_id.to_string();
+        self.with(move |c| {
+            c.query_row(
+                "SELECT role FROM channel_members WHERE channel_id=?1 AND user_id=?2",
+                params![cid, uid],
+                |r| r.get(0),
+            ).optional()
+        }).await
+    }
+
+    pub async fn set_member_role(&self, channel_id: &str, user_id: &str, role: &str) -> rusqlite::Result<bool> {
+        let cid = channel_id.to_string();
+        let uid = user_id.to_string();
+        let role = role.to_string();
+        self.with(move |c| {
+            let changed = c.execute(
+                "UPDATE channel_members SET role=?3 WHERE channel_id=?1 AND user_id=?2 AND role <> 'owner' AND ?3 IN ('moderator','member')",
+                params![cid, uid, role],
+            )?;
+            Ok(changed > 0)
+        }).await
+    }
+
+    pub async fn set_channel_notification(&self, channel_id: &str, user_id: &str, mode: &str, ts: u64) -> rusqlite::Result<bool> {
+        let cid = channel_id.to_string();
+        let uid = user_id.to_string();
+        let mode = mode.to_string();
+        self.with(move |c| {
+            if !matches!(mode.as_str(), "all" | "mentions" | "mute") {
+                return Ok(false);
+            }
+            c.execute(
+                "INSERT INTO channel_notification_settings(channel_id,user_id,mode,updated_at)
+                 VALUES(?1,?2,?3,?4)
+                 ON CONFLICT(channel_id,user_id) DO UPDATE SET mode=excluded.mode, updated_at=excluded.updated_at",
+                params![cid, uid, mode, ts as i64],
+            )?;
+            Ok(true)
+        }).await
+    }
+
+    pub async fn channel_notification(&self, channel_id: &str, user_id: &str) -> rusqlite::Result<String> {
+        let cid = channel_id.to_string();
+        let uid = user_id.to_string();
+        self.with(move |c| {
+            c.query_row(
+                "SELECT mode FROM channel_notification_settings WHERE channel_id=?1 AND user_id=?2",
+                params![cid, uid],
+                |r| r.get(0),
+            ).optional().map(|v: Option<String>| v.unwrap_or_else(|| "all".to_string()))
+        }).await
     }
 
     pub async fn remove_member(&self, channel_id: &str, user_id: UserId) -> rusqlite::Result<()> {
