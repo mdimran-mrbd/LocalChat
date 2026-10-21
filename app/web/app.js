@@ -4220,15 +4220,26 @@ async function renderChannelInfoItems() {
     const card = document.createElement("article");
     card.className = isMedia ? "ci-item ci-media-tile" : "ci-item";
     if (isMedia && item.url && (item.detail || "").startsWith("image/")) {
+      const openPreview = document.createElement("button");
+      openPreview.type = "button";
+      openPreview.className = "ci-media-open";
+      openPreview.setAttribute("aria-label", "Preview shared image");
       const thumb = document.createElement("img");
       thumb.className = "ci-media-thumb";
       thumb.src = item.url;
-      thumb.alt = "Shared image";
+      thumb.alt = "Shared image — open preview";
       thumb.loading = "lazy";
       thumb.decoding = "async";
       thumb.referrerPolicy = "no-referrer";
-      thumb.addEventListener("error", () => { thumb.removeAttribute("src"); thumb.alt = "Image preview unavailable"; });
-      card.append(thumb);
+      thumb.addEventListener("error", () => {
+        thumb.removeAttribute("src");
+        thumb.alt = "Image preview unavailable";
+        openPreview.disabled = true;
+        openPreview.setAttribute("aria-label", "Image preview unavailable");
+      });
+      openPreview.addEventListener("click", () => openLightbox(item.url, "Shared image", item.url));
+      openPreview.append(thumb);
+      card.append(openPreview);
     } else {
       const icon = document.createElement("div"); icon.className = "ci-item-icon"; icon.textContent = item.icon; card.append(icon);
     }
