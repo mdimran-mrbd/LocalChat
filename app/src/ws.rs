@@ -1414,7 +1414,7 @@ async fn handle_op(
             };
             if !matches!(ch.kind, ChannelKind::Group) { return Err("only groups have editable details".into()); }
             if ch.created_by != user_id { return Err("only the group owner can edit details".into()); }
-            let updated = state.db.update_channel_details(id, ch.name.as_str(), description, photo_url).await
+            let updated = state.db.update_channel_details(id, ch.name.as_str(), description, &photo_url).await
                 .map_err(|_| "could not save group details".to_string())?;
             if !updated { return Err("group no longer exists".into()); }
             let (name, description, photo_url) = state.db.channel_details(id).await
