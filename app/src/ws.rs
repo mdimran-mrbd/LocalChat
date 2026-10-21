@@ -260,7 +260,12 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
     } else {
         pick_color_for(&username).to_compact_string()
     };
-    let pubkey = if !join.pubkey.is_empty() {
+    // If a password-wrapped key backup exists, keep the established public
+    // key until the client restores the matching private key from that backup.
+    let key_backup = state.db.get_e2ee_key_backup(&user_id).await.ok().flatten();
+    let pubkey = if key_backup.is_some() {
+        prior.as_ref().map(|p| p.pubkey.clone()).unwrap_or_default()
+    } else if !join.pubkey.is_empty() {
         join.pubkey.chars().take(512).collect::<String>().to_compact_string()
     } else {
         prior.as_ref().map(|p| p.pubkey.clone()).unwrap_or_default()
@@ -407,6 +412,7 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
         "lobby": LOBBY_ID,
         "session": session_token,
         "mustChangePassword": must_change_password,
+        "e2eeKeyBackup": key_backup,
     });
     if sink.send(Message::Text(welcome.to_string())).await.is_err() {
         // Session token is intentionally NOT removed on disconnect:
@@ -1535,6 +1541,22 @@ async fn handle_op(
                 edited_at: None,
                 deleted: false,
             }));
+        }
+
+        "key_backup_set" => {
+            let payload = v.get("payload").and_then(Value::as_str).ok_or("missing encrypted key backup")?;
+            if payload.len() > 20000 { return Err("encrypted key backup is too large".into()); }
+            let envelope: Value = serde_json::from_str(payload).map_err(|_| "invalid key backup envelope")?;
+            if envelope.get("v").and_then(Value::as_u64) != Some(1)
+                || envelope.get("kdf").and_then(Value::as_str) != Some("PBKDF2-SHA-256")
+                || envelope.get("salt").and_then(Value::as_str).map_or(true, |s| s.len() > 128 || s.is_empty())
+                || envelope.get("iv").and_then(Value::as_str).map_or(true, |s| s.len() > 128 || s.is_empty())
+                || envelope.get("ciphertext").and_then(Value::as_str).map_or(true, |s| s.len() > 18000 || s.is_empty())
+            {
+                return Err("invalid encrypted key backup envelope".into());
+            }
+            state.db.set_e2ee_key_backup(user_id.clone(), payload, now_secs()).await
+                .map_err(|_| "could not save encrypted key backup".to_string())?;
         }
 
         "profile_update" => {
