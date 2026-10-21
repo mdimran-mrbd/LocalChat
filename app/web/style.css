@@ -3207,3 +3207,15 @@ html, body.admin-shell { height: 100%; overflow: hidden; }
 .user-name-display{display:inline;min-width:0}.user-designation{font-size:.78em;font-weight:650;color:var(--brand);white-space:nowrap;letter-spacing:.01em}.ci-member-name .user-designation{font-size:11px}.msg-header .user-designation{font-size:10px;color:color-mix(in srgb,currentColor 72%,var(--brand))}
 
 #designationModal select{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid var(--border-strong);border-radius:var(--radius-sm);background:var(--bg-2);color:var(--fg-0);font:inherit}#designationModal option{background:var(--bg-1);color:var(--fg-0)}
+
+/* Channel-name editing control: hidden until hover or keyboard focus. */
+.ci-name-row { display:flex; align-items:center; justify-content:center; gap:6px; min-width:0; }
+.ci-name-row .ci-name { min-width:0; overflow-wrap:anywhere; }
+.ci-name-edit { flex:0 0 auto; width:26px; height:26px; display:inline-flex; align-items:center; justify-content:center; border:0; border-radius:6px; padding:0; background:transparent; color:var(--fg-2,#9ca3af); opacity:0; cursor:pointer; transition:opacity .12s,background .12s; }
+.ci-name-row:hover .ci-name-edit,.ci-name-row:focus-within .ci-name-edit,.ci-name-edit[aria-expanded="true"] { opacity:1; }
+.ci-name-edit:hover,.ci-name-edit[aria-expanded="true"] { background:var(--bg-hover,rgba(128,128,128,.16)); color:var(--fg-0,#f3f4f6); }
+[data-theme="light"] .ci-name-edit { color:#64748b; }
+[data-theme="light"] .ci-name-edit:hover,[data-theme="light"] .ci-name-edit[aria-expanded="true"] { color:#1f2937; }
+.rp-more { border:1px solid var(--border); border-radius:999px; font-size:22px; font-weight:500; line-height:1; }
+.reaction-pop.expanded { max-width:min(360px,calc(100vw - 16px)); max-height:min(260px,calc(100vh - 24px)); overflow:auto; flex-wrap:wrap; }
+@media (hover:none) { .ci-name-edit { opacity:1; } }
