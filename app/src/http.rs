@@ -375,7 +375,7 @@ async fn upload(
         }
         let bytes = tokio::fs::read(state.uploads_dir.join(info.filename.as_str())).await
             .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "could not verify image".into()))?;
-        let valid_signature = (bytes.starts_with(&[0x52, 0x49, 0x46, 0x46]) && bytes.get(8..12) == Some(b"WEBP"))
+        let valid_signature = (bytes.starts_with(&[0x52, 0x49, 0x46, 0x46]) && bytes.get(8..12) == Some(&b"WEBP"[..]))
             || bytes.starts_with(&[0xFF, 0xD8, 0xFF])
             || bytes.starts_with(&[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
         if !valid_signature {
