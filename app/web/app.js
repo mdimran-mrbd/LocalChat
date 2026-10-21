@@ -679,6 +679,8 @@ function handleEvent(e) {
     case "react":        return onReact(e);
     case "pin_update":   return onPinUpdate(e);
     case "ch_created":   return onChannelCreated(e.channel);
+    case "ch_info":      return onChannelInfo(e);
+    case "ch_notification_set": return onChannelNotificationSet(e);
     case "ch_invited":   return onChannelInvited(e);
     case "ch_deleted":   return onChannelDeleted(e.channel);
     case "kicked":       return onKicked(e);
@@ -3801,6 +3803,7 @@ let _ciPendingJump = null;
 /* ── Chat info drawer + shared-item browser (initial test slice) ── */
 let _channelInfoTab = "media";
 let _channelInfoSearch = "";
+let _ciNotificationMode = "all";
 function _ciEsc(s) { return String(s ?? "").replace(/[&<>"']/g, ch => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[ch])); }
 function _ciPeer(ch) { try { return dmPeer(ch); } catch { return null; } }
 async function openChannelInfo() {
@@ -3812,6 +3815,7 @@ async function openChannelInfo() {
   _channelInfoTab = "media";
   _channelInfoSearch = "";
   await renderChannelInfo();
+  sendOp({ op: "ch_info", channel: ch.id });
   $("channelInfoDrawer")?.querySelector("button")?.focus();
 }
 function closeChannelInfo() {
@@ -3830,12 +3834,21 @@ async function renderChannelInfo() {
   const members = (ch.members || []).map(id => S.users.get(id) || { id, username: id === S.me?.id ? (S.me?.username || "You") : "Offline member", avatar: "?", color: "#6366f1" });
   const profileAvatar = isDm ? (peer?.avatar || "?") : (title.slice(0,1).toUpperCase() || "#");
   const description = ch.description || "";
+  _ciNotificationMode = ch.notificationMode || _ciNotificationMode || "all";
   root.innerHTML = `
     <section class="ci-profile">
       <div class="ci-avatar">${_ciEsc(profileAvatar)}</div>
       <div class="ci-name">${_ciEsc(title)}</div>
       <div class="ci-subtitle">${isDm ? "Direct message · End-to-end encryption when available" : (ch.kind === "lobby" ? "Public channel" : (ch.isPrivate ? "Private group" : "Group conversation")) + " · " + members.length + " member" + (members.length === 1 ? "" : "s")}</div>
       ${!isDm && ch.kind !== "lobby" ? `<div class="ci-description">${_ciEsc(description || "No group description yet.")}</div>` : ""}
+    </section>
+    <section class="ci-section">
+      <div class="ci-section-head"><span>Notifications</span><span>Only for you</span></div>
+      <select id="ciNotificationMode" class="ci-search" aria-label="Chat notification preference">
+        <option value="all" ${_ciNotificationMode === "all" ? "selected" : ""}>All messages</option>
+        <option value="mentions" ${_ciNotificationMode === "mentions" ? "selected" : ""}>Mentions only</option>
+        <option value="mute" ${_ciNotificationMode === "mute" ? "selected" : ""}>Muted</option>
+      </select>
     </section>
     <section class="ci-section">
       <div class="ci-section-head"><span>Shared content</span><span>Loaded messages</span></div>
@@ -3858,6 +3871,11 @@ async function renderChannelInfo() {
     root.querySelectorAll("[data-ci-tab]").forEach(b => b.classList.toggle("active", b === btn));
     await renderChannelInfoItems();
   }));
+  const notificationSelect = $("ciNotificationMode");
+  if (notificationSelect) notificationSelect.addEventListener("change", () => {
+    _ciNotificationMode = notificationSelect.value;
+    sendOp({ op: "ch_notification_set", channel: ch.id, mode: _ciNotificationMode });
+  });
   const search = $("ciMemberSearch");
   if (search) {
     search.value = _channelInfoSearch;
@@ -3878,7 +3896,7 @@ function renderChannelInfoMembers(members) {
     const avatar = document.createElement("div"); avatar.className = "ci-member-avatar"; avatar.style.background = u.color || "#6366f1"; avatar.textContent = u.avatar || (u.username || "?").slice(0,1).toUpperCase();
     const main = document.createElement("div"); main.className = "ci-member-main";
     const name = document.createElement("div"); name.className = "ci-member-name"; name.textContent = u.id === S.me?.id ? (u.username + " (you)") : (u.username || "Unknown member");
-    const role = document.createElement("div"); role.className = "ci-member-role"; role.textContent = u.id === S.channels.get(S.active)?.createdBy ? "Group owner" : (u.online ? "Online" : "Member");
+    const role = document.createElement("div"); role.className = "ci-member-role"; role.textContent = u.role === "owner" || u.id === S.channels.get(S.active)?.createdBy ? "Group owner" : (u.role === "moderator" ? "Moderator" : (u.online ? "Online" : "Member"));
     main.append(name, role); row.append(avatar, main);
     if (u.id !== S.me?.id && u.id && u.username && typeof openDmWithUserId === "function") {
       const action = document.createElement("button"); action.type = "button"; action.className = "btn btn-ghost btn-sm ci-member-action"; action.textContent = "Message"; action.title = "Open a direct message"; action.addEventListener("click", () => { closeChannelInfo(); openDmWithUserId(u.id, u.username); }); row.append(action);
@@ -3886,6 +3904,30 @@ function renderChannelInfoMembers(members) {
     root.append(row);
   }
 }
+function onChannelInfo(e) {
+  const ch = S.channels.get(e.channel);
+  if (!ch) return;
+  ch.description = e.description || "";
+  ch.photoUrl = e.photoUrl || "";
+  ch.notificationMode = e.notificationMode || "all";
+  ch.createdBy = e.createdBy || ch.createdBy;
+  ch.isPrivate = e.isPrivate ?? ch.isPrivate;
+  const profiles = Array.isArray(e.members) ? e.members : [];
+  ch.members = profiles.map(m => m.id);
+  for (const profile of profiles) S.users.set(profile.id, profile);
+  if (S.active === e.channel && !$("channelInfoDrawer")?.classList.contains("hidden")) {
+    _ciNotificationMode = ch.notificationMode;
+    renderChannelInfo();
+  }
+}
+function onChannelNotificationSet(e) {
+  const ch = S.channels.get(e.channel);
+  if (ch) ch.notificationMode = e.mode;
+  _ciNotificationMode = e.mode || "all";
+  const select = $("ciNotificationMode");
+  if (select) select.value = _ciNotificationMode;
+}
+
 async function renderChannelInfoItems() {
   const root = $("ciSharedItems");
   const ch = S.channels.get(S.active);
