@@ -290,12 +290,12 @@ impl Db {
             // inspected or persisted in the server-side shared-content index.
             // Each batch advances a durable message-ID cursor only after its
             // idempotent inserts complete, so a crash safely retries that batch.
-            let shared_backfill_done: Option<String> = conn.query_row(
-                "SELECT value FROM schema_meta WHERE key='shared_index_backfill_v1'",
+            let shared_backfill_v2_done: Option<String> = conn.query_row(
+                "SELECT value FROM schema_meta WHERE key='shared_index_backfill_v2_done'",
                 [],
                 |r| r.get(0),
             ).optional()?;
-            if shared_backfill_done.is_none() {
+            if shared_backfill_v2_done.as_deref() != Some("done") {
                 let mut cursor: i64 = conn.query_row(
                     "SELECT value FROM schema_meta WHERE key='shared_index_backfill_v2_cursor'",
                     [],
@@ -330,7 +330,7 @@ impl Db {
 
                     if rows.is_empty() {
                         conn.execute(
-                            "INSERT INTO schema_meta(key,value) VALUES('shared_index_backfill_v1','done')
+                            "INSERT INTO schema_meta(key,value) VALUES('shared_index_backfill_v2_done','done')
                              ON CONFLICT(key) DO UPDATE SET value='done'",
                             [],
                         )?;
