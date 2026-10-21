@@ -3141,3 +3141,48 @@ html, body.admin-shell { height: 100%; overflow: hidden; }
 .update-banner-dismiss { flex: 0 0 auto; width: 28px; height: 28px; margin-left: -8px; border: 0; border-radius: 7px; background: transparent; color: inherit; font-size: 22px; line-height: 1; cursor: pointer; }
 .update-banner-dismiss:hover, .update-banner-dismiss:focus-visible { background: var(--bg-hover, rgba(128,128,128,.16)); outline-offset: 2px; }
 @media (max-width: 520px) { .ci-media-grid, .ci-links-grid, .ci-files-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; } .ci-preview-caption { font-size: 9px; padding: 12px 4px 5px; } }
+
+
+/* Release-candidate polish: usable member menus, safe sidebar footer, link previews. */
+.ci-member-menu {
+  width: max-content;
+  min-width: 224px;
+  max-width: min(300px, calc(100vw - 48px));
+  max-height: min(320px, calc(100dvh - 120px));
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 6px;
+  z-index: 30;
+}
+.ci-member-menu-item {
+  min-height: 36px;
+  width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: left;
+  font-size: 13px;
+  line-height: 1.35;
+}
+.ci-member-menu.opens-up { bottom: calc(100% + 4px); }
+.sidebar { height: 100%; min-height: 0; }
+.sb-scroll { flex: 1 1 auto; min-height: 0; }
+.sb-foot { flex: 0 0 auto; position: relative; z-index: 2; background: var(--bg-1); }
+.sb-admin-link { flex: 0 0 auto; }
+.message-mention { color: var(--brand); font-weight: 650; text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--brand) 50%, transparent); text-underline-offset: 2px; cursor: pointer; }
+.message-mention:hover { text-decoration-color: currentColor; }
+.message-link-preview {
+  display: flex; align-items: center; gap: 10px; max-width: min(420px, 100%);
+  margin-top: 9px; padding: 9px 11px; border: 1px solid var(--border);
+  border-radius: 9px; background: var(--bg-2); color: var(--fg-0);
+  text-decoration: none; overflow: hidden;
+}
+.message-link-preview:hover { background: var(--bg-hover); text-decoration: none; border-color: var(--border-strong); }
+.message-link-preview-icon {
+  display: grid; place-items: center; flex: 0 0 34px; width: 34px; height: 34px;
+  border-radius: 7px; background: var(--brand-soft); color: var(--brand); font-size: 22px;
+}
+.message-link-preview-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.message-link-preview-copy strong { font-size: 12px; font-weight: 700; overflow-wrap: anywhere; }
+.message-link-preview-copy span { font-size: 11px; color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ci-browser-notifications { width: 100%; margin: 0 0 8px; justify-content: center; }
+.ci-browser-notifications.active { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, var(--border)); }
