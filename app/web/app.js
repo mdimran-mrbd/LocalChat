@@ -4387,6 +4387,7 @@ function onChannelInfo(e) {
   ch.members = profiles.map(m => m.id);
   ch.memberRoles = Object.fromEntries(profiles.map(m => [m.id, m.role || "member"]));
   for (const profile of profiles) S.users.set(profile.id, profile);
+  renderChannels();
   if (S.active === e.channel && !$("channelInfoDrawer")?.classList.contains("hidden")) {
     _ciNotificationMode = ch.notificationMode;
     renderChannelInfo();
