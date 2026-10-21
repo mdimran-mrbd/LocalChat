@@ -3916,6 +3916,10 @@ function renderChannelInfoMembers(members) {
   const root = $("ciMembers");
   if (!root) return;
   const q = (_channelInfoSearch || "").trim().toLowerCase();
+  const activeChannel = S.channels.get(S.active);
+  const selfRole = members.find(u => u.id === S.me?.id)?.role || (activeChannel?.createdBy === S.me?.id ? "owner" : "member");
+  const isOwner = selfRole === "owner";
+  const canRemove = selfRole === "owner" || selfRole === "moderator";
   const filtered = members.filter(u => (u.username || "").toLowerCase().includes(q));
   root.innerHTML = "";
   if (!filtered.length) { root.innerHTML = '<div class="ci-empty">No matching members.</div>'; return; }
@@ -3928,6 +3932,22 @@ function renderChannelInfoMembers(members) {
     main.append(name, role); row.append(avatar, main);
     if (u.id !== S.me?.id && u.id && u.username && typeof openDmWithUserId === "function") {
       const action = document.createElement("button"); action.type = "button"; action.className = "btn btn-ghost btn-sm ci-member-action"; action.textContent = "Message"; action.title = "Open a direct message"; action.addEventListener("click", () => { closeChannelInfo(); openDmWithUserId(u.id, u.username); }); row.append(action);
+    }
+    if (activeChannel?.kind === "group" && u.id !== S.me?.id && u.role !== "owner" && canRemove) {
+      if (isOwner) {
+        const roleSelect = document.createElement("select"); roleSelect.className = "ci-role-select"; roleSelect.setAttribute("aria-label", "Role for " + (u.username || "member"));
+        roleSelect.innerHTML = '<option value="member">Member</option><option value="moderator">Moderator</option>';
+        roleSelect.value = u.role === "moderator" ? "moderator" : "member";
+        roleSelect.addEventListener("change", () => sendOp({ op: "ch_role_set", channel: activeChannel.id, userId: u.id, role: roleSelect.value }));
+        row.append(roleSelect);
+      }
+      if (u.role !== "moderator" || isOwner) {
+        const remove = document.createElement("button"); remove.type = "button"; remove.className = "btn btn-ghost btn-sm ci-member-action"; remove.textContent = "Remove"; remove.title = "Remove member from group";
+        remove.addEventListener("click", () => {
+          if (confirm("Remove " + (u.username || "this member") + " from the group?")) sendOp({ op: "ch_member_remove", channel: activeChannel.id, userId: u.id });
+        });
+        row.append(remove);
+      }
     }
     root.append(row);
   }
