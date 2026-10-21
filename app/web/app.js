@@ -1071,7 +1071,7 @@ async function onWireMsg(m) {
     return;
   }
   if (m.username === "__poll") {
-    try { onPollUpdate({ ...JSON.parse(m.text), userVote: null }, false); } catch {}
+    try { onPollUpdate(JSON.parse(m.text), false); } catch {}
     return;
   }
   if (m.username === "__msg_deleted") {
