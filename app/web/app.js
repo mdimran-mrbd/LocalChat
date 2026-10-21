@@ -4074,6 +4074,7 @@ function onChannelNotificationSet(e) {
 }
 
 const _ciSharedCache = new Map();
+let _ciSharedRequestSeq = 0;
 // Keep the open shared-content panel fresh as messages arrive or are deleted.
 // A reset is required because newly indexed items are newer than the current cursor.
 function refreshOpenSharedItems(channelId) {
@@ -4145,12 +4146,14 @@ function requestChannelSharedItems(reset = false) {
   }
   if (cache.loading || (!cache.hasMore && !reset)) return;
   cache.loading = true;
-  sendOp({ op: "shared_items_list", channel: ch.id, type: _channelInfoTab, limit: 48, ...(cache.cursor ? { beforeId: cache.cursor } : {}) });
+  const requestId = ++_ciSharedRequestSeq;
+  cache.requestId = requestId;
+  sendOp({ op: "shared_items_list", channel: ch.id, type: _channelInfoTab, limit: 48, requestId, ...(cache.cursor ? { beforeId: cache.cursor } : {}) });
 }
 function onSharedItemsList(e) {
   const key = _ciSharedKey(e.channel, e.type);
   const cache = _ciSharedCache.get(key);
-  if (!cache) return;
+  if (!cache || e.requestId !== cache.requestId) return;
   cache.loading = false;
   cache.hasMore = !!e.hasMore;
   cache.cursor = e.nextCursor || cache.cursor;
