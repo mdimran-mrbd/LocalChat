@@ -3894,11 +3894,13 @@ async function renderChannelInfo() {
   const title = isDm ? (peer?.username || ch.dmUsers?.find(n => n?.toLowerCase() !== S.me?.username?.toLowerCase()) || "Direct message") : (ch.name || "Group");
   const members = (ch.members || []).map(id => S.users.get(id) || { id, username: id === S.me?.id ? (S.me?.username || "You") : "Offline member", avatar: "?", color: "#6366f1" });
   const profileAvatar = isDm ? (peer?.avatar || "?") : (title.slice(0,1).toUpperCase() || "#");
+  const canEditPhoto = ch.kind === "group" && (ch.createdBy === S.me?.id || ch.memberRoles?.[S.me?.id] === "moderator" || ch.memberRoles?.[S.me?.id] === "owner");
   const description = ch.description || "";
   _ciNotificationMode = ch.notificationMode || _ciNotificationMode || "all";
   root.innerHTML = `
     <section class="ci-profile">
-      <div class="ci-avatar">${_ciEsc(profileAvatar)}</div>
+      <div class="ci-avatar">${ch.photoUrl && !isDm ? `<img src="${_ciEsc(ch.photoUrl)}" alt="${_ciEsc(title)} group photo" loading="lazy">` : _ciEsc(profileAvatar)}${canEditPhoto ? '<button type="button" id="ciPhotoEditBtn" class="ci-avatar-edit" aria-label="Change group photo" title="Change group photo">✎</button>' : ""}</div>
+      ${canEditPhoto ? '<input id="ciPhotoFileInput" type="file" accept="image/png,image/jpeg,image/webp" hidden aria-label="Choose group photo">' : ""}
       <div class="ci-name">${_ciEsc(title)}</div>
       <div class="ci-subtitle">${isDm ? "Direct message · End-to-end encryption when available" : (ch.kind === "lobby" ? "Public channel" : (ch.isPrivate ? "Private group" : "Group conversation")) + " · " + members.length + " member" + (members.length === 1 ? "" : "s")}</div>
       ${!isDm && ch.kind !== "lobby" ? `<div class="ci-description">${_ciEsc(description || "No group description yet.")}</div>` : ""}
@@ -3906,9 +3908,7 @@ async function renderChannelInfo() {
         <form id="ciEditGroupForm" class="ci-edit-group">
           <label for="ciDescriptionInput">Group description</label>
           <textarea id="ciDescriptionInput" maxlength="500" rows="3" placeholder="Add a group description…">${_ciEsc(description)}</textarea>
-          <label for="ciPhotoUrlInput">Group photo URL (optional)</label>
-          <input id="ciPhotoUrlInput" type="url" maxlength="2048" placeholder="https://…" value="${_ciEsc(ch.photoUrl || "")}">
-          <button class="btn btn-primary btn-sm" type="submit">Save group details</button>
+          <button class="btn btn-primary btn-sm" type="submit">Save description</button>
         </form>` : ""}
     </section>
     <section class="ci-section">
@@ -3946,9 +3946,18 @@ async function renderChannelInfo() {
   if (editForm) editForm.addEventListener("submit", ev => {
     ev.preventDefault();
     const descriptionInput = $("ciDescriptionInput");
-    const photoInput = $("ciPhotoUrlInput");
-    sendOp({ op: "ch_update", channel: ch.id, description: descriptionInput?.value || "", photoUrl: photoInput?.value.trim() || "" });
+    sendOp({ op: "ch_update", channel: ch.id, description: descriptionInput?.value || "", photoUrl: ch.photoUrl || "" });
   });
+  const photoEditButton = $("ciPhotoEditBtn");
+  const photoInput = $("ciPhotoFileInput");
+  if (photoEditButton && photoInput) {
+    photoEditButton.addEventListener("click", () => photoInput.click());
+    photoInput.addEventListener("change", async () => {
+      const file = photoInput.files?.[0];
+      photoInput.value = "";
+      if (file) await uploadGroupPhoto(file, ch.id);
+    });
+  }
   const notificationSelect = $("ciNotificationMode");
   if (notificationSelect) notificationSelect.addEventListener("change", () => {
     _ciNotificationMode = notificationSelect.value;
@@ -4012,6 +4021,7 @@ function onChannelInfo(e) {
   ch.isPrivate = e.isPrivate ?? ch.isPrivate;
   const profiles = Array.isArray(e.members) ? e.members : [];
   ch.members = profiles.map(m => m.id);
+  ch.memberRoles = Object.fromEntries(profiles.map(m => [m.id, m.role || "member"]));
   for (const profile of profiles) S.users.set(profile.id, profile);
   if (S.active === e.channel && !$("channelInfoDrawer")?.classList.contains("hidden")) {
     _ciNotificationMode = ch.notificationMode;
@@ -4051,6 +4061,49 @@ function onChannelNotificationSet(e) {
 }
 
 const _ciSharedCache = new Map();
+async function uploadGroupPhoto(file, channelId) {
+  const ch = S.channels.get(channelId);
+  if (!ch || ch.kind !== "group") return;
+  if (!S.session) { toast("Not connected — try again in a moment", 3500); return; }
+  if (!/^image\/(png|jpeg|webp)$/i.test(file.type || "")) { toast("Choose a PNG, JPEG, or WebP image.", 3500); return; }
+  let blob;
+  try {
+    const bitmap = await createImageBitmap(file);
+    const side = Math.min(bitmap.width, bitmap.height);
+    if (!side) throw new Error("Image dimensions are invalid.");
+    const canvas = document.createElement("canvas");
+    canvas.width = 256; canvas.height = 256;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Image processing is unavailable.");
+    context.drawImage(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side, 0, 0, 256, 256);
+    bitmap.close?.();
+    blob = await new Promise(resolve => canvas.toBlob(resolve, "image/webp", 0.82));
+    if (!blob) blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.82));
+    if (!blob) throw new Error("Could not process this image.");
+  } catch (error) {
+    toast("Could not process image: " + (error.message || "unsupported image"), 4000);
+    return;
+  }
+  if (blob.size > 2 * 1024 * 1024) { toast("Processed photo is still too large. Choose a smaller image.", 4000); return; }
+  const filename = blob.type === "image/webp" ? "group-photo.webp" : "group-photo.jpg";
+  const form = new FormData();
+  form.append("purpose", "channel_photo");
+  form.append("session", S.session);
+  form.append("channel", channelId);
+  form.append("file", blob, filename);
+  try {
+    toast("Updating group photo…", 10000);
+    const response = await fetch("/api/upload", { method: "POST", body: form });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || result.message || "Upload failed.");
+    ch.photoUrl = result.photoUrl || "";
+    if (S.active === channelId) renderChannelInfo();
+    toast("Group photo updated.");
+  } catch (error) {
+    toast("Could not update group photo: " + (error.message || "upload failed"), 4500);
+  }
+}
+
 function _ciSharedKey(channel, type) { return String(channel) + "::" + String(type); }
 function requestChannelSharedItems(reset = false) {
   const ch = S.channels.get(S.active);
