@@ -1072,6 +1072,10 @@ async function onWireMsg(m) {
     } catch {}
     return;
   }
+  if (m.username === "__ch_updated") {
+    try { onChannelUpdated(JSON.parse(m.text)); } catch {}
+    return;
+  }
   if (m.username === "__ch_photo_updated") {
     try {
       const data = JSON.parse(m.text);
@@ -4146,12 +4150,14 @@ async function renderChannelInfo() {
       ${canEditPhoto ? '<input id="ciPhotoFileInput" type="file" accept="image/png,image/jpeg,image/webp" hidden aria-label="Choose group photo">' : ""}
       <div class="ci-name">${_ciEsc(title)}</div>
       <div class="ci-subtitle">${isDm ? "Direct message · End-to-end encryption when available" : (ch.kind === "lobby" ? "Public channel" : (ch.isPrivate ? "Private group" : "Group conversation")) + " · " + members.length + " member" + (members.length === 1 ? "" : "s")}</div>
-      ${!isDm && ch.kind !== "lobby" ? `<div class="ci-description-row"><div class="ci-description" id="ciDescriptionText">${_ciEsc(description || "No group description yet.")}</div>${canEditDescription ? '<button type="button" id="ciDescriptionEditBtn" class="ci-description-edit" aria-label="Edit group description" title="Edit description"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>' : ""}</div>` : ""}
+      ${!isDm && ch.kind !== "lobby" ? `<div class="ci-description-row"><div class="ci-description" id="ciDescriptionText">${_ciEsc(description || "No group description yet.")}</div>${canEditDescription ? '<button type="button" id="ciDescriptionEditBtn" class="ci-description-edit" aria-label="Edit group details" title="Edit group name and description"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>' : ""}</div>` : ""}
       ${canEditDescription ? `
         <form id="ciEditGroupForm" class="ci-edit-group" hidden>
+          <label for="ciNameInput">Channel name</label>
+          <input id="ciNameInput" type="text" maxlength="48" minlength="2" required value="${_ciEsc(title)}" placeholder="Enter channel name">
           <label for="ciDescriptionInput">Group description</label>
           <textarea id="ciDescriptionInput" maxlength="500" rows="3" placeholder="Add a group description…">${_ciEsc(description)}</textarea>
-          <div class="ci-edit-group-actions"><button class="btn btn-ghost btn-sm" type="button" id="ciCancelDescriptionEdit">Cancel</button><button class="btn btn-primary btn-sm" type="submit">Save description</button></div>
+          <div class="ci-edit-group-actions"><button class="btn btn-ghost btn-sm" type="button" id="ciCancelDescriptionEdit">Cancel</button><button class="btn btn-primary btn-sm" type="submit">Save changes</button></div>
         </form>` : ""}
     </section>
     <section class="ci-section">
@@ -4191,10 +4197,11 @@ async function renderChannelInfo() {
   const editForm = $("ciEditGroupForm");
   const descriptionEditButton = $("ciDescriptionEditBtn");
   const descriptionInput = $("ciDescriptionInput");
+  const nameInput = $("ciNameInput");
   if (editForm && descriptionEditButton) {
-    descriptionEditButton.addEventListener("click", () => { editForm.hidden = false; descriptionEditButton.setAttribute("aria-expanded", "true"); descriptionInput?.focus(); });
-    $("ciCancelDescriptionEdit")?.addEventListener("click", () => { if (descriptionInput) descriptionInput.value = ch.description || ""; editForm.hidden = true; descriptionEditButton.setAttribute("aria-expanded", "false"); });
-    editForm.addEventListener("submit", ev => { ev.preventDefault(); sendOp({ op: "ch_update", channel: ch.id, description: descriptionInput?.value || "" }); });
+    descriptionEditButton.addEventListener("click", () => { editForm.hidden = false; descriptionEditButton.setAttribute("aria-expanded", "true"); nameInput?.focus(); });
+    $("ciCancelDescriptionEdit")?.addEventListener("click", () => { if (descriptionInput) descriptionInput.value = ch.description || ""; if (nameInput) nameInput.value = ch.name || ""; editForm.hidden = true; descriptionEditButton.setAttribute("aria-expanded", "false"); });
+    editForm.addEventListener("submit", ev => { ev.preventDefault(); const name = (nameInput?.value || "").trim(); if (name.length < 2 || name.length > 48) { toast("Channel name must be 2–48 characters."); return; } sendOp({ op: "ch_update", channel: ch.id, name, description: descriptionInput?.value || "" }); });
   }
   const photoEditButton = $("ciPhotoEditBtn");
   const photoInput = $("ciPhotoFileInput");
@@ -4309,6 +4316,7 @@ function onChannelUpdated(e) {
   ch.description = e.description || "";
   ch.photoUrl = e.photoUrl || "";
   ch.name = e.name || ch.name;
+  renderChannels();
   if (S.active === e.channel && !$("channelInfoDrawer")?.classList.contains("hidden")) renderChannelInfo();
   if (typeof toast === "function") toast("Group details saved.");
 }
