@@ -669,8 +669,10 @@ impl Db {
         let uid = user_id.to_string();
         self.with(move |c| {
             c.execute(
-                "INSERT OR IGNORE INTO channel_members(channel_id, user_id, joined_at)
-                 VALUES (?1, ?2, ?3)",
+                "INSERT OR IGNORE INTO channel_members(channel_id, user_id, joined_at, role)
+                 SELECT ?1, ?2, ?3,
+                        CASE WHEN kind='group' AND created_by=?2 THEN 'owner' ELSE 'member' END
+                   FROM channels WHERE id=?1",
                 params![cid, uid, ts as i64],
             )?;
             Ok(())
