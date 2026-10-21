@@ -285,58 +285,97 @@ impl Db {
                                    AND c.kind='group')",
                 [],
             )?;
-            // One-time backfill for existing public-channel history. The
-            // query explicitly excludes DMs, whose plaintext must never be
+            // Backfill historical shared items in bounded, resumable batches.
+            // DMs are deliberately excluded: encrypted DM text must never be
             // inspected or persisted in the server-side shared-content index.
+            // Each batch advances a durable message-ID cursor only after its
+            // idempotent inserts complete, so a crash safely retries that batch.
             let shared_backfill_done: Option<String> = conn.query_row(
                 "SELECT value FROM schema_meta WHERE key='shared_index_backfill_v1'",
                 [],
                 |r| r.get(0),
             ).optional()?;
             if shared_backfill_done.is_none() {
-                conn.execute(
-                    "INSERT OR IGNORE INTO shared_items(channel_id,message_id,item_type,item_key,created_at)
-                     SELECT m.channel_id, m.id,
-                            CASE WHEN lower(coalesce(m.file_mime,'')) LIKE 'image/%'
-                                      OR lower(coalesce(m.file_mime,'')) LIKE 'video/%'
-                                 THEN 'media' ELSE 'file' END,
-                            coalesce(m.file_url,''), m.ts
-                       FROM messages m JOIN channels ch ON ch.id=m.channel_id
-                      WHERE ch.kind <> 'dm' AND m.kind='file' AND m.deleted=0
-                        AND m.file_url IS NOT NULL",
+                let mut cursor: i64 = conn.query_row(
+                    "SELECT value FROM schema_meta WHERE key='shared_index_backfill_v2_cursor'",
                     [],
-                )?;
-                let link_rows = {
-                    let mut stmt = conn.prepare(
-                        "SELECT m.channel_id, m.id, m.ts, m.text
-                           FROM messages m JOIN channels ch ON ch.id=m.channel_id
-                          WHERE ch.kind <> 'dm' AND m.kind='text' AND m.deleted=0
-                            AND m.text NOT LIKE 'e2e:v1:%'"
-                    )?;
-                    let rows = stmt.query_map([], |r| Ok((
-                        r.get::<_, String>(0)?, r.get::<_, i64>(1)?,
-                        r.get::<_, i64>(2)?, r.get::<_, String>(3)?
-                    )))?;
-                    let mut collected = Vec::new();
-                    for row in rows { collected.push(row?); }
-                    collected
-                };
-                for (channel_id, message_id, ts, body) in link_rows {
-                    for token in body.split_whitespace() {
-                        if let Some(normalized) = normalize_shared_url_token(token) {
-                            conn.execute(
-                                "INSERT OR IGNORE INTO shared_items(channel_id,message_id,item_type,item_key,created_at)
-                                 VALUES(?1,?2,'link',?3,?4)",
-                                params![channel_id, message_id, normalized, ts],
-                            )?;
+                    |r| r.get::<_, String>(0),
+                ).optional()?.and_then(|value| value.parse::<i64>().ok()).unwrap_or(0);
+
+                loop {
+                    let rows = {
+                        let mut stmt = conn.prepare(
+                            "SELECT m.id, m.channel_id, m.ts, m.kind, m.text,
+                                    m.file_url, m.file_mime, m.deleted
+                               FROM messages m
+                               JOIN channels ch ON ch.id=m.channel_id
+                              WHERE ch.kind <> 'dm' AND m.id > ?1
+                              ORDER BY m.id ASC
+                              LIMIT 500"
+                        )?;
+                        let mapped = stmt.query_map(params![cursor], |r| Ok((
+                            r.get::<_, i64>(0)?,
+                            r.get::<_, String>(1)?,
+                            r.get::<_, i64>(2)?,
+                            r.get::<_, String>(3)?,
+                            r.get::<_, String>(4)?,
+                            r.get::<_, Option<String>>(5)?,
+                            r.get::<_, Option<String>>(6)?,
+                            r.get::<_, i64>(7)?,
+                        )))?;
+                        let mut batch = Vec::new();
+                        for row in mapped { batch.push(row?); }
+                        batch
+                    };
+
+                    if rows.is_empty() {
+                        conn.execute(
+                            "INSERT INTO schema_meta(key,value) VALUES('shared_index_backfill_v1','done')
+                             ON CONFLICT(key) DO UPDATE SET value='done'",
+                            [],
+                        )?;
+                        break;
+                    }
+
+                    let next_cursor = rows.last().map(|row| row.0).unwrap_or(cursor);
+                    for (message_id, channel_id, ts, kind, body, file_url, file_mime, deleted) in rows {
+                        if deleted != 0 { continue; }
+
+                        if kind == "file" {
+                            if let Some(url) = file_url {
+                                let mime = file_mime.unwrap_or_default().to_ascii_lowercase();
+                                let item_type = if mime.starts_with("image/") || mime.starts_with("video/") {
+                                    "media"
+                                } else {
+                                    "file"
+                                };
+                                conn.execute(
+                                    "INSERT OR IGNORE INTO shared_items(channel_id,message_id,item_type,item_key,created_at)
+                                     VALUES(?1,?2,?3,?4,?5)",
+                                    params![channel_id, message_id, item_type, url, ts],
+                                )?;
+                            }
+                        } else if kind == "text" && !body.starts_with("e2e:v1:") {
+                            for token in body.split_whitespace() {
+                                if let Some(normalized) = normalize_shared_url_token(token) {
+                                    conn.execute(
+                                        "INSERT OR IGNORE INTO shared_items(channel_id,message_id,item_type,item_key,created_at)
+                                         VALUES(?1,?2,'link',?3,?4)",
+                                        params![channel_id, message_id, normalized, ts],
+                                    )?;
+                                }
+                            }
                         }
                     }
+
+                    // Save progress only after the whole batch has been processed.
+                    conn.execute(
+                        "INSERT INTO schema_meta(key,value) VALUES('shared_index_backfill_v2_cursor',?1)
+                         ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                        params![next_cursor.to_string()],
+                    )?;
+                    cursor = next_cursor;
                 }
-                conn.execute(
-                    "INSERT INTO schema_meta(key,value) VALUES('shared_index_backfill_v1','done')
-                     ON CONFLICT(key) DO UPDATE SET value='done'",
-                    [],
-                )?;
             }
             // Stamp the schema version so future migrations can branch.
             conn.execute(
