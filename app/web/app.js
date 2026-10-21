@@ -4046,7 +4046,7 @@ function onChannelNotificationSet(e) {
   if (select) select.value = _ciNotificationMode;
 }
 
-let _ciShowAllItems = false;
+let _ciVisibleItems = 12;
 async function renderChannelInfoItems() {
   const root = $("ciSharedItems");
   const ch = S.channels.get(S.active);
@@ -4090,7 +4090,8 @@ async function renderChannelInfoItems() {
     return;
   }
   const isMedia = _channelInfoTab === "media";
-  const shown = _ciShowAllItems ? items : items.slice(0, isMedia ? 12 : 6);
+  const pageSize = isMedia ? 12 : 6;
+  const shown = items.slice(0, Math.max(pageSize, _ciVisibleItems));
   if (isMedia) root.classList.add("ci-media-grid"); else root.classList.remove("ci-media-grid");
   for (const item of shown) {
     const card = document.createElement("article");
@@ -4109,7 +4110,7 @@ async function renderChannelInfoItems() {
       const icon = document.createElement("div"); icon.className = "ci-item-icon"; icon.textContent = item.icon; card.append(icon);
     }
     const main = document.createElement("div"); main.className = "ci-item-main";
-    if (!isMedia || _ciShowAllItems) {
+    if (!isMedia) {
       const title = document.createElement("div"); title.className = "ci-item-title";
       title.textContent = item.type === "media" ? "Shared media" : item.title;
       main.append(title);
@@ -4146,8 +4147,8 @@ async function renderChannelInfoItems() {
     const more = document.createElement("button");
     more.type = "button";
     more.className = "btn btn-ghost btn-sm ci-view-all";
-    more.textContent = _ciShowAllItems ? "Show less" : "View all " + items.length + " items";
-    more.addEventListener("click", () => { _ciShowAllItems = !_ciShowAllItems; renderChannelInfoItems(); });
+    more.textContent = "Load more (" + (items.length - shown.length) + " remaining)";
+    more.addEventListener("click", () => { _ciVisibleItems = shown.length + 48; renderChannelInfoItems(); });
     root.append(more);
   }
 }
