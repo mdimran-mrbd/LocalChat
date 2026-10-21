@@ -4282,7 +4282,7 @@ function openSharedItemsOverlay(type, items, loadMore) {
   if (loadMore) { const more = document.createElement("button"); more.type = "button"; more.className = "ci-expanded-load"; more.textContent = "Load more"; more.addEventListener("click", () => { closeSharedItemsOverlay(); loadMore(); }); panel.append(more); }
   overlay.append(panel); overlay.addEventListener("click", ev => { if (ev.target === overlay) closeSharedItemsOverlay(); });
   drawer.append(overlay); _ciExpandedOverlay = overlay; close.focus();
-  overlay.addEventListener("keydown", ev => { if (ev.key === "Escape") closeSharedItemsOverlay(); });
+  overlay.addEventListener("keydown", ev => { if (ev.key === "Escape") { ev.stopPropagation(); closeSharedItemsOverlay(); } });
 }
 async function renderChannelInfoItems() {
   const root = $("ciSharedItems");
