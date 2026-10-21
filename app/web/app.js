@@ -1945,11 +1945,12 @@ async function onSearchAllResults(e) {
   for (const channel of S.channels.values()) {
     if (channel.kind !== "dm") continue;
     const peer = dmPeer(channel);
-    if (!peer?.pubkey) continue;
+    if (!peer) continue;
     for (const message of S.msgs.get(channel.id) || []) {
       if (message.deleted || message.kind === "system") continue;
       let text = String(message.text || "");
       if (text.startsWith("e2e:v1:")) {
+        if (!peer.pubkey) continue;
         const decrypted = await E2EE.tryDecrypt(peer.id, peer.pubkey, text);
         if (decrypted == null) continue;
         text = decrypted;
