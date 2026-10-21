@@ -543,6 +543,7 @@ const S = {
   hostname: "",
   sidebarTab: "mine",
   sidebarFilter: "",
+  sidebarMessageResults: [],
   searchChannel: null,
   replyTo: null,           // { channelId, msgId, username, preview }
 };
@@ -847,6 +848,7 @@ function handleEvent(e) {
     case "history_before": return onHistoryBefore(e);
     case "shared_items_list": return onSharedItemsList(e);
     case "search_results": return onSearchResults(e);
+    case "search_all_results": return onSearchAllResults(e);
     case "saved_messages": return onSavedMessages(e);
     case "react":        return onReact(e);
     case "pin_update":   return onPinUpdate(e);
@@ -1877,6 +1879,17 @@ function renderChannels() {
     root.append(_sbGroup("offline", "Offline", offlineItems.length, offlineItems));
   }
 
+  if (S.sidebarMessageResults.length && q) {
+    const results = S.sidebarMessageResults.filter(item => String(item.message?.text || item.message?.file?.name || "").toLowerCase().includes(q));
+    const resultItems = results.slice(0, 20).map(item => el("li", { class: "chat-item search-result-item", title: "Open matching message", onclick: () => openSidebarSearchResult(item) }, [
+      el("div", { class: "avatar", style: "background:var(--brand)" }, "#"),
+      el("div", { class: "chat-meta" }, [
+        el("div", { class: "chat-name" }, item.channelName || item.channelId || "Channel"),
+        el("div", { class: "chat-sub muted xs" }, `${item.message?.username || "Member"}: ${String(item.message?.text || item.message?.file?.name || "Attachment").slice(0, 90)}`),
+      ]),
+    ]));
+    root.append(_sbGroup("message-search-results", "Message matches", results.length, resultItems));
+  }
   if (!root.children.length) {
     root.append(el("div", { class: "chat-empty muted xs" }, "Nothing here yet."));
   }
@@ -1891,7 +1904,36 @@ function setSidebarTab(tab) {
   renderChannels();
 }
 
+function handleSidebarSearchKeydown(event) {
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  const query = (S.sidebarFilter || "").trim();
+  if (query.length < 2 || query.length > 100) { toast("Message search must be 2–100 characters."); return; }
+  sendOp({ op: "search_all", query });
+}
+function onSearchAllResults(e) {
+  const query = String(e.query || "");
+  if (query.trim().toLowerCase() !== (S.sidebarFilter || "").trim().toLowerCase()) return;
+  S.sidebarMessageResults = Array.isArray(e.results) ? e.results : [];
+  renderChannels();
+  if (!S.sidebarMessageResults.length) toast("No message matches found in searchable channels.", 3000);
+}
+function openSidebarSearchResult(result) {
+  const channelId = result?.channelId;
+  const message = result?.message;
+  if (!channelId || !message) return;
+  const existing = S.msgs.get(channelId) || [];
+  if (!existing.some(m => String(m.id) === String(message.id))) {
+    S.msgs.set(channelId, [...existing, message].sort((a,b) => Number(a.id) - Number(b.id)));
+  }
+  S.hasHistory.add(channelId);
+  _ciPendingJump = { channelId, messageId: message.id };
+  sendOp({ op: "history_before", channel: channelId, beforeId: Number(message.id) + 1, limit: 50 });
+  switchChannel(channelId);
+}
+
 function setSidebarFilter(v) {
+  S.sidebarMessageResults = [];
   S.sidebarFilter = v || "";
   const input = $("sbSearch");
   if (input && input.value !== S.sidebarFilter) input.value = S.sidebarFilter;
