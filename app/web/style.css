@@ -2949,3 +2949,24 @@ html, body.admin-shell { height: 100%; overflow: hidden; }
 .ci-avatar:hover .ci-avatar-edit, .ci-avatar:focus-within .ci-avatar-edit { opacity: 1; transform: translateY(0); }
 .ci-avatar-edit:focus-visible { opacity: 1; outline: 2px solid var(--brand, #6366f1); outline-offset: 2px; }
 @media (hover: none) { .ci-avatar-edit { opacity: 1; transform: none; } }
+
+
+/* Keyboard-accessible shared-media preview target. */
+.ci-media-open {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  cursor: zoom-in;
+  text-align: inherit;
+}
+.ci-media-open:focus-visible {
+  outline: 2px solid var(--brand, #6366f1);
+  outline-offset: -2px;
+  position: relative;
+  z-index: 1;
+}
+.ci-media-open:disabled { cursor: default; }
