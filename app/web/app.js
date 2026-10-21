@@ -13,7 +13,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // Stable avatar color from a username — mirrors server's pick_color_for (FNV-1a 32, lowercased).
 const _AVATAR_COLORS = ["#6366f1","#8b5cf6","#ec4899","#ef4444","#f97316","#eab308","#22c55e","#14b8a6","#06b6d4","#3b82f6"];
 function userNameNode(user) {
-  const profile = typeof user === "string" ? { username: user } : (user || {});
+  let profile = typeof user === "string" ? { username: user } : (user || {});
+  if (!profile.designation && S.userProfiles) {
+    const cached = [...S.userProfiles.values()].find(item => (item.username || "").toLowerCase() === (profile.username || "").toLowerCase());
+    if (cached) profile = { ...cached, ...profile, designation: cached.designation || profile.designation };
+  }
   const root = el("span", { class: "user-name-display" });
   root.append(document.createTextNode(profile.username || "Unknown"));
   if (profile.designation) root.append(el("span", { class: "user-designation" }, " • " + profile.designation));
@@ -533,7 +537,8 @@ async function getDecryptedBlobUrl(storageName, fetchUrl, envelope, peer) {
 const S = {
   ws: null,
   me: null,                // { id, username, avatar, color, pubkey }
-  users: new Map(),        // id → user
+  users: new Map(),        // online users by id
+  userProfiles: new Map(), // known user profiles, including offline designation labels
   channels: new Map(),     // id → meta
   msgs: new Map(),         // channelId → array of wire messages (raw)
   reactions: new Map(),    // channelId → Map<msgId, Map<emoji, Set<userId>>>
@@ -962,7 +967,8 @@ function onWelcome(e) {
   S.channels.clear();
   for (const c of e.channels) S.channels.set(c.id, c);
   S.users.clear();
-  for (const u of e.users) S.users.set(u.id, u);
+  S.userProfiles.clear();
+  for (const u of e.users) { S.users.set(u.id, u); S.userProfiles.set(u.id, u); }
 
   $("join").classList.add("hidden");
   $("app").classList.remove("hidden");
@@ -1026,7 +1032,7 @@ function onUsers(list) {
     if (u.pubkey && _warnedNoKey && _warnedNoKey.has(u.id)) _warnedNoKey.delete(u.id);
   }
   S.users.clear();
-  for (const u of list) S.users.set(u.id, u);
+  for (const u of list) { S.users.set(u.id, u); S.userProfiles.set(u.id, u); }
   const updatedMe = list.find(u => u.id === S.me?.id);
   if (updatedMe) {
     S.me = updatedMe;
@@ -1945,8 +1951,8 @@ function openSidebarSearchResult(result) {
   }
   S.hasHistory.add(channelId);
   _ciPendingJump = { channelId, messageId: message.id };
-  sendOp({ op: "history_before", channel: channelId, beforeId: Number(message.id) + 1, limit: 50 });
   switchChannel(channelId);
+  sendOp({ op: "history_before", channel: channelId, beforeId: Number(message.id) + 1, limit: 50 });
 }
 
 function setSidebarFilter(v) {
@@ -2496,7 +2502,7 @@ function updateHeader() {
 
   if (ch.kind === "dm") {
     const p = dmPeer(ch);
-    title.textContent = p ? p.username : "unknown";
+    title.replaceChildren(userNameNode(p || { username: "unknown" }));
     sub.textContent = p ? (p.offline ? "offline" : "online") : "";
     badge.classList.remove("hidden");
     composer.placeholder = "Type a message";
@@ -4386,7 +4392,7 @@ function onChannelInfo(e) {
   const profiles = Array.isArray(e.members) ? e.members : [];
   ch.members = profiles.map(m => m.id);
   ch.memberRoles = Object.fromEntries(profiles.map(m => [m.id, m.role || "member"]));
-  for (const profile of profiles) S.users.set(profile.id, profile);
+  for (const profile of profiles) { S.users.set(profile.id, profile); S.userProfiles.set(profile.id, profile); }
   renderChannels();
   if (S.active === e.channel && !$("channelInfoDrawer")?.classList.contains("hidden")) {
     _ciNotificationMode = ch.notificationMode;
