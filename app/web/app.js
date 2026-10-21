@@ -2127,7 +2127,6 @@ async function renderMessage(m, { follow, peer, ch }) {
       appendLinkedText(textNode, displayText, m.channel);
       bubble.append(textNode);
       appendMessageLinkPreview(bubble, displayText);
-      bubble.append(textNode);
     }
   } else if (displayText) {
     const cls = isJumbo(displayText) ? "text jumbo" : "text";
