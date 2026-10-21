@@ -408,6 +408,25 @@ async fn upload(
                 let _ = tokio::fs::remove_file(state.uploads_dir.join(old_name)).await;
             }
         }
+        if let Some(lobby) = state.channels.get(crate::channel::LOBBY_ID) {
+            let payload = json!({"channel":ch_id,"photoUrl":photo_url});
+            let update = Arc::new(WireMsg {
+                id: 0,
+                channel: lobby.id.clone(),
+                kind: MsgKind::System,
+                user_id: uid.clone(),
+                username: "__ch_photo_updated".into(),
+                avatar: "".into(),
+                color: "".into(),
+                ts: now_secs(),
+                text: payload.to_string(),
+                file: None,
+                reply_to: None,
+                edited_at: None,
+                deleted: true,
+            });
+            let _ = lobby.tx.send(update);
+        }
         return Ok(Json(json!({ "photoUrl": photo_url })));
     }
 
