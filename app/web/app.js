@@ -673,6 +673,7 @@ function handleEvent(e) {
     case "msg":          return onWireMsg(e.m);
     case "users":        return onUsers(e.users);
     case "history":      return onHistory(e);
+    case "history_before": return onHistoryBefore(e);
     case "search_results": return onSearchResults(e);
     case "saved_messages": return onSavedMessages(e);
     case "react":        return onReact(e);
@@ -956,6 +957,29 @@ async function onHistory({ channel, messages, reactions, pins }) {
   S.reactions.set(channel, rmap);
   S.pins.set(channel, Array.isArray(pins) ? pins : []);
   if (S.active === channel) { await renderStream(); updateMentionBadge(); }
+  if (_ciPendingJump && _ciPendingJump.channelId === channel) {
+    if (filtered.some(m => Number(m.id) === Number(_ciPendingJump.messageId))) {
+      const target = _ciPendingJump.messageId; _ciPendingJump = null; jumpToMessage(channel, target);
+    }
+  }
+}
+function onHistoryBefore({ channel, messages, hasMore }) {
+  const older = Array.isArray(messages) ? messages : [];
+  const current = S.msgs.get(channel) || [];
+  const seen = new Set(current.map(m => Number(m.id)));
+  const merged = [...older.filter(m => !seen.has(Number(m.id))), ...current]
+    .sort((a, b) => Number(a.id) - Number(b.id));
+  S.msgs.set(channel, merged);
+  if (S.active === channel) renderStream();
+  if (!_ciPendingJump || _ciPendingJump.channelId !== channel) return;
+  if (merged.some(m => Number(m.id) === Number(_ciPendingJump.messageId))) {
+    const target = _ciPendingJump.messageId; _ciPendingJump = null; jumpToMessage(channel, target);
+  } else if (hasMore && older.length) {
+    sendOp({ op: "history_before", channel, beforeId: Number(older[0].id), limit: 100 });
+  } else {
+    _ciPendingJump = null;
+    toast("That message could not be found in the available history.", 3000);
+  }
 }
 
 let messageSearchMatches = [];
@@ -3773,6 +3797,7 @@ function stopRingtone() {
 }
 
 
+let _ciPendingJump = null;
 /* ── Chat info drawer + shared-item browser (initial test slice) ── */
 let _channelInfoTab = "media";
 let _channelInfoSearch = "";
@@ -3913,9 +3938,14 @@ async function renderChannelInfoItems() {
       const channelId = ch.id, messageId = item.id;
       closeChannelInfo();
       if (S.active !== channelId) switchChannel(channelId);
-      const loaded = (S.msgs.get(channelId) || []).some(m => Number(m.id) === Number(messageId));
+      const loadedMessages = S.msgs.get(channelId) || [];
+      const loaded = loadedMessages.some(m => Number(m.id) === Number(messageId));
       if (loaded) jumpToMessage(channelId, messageId);
-      else toast("That message is not in the loaded history yet.", 2800);
+      else {
+        _ciPendingJump = { channelId, messageId };
+        if (!loadedMessages.length) sendOp({ op: "history", channel: channelId, limit: 500 });
+        else sendOp({ op: "history_before", channel: channelId, beforeId: Number(loadedMessages[0].id), limit: 100 });
+      }
     });
     footer.append(view); main.append(footer); card.append(icon, main); root.append(card);
   }
