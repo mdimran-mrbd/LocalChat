@@ -1022,14 +1022,25 @@ function onUsers(list) {
     // If a peer that previously had no key now has one, allow re-warn next time it's lost.
     if (u.pubkey && _warnedNoKey && _warnedNoKey.has(u.id)) _warnedNoKey.delete(u.id);
   }
+  const previousMe = S.me;
   S.users.clear();
   for (const u of list) { S.users.set(u.id, u); S.userProfiles.set(u.id, u); }
   const updatedMe = list.find(u => u.id === S.me?.id);
   if (updatedMe) {
+    const profileChanged = !!previousMe && (previousMe.username !== updatedMe.username || previousMe.designation !== updatedMe.designation);
     S.me = updatedMe;
     const ownName = $("meChip")?.querySelector(".me-info .name");
     if (ownName) ownName.replaceChildren(userNameNode(updatedMe));
     if (updatedMe.designation) closeModal("designationModal");
+    if (profileChanged && $("settingsPanel")?.classList.contains("open")) {
+      $("profileUsername").value = updatedMe.username || "";
+      $("profileDesignation").value = updatedMe.designation || "CSA";
+      const status = $("profileSettingsStatus");
+      status.textContent = "Profile saved.";
+      status.classList.remove("err"); status.classList.add("ok");
+      const save = $("profileSettingsSave");
+      if (save) { save.disabled = false; save.textContent = "Save profile"; }
+    }
   }
   const uc = $("userCount"); if (uc) uc.textContent = "";
   renderMembers();
