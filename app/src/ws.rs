@@ -335,6 +335,24 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
         PasswordAction::None => {}
     }
 
+    // Every account gets a durable, private Notes chat.
+    let notes_id = format!("notes:{}", user_id).to_compact_string();
+    let notes_channel = if let Some(existing) = state.channels.get(notes_id.as_str()) {
+        existing
+    } else {
+        let created = Arc::new(Channel::new(
+            notes_id.clone(), ChannelKind::Group, CompactString::const_new("Notes"), true,
+            user_id.clone(), state.channels.history_cap,
+        ));
+        created.members.insert(user_id.clone());
+        state.channels.map.insert(notes_id.clone(), Arc::clone(&created));
+        created
+    };
+    notes_channel.members.insert(user_id.clone());
+    state.channels.add_user_channel(user_id.clone(), &notes_id);
+    let _ = state.db.upsert_channel(&notes_channel.meta()).await;
+    let _ = state.db.add_member(&notes_id, user_id.clone(), now_secs()).await;
+
     // Auto-join the lobby.
     let lobby = state.channels.get(LOBBY_ID).expect("lobby always exists");
     lobby.members.insert(user_id.clone());
