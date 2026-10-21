@@ -25,7 +25,7 @@ use crate::user::{UserId, UserInfo};
 
 /// Bumped whenever the schema changes incompatibly. Stored under
 /// `schema_meta(key='version')`.
-const SCHEMA_VERSION: i64 = 2;
+const SCHEMA_VERSION: i64 = 3;
 
 const SCHEMA_SQL: &str = r#"
 PRAGMA foreign_keys = ON;
@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS users (
     id              TEXT    PRIMARY KEY,
     username        TEXT    NOT NULL,
     username_lower  TEXT    NOT NULL UNIQUE,
+    designation     TEXT    NOT NULL DEFAULT '',
     avatar          TEXT    NOT NULL DEFAULT '',
     color           TEXT    NOT NULL DEFAULT '',
     pubkey          TEXT    NOT NULL DEFAULT '',
@@ -266,6 +267,7 @@ impl Db {
             // older installs won't have re-run it).
             let _ = conn.execute("ALTER TABLE messages ADD COLUMN client_id TEXT", []);
             let _ = conn.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0", []);
+            let _ = conn.execute("ALTER TABLE users ADD COLUMN designation TEXT NOT NULL DEFAULT ''", []);
             let _ = conn.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_client_id ON messages(client_id) WHERE client_id IS NOT NULL",
                 [],
@@ -444,7 +446,7 @@ impl Db {
             c.query_row(
                 "SELECT id, username, avatar, color, pubkey, joined_at,
                         last_connect, last_seen, last_ip,
-                        total_sessions, msg_count, bytes_uploaded
+                        total_sessions, msg_count, bytes_uploaded, designation
                    FROM users WHERE username_lower = ?1",
                 params![lname],
                 row_to_user,
@@ -461,7 +463,7 @@ impl Db {
             c.query_row(
                 "SELECT id, username, avatar, color, pubkey, joined_at,
                         last_connect, last_seen, last_ip,
-                        total_sessions, msg_count, bytes_uploaded
+                        total_sessions, msg_count, bytes_uploaded, designation
                    FROM users WHERE id = ?1",
                 params![id],
                 row_to_user,
@@ -600,7 +602,7 @@ impl Db {
             let mut stmt = c.prepare(
                 "SELECT id, username, avatar, color, pubkey, joined_at,
                         last_connect, last_seen, last_ip,
-                        total_sessions, msg_count, bytes_uploaded
+                        total_sessions, msg_count, bytes_uploaded, designation
                    FROM users ORDER BY joined_at",
             )?;
             let rows = stmt.query_map([], row_to_user)?;
@@ -609,6 +611,15 @@ impl Db {
             Ok(out)
         })
         .await
+    }
+
+    pub async fn set_user_designation(&self, id: UserId, designation: &str) -> rusqlite::Result<bool> {
+        let uid = id.to_string();
+        let designation = designation.to_string();
+        self.with(move |c| {
+            let changed = c.execute("UPDATE users SET designation=?2 WHERE id=?1", params![uid, designation])?;
+            Ok(changed > 0)
+        }).await
     }
 
     pub async fn delete_user(&self, id: UserId) -> rusqlite::Result<()> {
@@ -684,6 +695,7 @@ fn row_to_user(r: &rusqlite::Row<'_>) -> rusqlite::Result<UserInfo> {
         last_seen: r.get::<_, i64>(8)? as u64,
         last_connect: r.get::<_, i64>(7)? as u64,
         total_sessions: r.get::<_, i64>(10)? as u64,
+        designation: r.get::<_, String>(13)?.to_compact_string(),
     })
 }
 
