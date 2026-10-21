@@ -188,6 +188,20 @@
       <div class="sb-foot">
         <div class="sb-foot-row">
           <div class="me-chip" id="meChip"></div>
+          <div id="browserNotificationControl" class="browser-notification-control">
+            <button id="browserNotificationsBtn" class="icon-btn browser-notification-button" type="button" title="Enable browser notifications" aria-label="Enable browser notifications" aria-haspopup="true" aria-expanded="false">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/><path d="m3 3 18 18"/></svg>
+            </button>
+            <div id="browserNotificationMenu" class="browser-notification-menu" role="menu" aria-label="Browser notification controls" hidden>
+              <button type="button" role="menuitem" data-notification-action="enable">Enable browser notifications</button>
+              <button type="button" role="menuitem" data-notification-action="resume" hidden>Resume notifications now</button>
+              <div class="browser-notification-menu-label">Snooze notifications</div>
+              <button type="button" role="menuitem" data-snooze-minutes="5">For 5 minutes</button>
+              <button type="button" role="menuitem" data-snooze-minutes="30">For 30 minutes</button>
+              <button type="button" role="menuitem" data-snooze-minutes="60">For 1 hour</button>
+              <button type="button" role="menuitem" data-snooze-minutes="480">For 8 hours</button>
+            </div>
+          </div>
         </div>
       </div>
     </aside>
