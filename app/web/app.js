@@ -716,6 +716,7 @@ function handleEvent(e) {
     case "users":        return onUsers(e.users);
     case "history":      return onHistory(e);
     case "history_before": return onHistoryBefore(e);
+    case "shared_items_list": return onSharedItemsList(e);
     case "search_results": return onSearchResults(e);
     case "saved_messages": return onSavedMessages(e);
     case "react":        return onReact(e);
@@ -3874,6 +3875,7 @@ async function openChannelInfo() {
   _channelInfoTab = "media";
   _channelInfoSearch = "";
   await renderChannelInfo();
+  if (ch.kind !== "dm") requestChannelSharedItems(true);
   sendOp({ op: "ch_info", channel: ch.id });
   $("channelInfoDrawer")?.querySelector("button")?.focus();
 }
@@ -3936,6 +3938,8 @@ async function renderChannelInfo() {
   root.querySelectorAll("[data-ci-tab]").forEach(btn => btn.addEventListener("click", async () => {
     _channelInfoTab = btn.dataset.ciTab;
     root.querySelectorAll("[data-ci-tab]").forEach(b => b.classList.toggle("active", b === btn));
+    const activeChannel = S.channels.get(S.active);
+    if (activeChannel && activeChannel.kind !== "dm") requestChannelSharedItems(true);
     await renderChannelInfoItems();
   }));
   const editForm = $("ciEditGroupForm");
@@ -4046,6 +4050,37 @@ function onChannelNotificationSet(e) {
   if (select) select.value = _ciNotificationMode;
 }
 
+const _ciSharedCache = new Map();
+function _ciSharedKey(channel, type) { return String(channel) + "::" + String(type); }
+function requestChannelSharedItems(reset = false) {
+  const ch = S.channels.get(S.active);
+  if (!ch || ch.kind === "dm") return;
+  const key = _ciSharedKey(ch.id, _channelInfoTab);
+  let cache = _ciSharedCache.get(key);
+  if (!cache || reset) {
+    cache = { items: [], cursor: null, hasMore: true, counts: null, loading: false };
+    _ciSharedCache.set(key, cache);
+  }
+  if (cache.loading || (!cache.hasMore && !reset)) return;
+  cache.loading = true;
+  sendOp({ op: "shared_items_list", channel: ch.id, type: _channelInfoTab, limit: 48, ...(cache.cursor ? { beforeId: cache.cursor } : {}) });
+}
+function onSharedItemsList(e) {
+  const key = _ciSharedKey(e.channel, e.type);
+  const cache = _ciSharedCache.get(key);
+  if (!cache) return;
+  cache.loading = false;
+  cache.hasMore = !!e.hasMore;
+  cache.cursor = e.nextCursor || cache.cursor;
+  cache.counts = e.counts || cache.counts;
+  const incoming = Array.isArray(e.items) ? e.items : [];
+  const known = new Set(cache.items.map(item => String(item.messageId) + "|" + item.itemType + "|" + item.itemKey));
+  for (const item of incoming) {
+    const itemKey = String(item.messageId) + "|" + item.itemType + "|" + item.itemKey;
+    if (!known.has(itemKey)) { cache.items.push(item); known.add(itemKey); }
+  }
+  if (S.active === e.channel && _channelInfoTab === e.type && !$("channelInfoDrawer")?.classList.contains("hidden")) renderChannelInfoItems();
+}
 let _ciVisibleItems = 12;
 async function renderChannelInfoItems() {
   const root = $("ciSharedItems");
@@ -4055,7 +4090,22 @@ async function renderChannelInfoItems() {
   const peer = ch.kind === "dm" ? _ciPeer(ch) : null;
   const messages = S.msgs.get(ch.id) || [];
   const items = [];
-  for (const m of messages) {
+  const serverCache = peer ? null : _ciSharedCache.get(_ciSharedKey(ch.id, _channelInfoTab));
+  if (!peer && serverCache) {
+    for (const item of serverCache.items) {
+      const mime = item.mimeType || "";
+      if (item.itemType === "link") {
+        let hostname = "";
+        try { hostname = new URL(item.itemKey).hostname; } catch (_) {}
+        items.push({ type: "link", id: item.messageId, ts: item.createdAt, sender: item.username, title: hostname || item.itemKey, detail: item.itemKey, url: item.itemKey, icon: "🔗" });
+      } else if (item.itemType === "media") {
+        items.push({ type: "media", id: item.messageId, ts: item.createdAt, sender: item.username, title: "Media", detail: mime || "Media", url: item.url || item.itemKey, icon: mime.startsWith("video/") ? "🎬" : "🖼️" });
+      } else {
+        items.push({ type: "file", id: item.messageId, ts: item.createdAt, sender: item.username, title: item.fileName || "Attachment", detail: mime || "File", url: item.url || item.itemKey, size: item.fileSize, icon: "📄" });
+      }
+    }
+  }
+  if (peer || !serverCache) for (const m of messages) {
     if (m.deleted || m.kind === "system") continue;
     let text = m.text || "";
     if (peer && text.startsWith("e2e:v1:")) {
@@ -4081,11 +4131,20 @@ async function renderChannelInfoItems() {
   }
   items.sort((a,b) => (b.ts || 0) - (a.ts || 0));
   const countLabel = $("ciSharedCount");
-  if (countLabel) countLabel.textContent = items.length + (items.length === 1 ? " loaded item" : " loaded items");
+  const counts = serverCache?.counts;
+  if (countLabel) countLabel.textContent = counts
+    ? (counts.media + " media · " + counts.links + " links · " + counts.files + " files")
+    : (items.length + (items.length === 1 ? " loaded item" : " loaded items"));
+  const tabLabels = { media: "Media", links: "Links", files: "Files" };
+  if (counts) root.closest("#channelInfoContent")?.querySelectorAll("[data-ci-tab]").forEach(btn => {
+    const type = btn.dataset.ciTab;
+    const value = type === "media" ? counts.media : type === "links" ? counts.links : counts.files;
+    btn.textContent = tabLabels[type] + " (" + value + ")";
+  });
   if (!items.length) {
     const empty = document.createElement("div");
     empty.className = "ci-empty";
-    empty.textContent = "No " + (_channelInfoTab === "media" ? "media" : _channelInfoTab) + " found in the currently loaded messages.";
+    empty.textContent = serverCache ? "No shared " + (_channelInfoTab === "media" ? "media" : _channelInfoTab) + " found." : "No " + (_channelInfoTab === "media" ? "media" : _channelInfoTab) + " found in the currently loaded messages.";
     root.append(empty);
     return;
   }
@@ -4143,12 +4202,16 @@ async function renderChannelInfoItems() {
     });
     footer.append(view); main.append(footer); card.append(main); root.append(card);
   }
-  if (items.length > shown.length) {
+  if (serverCache ? serverCache.hasMore : items.length > shown.length) {
     const more = document.createElement("button");
     more.type = "button";
     more.className = "btn btn-ghost btn-sm ci-view-all";
-    more.textContent = "Load more (" + (items.length - shown.length) + " remaining)";
-    more.addEventListener("click", () => { _ciVisibleItems = shown.length + 48; renderChannelInfoItems(); });
+    more.textContent = serverCache ? (serverCache.loading ? "Loading…" : "Load more shared items") : ("Load more (" + (items.length - shown.length) + " remaining)");
+    more.disabled = !!serverCache?.loading;
+    more.addEventListener("click", () => {
+      if (serverCache) requestChannelSharedItems(false);
+      else { _ciVisibleItems = shown.length + 48; renderChannelInfoItems(); }
+    });
     root.append(more);
   }
 }
