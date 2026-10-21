@@ -3918,7 +3918,7 @@ async function renderChannelInfo() {
       </select>
     </section>
     <section class="ci-section">
-      <div class="ci-section-head"><span>Shared content</span><span>Loaded messages</span></div>
+      <div class="ci-section-head"><span>Shared content</span><span id="ciSharedCount" aria-live="polite">Counting loaded items…</span></div>
       <div class="ci-browser-tabs" role="tablist" aria-label="Shared content type">
         <button type="button" class="ci-browser-tab ${_channelInfoTab === "media" ? "active" : ""}" data-ci-tab="media">Media</button>
         <button type="button" class="ci-browser-tab ${_channelInfoTab === "links" ? "active" : ""}" data-ci-tab="links">Links</button>
@@ -4080,6 +4080,8 @@ async function renderChannelInfoItems() {
     }
   }
   items.sort((a,b) => (b.ts || 0) - (a.ts || 0));
+  const countLabel = $("ciSharedCount");
+  if (countLabel) countLabel.textContent = items.length + (items.length === 1 ? " loaded item" : " loaded items");
   if (!items.length) {
     const empty = document.createElement("div");
     empty.className = "ci-empty";
