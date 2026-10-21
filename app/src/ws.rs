@@ -1449,6 +1449,33 @@ async fn handle_op(
             }));
         }
 
+        "profile_update" => {
+            let username = v.get("username").and_then(Value::as_str).ok_or("missing username")?;
+            let username = sanitize_username(username);
+            if username.is_empty() {
+                return Err("Username must be 3–24 characters: letters, digits, underscore, hyphen, or dot.".into());
+            }
+            let designation = v.get("designation").and_then(Value::as_str).ok_or("missing designation")?;
+            if !matches!(designation, "AM" | "TL" | "STL" | "QDE" | "LRD" | "EE" | "CSA") {
+                return Err("choose a valid designation".into());
+            }
+            let mut info = state.users.get(&user_id).map(|entry| entry.value().clone()).ok_or("user not found")?;
+            let old_key = info.username.to_lowercase().to_compact_string();
+            let new_key = username.to_lowercase().to_compact_string();
+            let changed = state.db.update_user_profile(user_id.clone(), &username, designation).await
+                .map_err(|_| "could not save profile".to_string())?;
+            if !changed { return Err("That username is already in use. Choose another one.".into()); }
+            if old_key != new_key {
+                state.username_to_id.remove(&old_key);
+                state.username_to_id.insert(new_key, user_id.clone());
+            }
+            info.username = username;
+            info.designation = designation.to_compact_string();
+            state.users.insert(user_id.clone(), info.clone());
+            state.known_users.insert(user_id.clone(), info);
+            broadcast_users(&state).await;
+        }
+
         "designation_set" => {
             let designation = v.get("designation").and_then(Value::as_str).ok_or("missing designation")?;
             if !matches!(designation, "AM" | "TL" | "STL" | "QDE" | "LRD" | "EE" | "CSA") {
