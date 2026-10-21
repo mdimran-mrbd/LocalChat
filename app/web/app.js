@@ -1801,19 +1801,20 @@ function _personItem(u, online) {
   ]);
 }
 
+function chatPinsStorageKey() { return "pinned-chats:" + (S.me?.id || "anonymous"); }
 function isChatPinned(channelId) {
-  try { return (JSON.parse(lstore.get("pinned-chats") || "[]") || []).includes(channelId); } catch { return false; }
+  try { return (JSON.parse(lstore.get(chatPinsStorageKey()) || "[]") || []).includes(channelId); } catch { return false; }
 }
 function toggleChatPin(channelId) {
   let pinned = [];
-  try { pinned = JSON.parse(lstore.get("pinned-chats") || "[]") || []; } catch {}
+  try { pinned = JSON.parse(lstore.get(chatPinsStorageKey()) || "[]") || []; } catch {}
   pinned = pinned.filter(id => S.channels.has(id));
   if (pinned.includes(channelId)) pinned = pinned.filter(id => id !== channelId);
   else {
     if (pinned.length >= 5) { toast("You can pin up to 5 chats. Unpin one first.", 3000); return; }
     pinned.push(channelId);
   }
-  lstore.set("pinned-chats", JSON.stringify(pinned));
+  lstore.set(chatPinsStorageKey(), JSON.stringify(pinned));
   renderChannels();
 }
 
