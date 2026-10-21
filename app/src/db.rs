@@ -128,6 +128,16 @@ CREATE INDEX IF NOT EXISTS idx_messages_user       ON messages(user_id);
 -- in Db::open() so it can run *after* the ALTER TABLE that adds the
 -- column on legacy installs.
 
+CREATE TABLE IF NOT EXISTS poll_votes (
+    channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+    message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    option_index INTEGER NOT NULL CHECK (option_index >= 0),
+    voted_at INTEGER NOT NULL,
+    PRIMARY KEY (message_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_poll_votes_message ON poll_votes(message_id);
+
 CREATE TABLE IF NOT EXISTS saved_messages (
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     channel_id TEXT NOT NULL,
@@ -1070,6 +1080,48 @@ impl Db {
             Ok(())
         })
         .await
+    }
+
+    /// Record or replace a user's single vote on a group poll.
+    pub async fn cast_poll_vote(&self, channel: &str, message_id: u64, user_id: &str, option_index: usize, now: u64) -> rusqlite::Result<bool> {
+        let cid = channel.to_string();
+        let uid = user_id.to_string();
+        self.with(move |c| {
+            let is_poll: bool = c.query_row(
+                "SELECT EXISTS(SELECT 1 FROM messages WHERE id=?1 AND channel_id=?2 AND deleted=0 AND text LIKE 'poll:v1:%')",
+                params![message_id as i64, cid],
+                |r| r.get(0),
+            )?;
+            if !is_poll { return Ok(false); }
+            c.execute(
+                "INSERT INTO poll_votes(channel_id,message_id,user_id,option_index,voted_at)
+                 VALUES(?1,?2,?3,?4,?5)
+                 ON CONFLICT(message_id,user_id) DO UPDATE SET option_index=excluded.option_index,voted_at=excluded.voted_at",
+                params![cid, message_id as i64, uid, option_index as i64, now as i64],
+            )?;
+            Ok(true)
+        }).await
+    }
+
+    /// Return per-option vote counts and the requesting user's selected option.
+    pub async fn poll_results(&self, channel: &str, message_id: u64, user_id: &str, option_count: usize) -> rusqlite::Result<(Vec<u64>, Option<usize>)> {
+        let cid = channel.to_string();
+        let uid = user_id.to_string();
+        self.with(move |c| {
+            let mut counts = vec![0_u64; option_count.min(12)];
+            let mut stmt = c.prepare("SELECT option_index, COUNT(*) FROM poll_votes WHERE channel_id=?1 AND message_id=?2 GROUP BY option_index")?;
+            let rows = stmt.query_map(params![cid, message_id as i64], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, u64>(1)?)))?;
+            for row in rows {
+                let (index, count) = row?;
+                if index >= 0 && (index as usize) < counts.len() { counts[index as usize] = count; }
+            }
+            let mine: Option<i64> = c.query_row(
+                "SELECT option_index FROM poll_votes WHERE channel_id=?1 AND message_id=?2 AND user_id=?3",
+                params![cid, message_id as i64, uid],
+                |r| r.get(0),
+            ).optional()?;
+            Ok((counts, mine.map(|i| i as usize)))
+        }).await
     }
 
     /// Last `limit` messages of a channel, oldest → newest.
