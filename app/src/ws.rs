@@ -1147,6 +1147,9 @@ async fn handle_op(
             if id == LOBBY_ID {
                 return Err("cannot leave lobby".into());
             }
+            if id.starts_with("notes:") {
+                return Err("Personal Notes cannot be left".into());
+            }
             if let Some(ch) = state.channels.get(id) {
                 ch.members.remove(&user_id);
                 state.channels.remove_user_channel(user_id.clone(), id);
