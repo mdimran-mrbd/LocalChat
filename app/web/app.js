@@ -3771,3 +3771,156 @@ function stopRingtone() {
   _ringNodes = [];
   if (_ringCtx) { try { _ringCtx.close(); } catch {} _ringCtx = null; }
 }
+
+
+/* ── Chat info drawer + shared-item browser (initial test slice) ── */
+let _channelInfoTab = "media";
+let _channelInfoSearch = "";
+function _ciEsc(s) { return String(s ?? "").replace(/[&<>"']/g, ch => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[ch])); }
+function _ciPeer(ch) { try { return dmPeer(ch); } catch { return null; } }
+async function openChannelInfo() {
+  const ch = S.channels.get(S.active);
+  if (!ch) return;
+  $("channelInfoBackdrop")?.classList.remove("hidden");
+  $("channelInfoDrawer")?.classList.remove("hidden");
+  document.body.classList.add("channel-info-open");
+  _channelInfoTab = "media";
+  _channelInfoSearch = "";
+  await renderChannelInfo();
+  $("channelInfoDrawer")?.querySelector("button")?.focus();
+}
+function closeChannelInfo() {
+  $("channelInfoBackdrop")?.classList.add("hidden");
+  $("channelInfoDrawer")?.classList.add("hidden");
+  document.body.classList.remove("channel-info-open");
+  $("channelInfoBtn")?.focus();
+}
+async function renderChannelInfo() {
+  const root = $("channelInfoContent");
+  const ch = S.channels.get(S.active);
+  if (!root || !ch) return;
+  const isDm = ch.kind === "dm";
+  const peer = isDm ? _ciPeer(ch) : null;
+  const title = isDm ? (peer?.username || ch.dmUsers?.find(n => n?.toLowerCase() !== S.me?.username?.toLowerCase()) || "Direct message") : (ch.name || "Group");
+  const members = (ch.members || []).map(id => S.users.get(id) || { id, username: id === S.me?.id ? (S.me?.username || "You") : "Offline member", avatar: "?", color: "#6366f1" });
+  const profileAvatar = isDm ? (peer?.avatar || "?") : (title.slice(0,1).toUpperCase() || "#");
+  const description = ch.description || "";
+  root.innerHTML = `
+    <section class="ci-profile">
+      <div class="ci-avatar">${_ciEsc(profileAvatar)}</div>
+      <div class="ci-name">${_ciEsc(title)}</div>
+      <div class="ci-subtitle">${isDm ? "Direct message · End-to-end encryption when available" : (ch.kind === "lobby" ? "Public channel" : (ch.isPrivate ? "Private group" : "Group conversation")) + " · " + members.length + " member" + (members.length === 1 ? "" : "s")}</div>
+      ${!isDm && ch.kind !== "lobby" ? `<div class="ci-description">${_ciEsc(description || "No group description yet.")}</div>` : ""}
+    </section>
+    <section class="ci-section">
+      <div class="ci-section-head"><span>Shared content</span><span>Loaded messages</span></div>
+      <div class="ci-browser-tabs" role="tablist" aria-label="Shared content type">
+        <button type="button" class="ci-browser-tab ${_channelInfoTab === "media" ? "active" : ""}" data-ci-tab="media">Media</button>
+        <button type="button" class="ci-browser-tab ${_channelInfoTab === "links" ? "active" : ""}" data-ci-tab="links">Links</button>
+        <button type="button" class="ci-browser-tab ${_channelInfoTab === "files" ? "active" : ""}" data-ci-tab="files">Files</button>
+      </div>
+      <div id="ciSharedItems" class="ci-items"><div class="ci-empty">Preparing shared items…</div></div>
+      <div class="muted xs">This initial test version browses messages already loaded in this chat. Historical indexing and pagination are still to be added.</div>
+    </section>
+    <section class="ci-section">
+      <div class="ci-section-head"><span>${isDm ? "Conversation" : "Members"}</span><span>${members.length}</span></div>
+      ${!isDm ? '<input id="ciMemberSearch" class="ci-search" type="search" placeholder="Search members…" aria-label="Search members" autocomplete="off">' : ""}
+      <div id="ciMembers" class="ci-members"></div>
+    </section>
+  `;
+  root.querySelectorAll("[data-ci-tab]").forEach(btn => btn.addEventListener("click", async () => {
+    _channelInfoTab = btn.dataset.ciTab;
+    root.querySelectorAll("[data-ci-tab]").forEach(b => b.classList.toggle("active", b === btn));
+    await renderChannelInfoItems();
+  }));
+  const search = $("ciMemberSearch");
+  if (search) {
+    search.value = _channelInfoSearch;
+    search.addEventListener("input", () => { _channelInfoSearch = search.value; renderChannelInfoMembers(members); });
+  }
+  renderChannelInfoMembers(members);
+  await renderChannelInfoItems();
+}
+function renderChannelInfoMembers(members) {
+  const root = $("ciMembers");
+  if (!root) return;
+  const q = (_channelInfoSearch || "").trim().toLowerCase();
+  const filtered = members.filter(u => (u.username || "").toLowerCase().includes(q));
+  root.innerHTML = "";
+  if (!filtered.length) { root.innerHTML = '<div class="ci-empty">No matching members.</div>'; return; }
+  for (const u of filtered) {
+    const row = document.createElement("div"); row.className = "ci-member";
+    const avatar = document.createElement("div"); avatar.className = "ci-member-avatar"; avatar.style.background = u.color || "#6366f1"; avatar.textContent = u.avatar || (u.username || "?").slice(0,1).toUpperCase();
+    const main = document.createElement("div"); main.className = "ci-member-main";
+    const name = document.createElement("div"); name.className = "ci-member-name"; name.textContent = u.id === S.me?.id ? (u.username + " (you)") : (u.username || "Unknown member");
+    const role = document.createElement("div"); role.className = "ci-member-role"; role.textContent = u.id === S.channels.get(S.active)?.createdBy ? "Group owner" : (u.online ? "Online" : "Member");
+    main.append(name, role); row.append(avatar, main);
+    if (u.id !== S.me?.id && u.id && u.username && typeof openDmWithUserId === "function") {
+      const action = document.createElement("button"); action.type = "button"; action.className = "btn btn-ghost btn-sm ci-member-action"; action.textContent = "Message"; action.title = "Open a direct message"; action.addEventListener("click", () => { closeChannelInfo(); openDmWithUserId(u.id, u.username); }); row.append(action);
+    }
+    root.append(row);
+  }
+}
+async function renderChannelInfoItems() {
+  const root = $("ciSharedItems");
+  const ch = S.channels.get(S.active);
+  if (!root || !ch) return;
+  root.innerHTML = "";
+  const peer = ch.kind === "dm" ? _ciPeer(ch) : null;
+  const messages = S.msgs.get(ch.id) || [];
+  const items = [];
+  const urlRe = /https?:\/\/[^\s<>"']+/gi;
+  for (const m of messages) {
+    if (m.deleted || m.kind === "system") continue;
+    let text = m.text || "";
+    if (peer && text.startsWith("e2e:v1:")) {
+      const plain = await E2EE.tryDecrypt(peer.id, peer.pubkey, text);
+      if (plain == null) continue;
+      text = plain;
+    }
+    if (_channelInfoTab === "files" && m.file) {
+      items.push({ type: "file", id: m.id, ts: m.ts, sender: m.username, title: m.file.originalName || m.file.filename || "Attachment", detail: m.file.mimeType || "File", url: m.file.url, icon: (m.file.mimeType || "").startsWith("image/") ? "🖼️" : (m.file.mimeType || "").startsWith("video/") ? "🎬" : "📄" });
+    }
+    if (_channelInfoTab === "media" && m.file && /^(image\/|video\/)/i.test(m.file.mimeType || "")) {
+      items.push({ type: "media", id: m.id, ts: m.ts, sender: m.username, title: m.file.originalName || "Media", detail: m.file.mimeType || "Media", url: m.file.url, icon: (m.file.mimeType || "").startsWith("video/") ? "🎬" : "🖼️" });
+    }
+    if (_channelInfoTab === "links") {
+      for (const raw of text.match(urlRe) || []) {
+        const url = raw.replace(/[),.!?;:]+$/, "");
+        try { const parsed = new URL(url); if (!["http:", "https:"].includes(parsed.protocol)) continue; } catch { continue; }
+        items.push({ type: "link", id: m.id, ts: m.ts, sender: m.username, title: url, detail: "Shared link", url, icon: "🔗" });
+      }
+    }
+  }
+  items.sort((a,b) => (b.ts || 0) - (a.ts || 0));
+  if (!items.length) {
+    root.innerHTML = '<div class="ci-empty">No ' + (_channelInfoTab === "media" ? "media" : _channelInfoTab) + ' found in the currently loaded messages.</div>';
+    return;
+  }
+  for (const item of items) {
+    const card = document.createElement("article"); card.className = "ci-item";
+    const icon = document.createElement("div"); icon.className = "ci-item-icon"; icon.textContent = item.icon;
+    const main = document.createElement("div"); main.className = "ci-item-main";
+    const title = document.createElement("div"); title.className = "ci-item-title"; title.textContent = item.title;
+    const sub = document.createElement("div"); sub.className = "ci-item-sub"; sub.textContent = (item.sender || "Unknown") + " · " + new Date((item.ts || 0) * 1000).toLocaleString();
+    main.append(title, sub);
+    if (item.type === "link") {
+      const link = document.createElement("a"); link.className = "ci-item-link"; link.href = item.url; link.target = "_blank"; link.rel = "noopener noreferrer"; link.textContent = item.url; main.append(link);
+    }
+    const footer = document.createElement("div"); footer.className = "ci-item-footer";
+    const view = document.createElement("button"); view.type = "button"; view.className = "btn btn-ghost btn-sm"; view.textContent = "View in chat";
+    view.addEventListener("click", () => {
+      const channelId = ch.id, messageId = item.id;
+      closeChannelInfo();
+      if (S.active !== channelId) switchChannel(channelId);
+      const loaded = (S.msgs.get(channelId) || []).some(m => Number(m.id) === Number(messageId));
+      if (loaded) jumpToMessage(channelId, messageId);
+      else toast("That message is not in the loaded history yet.", 2800);
+    });
+    footer.append(view); main.append(footer); card.append(icon, main); root.append(card);
+  }
+}
+document.addEventListener("keydown", event => {
+  if (event.key === "Escape" && !$("channelInfoDrawer")?.classList.contains("hidden")) closeChannelInfo();
+});
+Object.assign(window, { openChannelInfo, closeChannelInfo });
