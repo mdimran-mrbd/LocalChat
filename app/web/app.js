@@ -916,6 +916,7 @@ async function onWireMsg(m) {
       S.pins.set(channel, Array.isArray(payload.pins) ? payload.pins : []);
       savedMessages = savedMessages.filter((item) => !(item.channel === channel && String(item.id) === String(payload.msgId)));
       if (channel === S.active) renderStream();
+      refreshOpenSharedItems(channel);
       updateSavedCount();
     } catch (err) { console.warn("message deletion update failed", err); }
     return;
@@ -980,6 +981,7 @@ async function onWireMsg(m) {
   const arr = S.msgs.get(m.channel) || [];
   arr.push(m);
   S.msgs.set(m.channel, arr);
+  refreshOpenSharedItems(m.channel);
 
   const isMine = S.me && (m.userId === S.me.id || m.username === S.me.username);
   if (!isMine && m.kind !== "system") {
@@ -4072,6 +4074,22 @@ function onChannelNotificationSet(e) {
 }
 
 const _ciSharedCache = new Map();
+// Keep the open shared-content panel fresh as messages arrive or are deleted.
+// A reset is required because newly indexed items are newer than the current cursor.
+function refreshOpenSharedItems(channelId) {
+  const ch = S.channels.get(channelId);
+  if (!ch || ch.kind === "dm" || S.active !== channelId ||
+      $("channelInfoDrawer")?.classList.contains("hidden")) return;
+  const cache = _ciSharedCache.get(_ciSharedKey(channelId, _channelInfoTab));
+  if (cache) {
+    cache.items = [];
+    cache.cursor = null;
+    cache.hasMore = true;
+    cache.counts = null;
+    cache.loading = false;
+  }
+  requestChannelSharedItems(true);
+}
 async function uploadGroupPhoto(file, channelId) {
   const ch = S.channels.get(channelId);
   if (!ch || ch.kind !== "group") return;
