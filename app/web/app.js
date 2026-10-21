@@ -936,6 +936,13 @@ function onWelcome(e) {
 
   renderChannels();
   renderMembers();
+  // Load each member chat's persisted notification preference on every session,
+  // not only after the user opens that chat's Info panel.
+  for (const channel of S.channels.values()) {
+    if (channel.kind !== "lobby" && (channel.members || []).includes(S.me.id)) {
+      sendOp({ op: "ch_info", channel: channel.id });
+    }
+  }
   switchChannel(e.lobby || "pub:general");
   sendOp({ op: "saved_list" });
   S.lobby = e.lobby || "pub:general";
