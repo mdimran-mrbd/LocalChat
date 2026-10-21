@@ -1240,6 +1240,38 @@ impl Db {
         .await
     }
 
+    /// Search non-DM message history across channels the user can access.
+    /// End-to-end encrypted direct messages are intentionally excluded.
+    pub async fn search_messages_across_channels(&self, user_id: &str, query: &str, limit: usize) -> rusqlite::Result<Vec<(WireMsg, String)>> {
+        let uid = user_id.to_string();
+        let needle = format!("%{}%", query);
+        self.with(move |c| {
+            let mut stmt = c.prepare(
+                "SELECT m.id, m.channel_id, m.user_id, m.username, m.avatar, m.color,
+                        m.kind, m.ts, m.text, m.reply_to, m.edited_at, m.deleted,
+                        m.file_id, m.file_name, m.file_size, m.file_mime, m.file_url,
+                        ch.name
+                   FROM messages m
+                   JOIN channels ch ON ch.id=m.channel_id
+                  WHERE m.deleted=0
+                    AND ch.kind IN ('lobby','group')
+                    AND (ch.kind='lobby' OR EXISTS (
+                        SELECT 1 FROM channel_members cm
+                         WHERE cm.channel_id=ch.id AND cm.user_id=?2
+                    ))
+                    AND (m.text LIKE ?1 COLLATE NOCASE
+                         OR COALESCE(m.file_name,'') LIKE ?1 COLLATE NOCASE)
+                  ORDER BY m.id DESC LIMIT ?3"
+            )?;
+            let rows = stmt.query_map(params![needle, uid, limit as i64], |row| {
+                Ok((row_to_message(row)?, row.get::<_, String>(17)?))
+            })?;
+            let mut out = Vec::new();
+            for row in rows { out.push(row?); }
+            Ok(out)
+        }).await
+    }
+
     /// Highest message id ever assigned. Used at boot to seed the
     /// monotonic counter.
     pub async fn max_message_id(&self) -> rusqlite::Result<u64> {
