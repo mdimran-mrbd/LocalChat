@@ -1287,6 +1287,27 @@ async fn handle_op(
                 .await;
         }
 
+        "history_before" => {
+            let id = v.get("channel").and_then(Value::as_str).ok_or("missing channel")?;
+            let before_id = v.get("beforeId").and_then(Value::as_u64).ok_or("missing beforeId")?;
+            let limit = v.get("limit").and_then(Value::as_u64).unwrap_or(50).clamp(1, 500) as usize;
+            let ch = state.channels.get(id).ok_or("no such channel")?;
+            if !can_send(&ch, &user_id) { return Err("not a member".into()); }
+            let from_db = state.db.messages_before(id, before_id, limit).await
+                .map_err(|_| "could not load older messages".to_string())?;
+            let has_more = from_db.len() == limit;
+            let out: Vec<Arc<WireMsg>> = from_db.into_iter().map(Arc::new).collect();
+            let msgs: Vec<&WireMsg> = out.iter().map(|a| a.as_ref()).collect();
+            let resp = json!({
+                "ev":"history_before",
+                "channel":id,
+                "beforeId":before_id,
+                "messages":msgs,
+                "hasMore":has_more,
+            });
+            let _ = sink.send(Message::Text(resp.to_string())).await;
+        }
+
         "history" => {
             let id = v
                 .get("channel")
@@ -1298,8 +1319,10 @@ async fn handle_op(
                 .unwrap_or(50)
                 .min(500) as usize;
             // Authoritative read from SQLite — never trust in-memory ring.
-            let _ch = state.channels.get(id).ok_or("no such channel")?;
-            let from_db = state.db.tail_messages(id, limit).await.unwrap_or_default();
+            let ch = state.channels.get(id).ok_or("no such channel")?;
+            if !can_send(&ch, &user_id) { return Err("not a member".into()); }
+            let from_db = state.db.tail_messages(id, limit).await
+                .map_err(|_| "could not load history".to_string())?;
             let out: Vec<Arc<WireMsg>> = from_db.into_iter().map(Arc::new).collect();
             let msgs: Vec<&WireMsg> = out.iter().map(|a| a.as_ref()).collect();
             let reactions = collect_reactions(state, &id.to_compact_string());
