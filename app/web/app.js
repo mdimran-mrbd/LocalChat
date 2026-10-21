@@ -1807,6 +1807,7 @@ function isChatPinned(channelId) {
 function toggleChatPin(channelId) {
   let pinned = [];
   try { pinned = JSON.parse(lstore.get("pinned-chats") || "[]") || []; } catch {}
+  pinned = pinned.filter(id => S.channels.has(id));
   if (pinned.includes(channelId)) pinned = pinned.filter(id => id !== channelId);
   else {
     if (pinned.length >= 5) { toast("You can pin up to 5 chats. Unpin one first.", 3000); return; }
