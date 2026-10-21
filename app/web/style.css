@@ -3337,3 +3337,7 @@ body.poll-modal-open { overflow:hidden; }
 
 .chat-pin svg { display:block; }
 .chat-pin-mark svg { display:inline-block; vertical-align:-2px; }
+
+.ci-description { display:flex; align-items:flex-start; gap:6px; }
+.ci-description .ci-desc-edit { flex:0 0 auto; margin-top:-3px; }
+.ci-description:hover .ci-desc-edit,.ci-description:focus-within .ci-desc-edit { opacity:1; }
