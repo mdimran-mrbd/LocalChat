@@ -3927,7 +3927,7 @@ async function renderChannelInfo() {
         <button type="button" class="ci-browser-tab ${_channelInfoTab === "files" ? "active" : ""}" data-ci-tab="files">Files</button>
       </div>
       <div id="ciSharedItems" class="ci-items"><div class="ci-empty">Preparing shared items…</div></div>
-      <div class="muted xs">This initial test version browses messages already loaded in this chat. Historical indexing and pagination are still to be added.</div>
+      <div class="muted xs">Shared content is loaded in pages. Direct-message content is indexed locally only when it can be decrypted by this device.</div>
     </section>
     <section class="ci-section">
       <div class="ci-section-head"><span>${isDm ? "Conversation" : "Members"}</span><span>${members.length}</span></div>
@@ -4200,6 +4200,16 @@ async function renderChannelInfoItems() {
         else sendOp({ op: "history_before", channel: channelId, beforeId: Number(loadedMessages[0].id), limit: 100 });
       }
     });
+    if (item.type === "file" && item.url) {
+      const download = document.createElement("a");
+      download.className = "btn btn-ghost btn-sm";
+      download.href = item.url;
+      download.target = "_blank";
+      download.rel = "noopener noreferrer";
+      download.textContent = "Open file";
+      download.setAttribute("aria-label", "Open shared file " + (item.title || "attachment"));
+      footer.append(download);
+    }
     footer.append(view); main.append(footer); card.append(main); root.append(card);
   }
   if (serverCache ? serverCache.hasMore : items.length > shown.length) {
