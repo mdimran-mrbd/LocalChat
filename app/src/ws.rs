@@ -1168,6 +1168,7 @@ async fn handle_op(
                 .and_then(Value::as_array)
                 .ok_or("missing users")?;
             let ch = state.channels.get(id).ok_or("no such channel")?;
+            if id.starts_with("notes:") { return Err("Personal Notes cannot be shared with other members".into()); }
             if !ch.members.contains(&user_id) {
                 return Err("not a member".into());
             }
@@ -1339,6 +1340,7 @@ async fn handle_op(
             if !matches!(ch.kind, ChannelKind::Group) {
                 return Err("only group channels can be deleted".into());
             }
+            if id.starts_with("notes:") { return Err("Personal Notes cannot be deleted".into()); }
             if ch.created_by != user_id {
                 return Err("only the creator can delete this channel".into());
             }
@@ -1482,6 +1484,7 @@ async fn handle_op(
             let id = v.get("channel").and_then(Value::as_str).ok_or("missing channel")?;
             let ch = state.channels.get(id).ok_or("no such channel")?;
             if !matches!(ch.kind, ChannelKind::Group) { return Err("only groups have editable details".into()); }
+            if id.starts_with("notes:") { return Err("Personal Notes name and privacy are fixed".into()); }
             if ch.created_by != user_id { return Err("only the group owner can edit details".into()); }
 
             let current_name = ch.name();
