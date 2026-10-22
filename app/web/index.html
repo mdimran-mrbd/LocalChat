@@ -489,22 +489,35 @@
           <p class="muted xs" style="margin:5px 0 0 25px;">When enabled, this app checks GitHub Releases from the host browser and shows an update notice. Nothing installs or restarts until you choose <strong>Update now</strong>. No chat messages or personal data are sent.</p>
         </section>
         <details style="margin-top:12px;">
-          <summary style="cursor:pointer;font-size:13px;font-weight:600;">What's new — Version 2.0.1 · Build 1</summary>
+          <summary style="cursor:pointer;font-size:13px;font-weight:600;">What's new — Version 3.0.123 · Build 123</summary>
           <div class="sm" style="padding:8px 0 0 4px;line-height:1.55;">
-            <strong>Messaging and navigation</strong>
+            <p style="margin:0 0 8px;">Chat information, profile/settings, channel/group management, and Windows release improvements.</p>
+            <strong>Chat and shared content</strong>
             <ul style="margin:4px 0 8px;padding-left:20px;">
-              <li>Search channel message history, navigate matches, and highlight results.</li>
-              <li>Pin and unpin important channel messages.</li>
-              <li>Jump to messages that mention you.</li>
-              <li>Keep replies, reactions, and saved-message bookmarks.</li>
-              <li>Improve message action toolbar positioning on different screen sizes.</li>
+              <li>Added information panels for private and group chats.</li>
+              <li>Improved shared Media, Links, and Files counts, previews, and item listings.</li>
+              <li>Kept chat links clickable and supported links in channel descriptions.</li>
             </ul>
-            <strong>Updates and reliability</strong>
-            <ul style="margin:4px 0 0;padding-left:20px;">
-              <li>Optional update checks with an explicit, user-controlled install action.</li>
-              <li>Verify downloaded Windows updates with SHA-256 before applying them.</li>
-              <li>Keep original LocalChat attribution and MIT licensing.</li>
+            <strong>Profiles and settings</strong>
+            <ul style="margin:4px 0 8px;padding-left:20px;">
+              <li>Edit usernames and designations; usernames must be unique.</li>
+              <li>Upload a profile picture or choose a predefined avatar.</li>
+              <li>Manage appearance, notifications, password changes, and logout from Settings.</li>
             </ul>
+            <strong>Channels, groups, and messaging</strong>
+            <ul style="margin:4px 0 8px;padding-left:20px;">
+              <li>Edit channel names and descriptions, including links in descriptions.</li>
+              <li>Use group-wide @all mentions.</li>
+              <li>Improved reply, forward, reaction, message-toolbar, and pinned-message interactions.</li>
+            </ul>
+            <strong>Administration and reliability</strong>
+            <ul style="margin:4px 0 8px;padding-left:20px;">
+              <li>Improved admin visibility of persisted historical user accounts.</li>
+              <li>Added database migration support and Rust tests in CI.</li>
+              <li>Embedded the Windows app icon and published a SHA-256 checksum.</li>
+            </ul>
+            <strong>Known limitation — HTTPS</strong>
+            <p style="margin:4px 0 0;">On private networks, browsers may still show ERR_CERT_AUTHORITY_INVALID until the LocalChat CA certificate is trusted on each connecting device. See the LAN HTTPS trust guide; do not bypass unverified certificate warnings.</p>
           </div>
         </details>
 
