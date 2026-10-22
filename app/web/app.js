@@ -4629,10 +4629,14 @@ async function renderChannelInfo() {
   _ciNotificationMode = ch.notificationMode || "all";
   root.innerHTML = `
     <section class="ci-profile">
+      <div class="ci-profile-top">
       <div class="ci-avatar">${ch.photoUrl && !isDm ? `<img src="${_ciEsc(ch.photoUrl)}" alt="${_ciEsc(title)} group photo" loading="lazy">` : (isDm && typeof profileAvatar === "string" && profileAvatar.startsWith("/uploads/") ? `<img src="${_ciEsc(profileAvatar)}" alt="${_ciEsc(title)} profile picture" loading="lazy">` : _ciEsc(profileAvatar))}${canEditPhoto ? '<button type="button" id="ciPhotoEditBtn" class="ci-avatar-edit" aria-label="Change group photo" title="Change group photo"><svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>' : ""}</div>
       ${canEditPhoto ? '<input id="ciPhotoFileInput" type="file" accept="image/png,image/jpeg,image/webp" hidden aria-label="Choose group photo">' : ""}
+      <div class="ci-profile-identity">
       <div class="ci-name-row"><div class="ci-name">${_ciEsc(title)}</div>${canEditDescription ? '<button type="button" id="ciNameEditBtn" class="ci-name-edit" aria-label="Edit channel name" title="Edit channel name" aria-expanded="false"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>' : ""}</div>
-       <div class="ci-subtitle">${isDm ? "Direct message · End-to-end encryption when available" : (ch.kind === "lobby" ? "Public channel" : (ch.isPrivate ? "Private group" : "Group conversation")) + " · " + members.length + " member" + (members.length === 1 ? "" : "s")}</div>
+        ${isDm ? `${peer?.designation ? `<div class="ci-designation">${_ciEsc(peer.designation)}</div>` : ""}<div class="ci-subtitle">Direct message · End-to-end encryption when available</div>` : `<div class="ci-subtitle">${(ch.kind === "lobby" ? "Public channel" : (ch.isPrivate ? "Private group" : "Group conversation")) + " · " + members.length + " member" + (members.length === 1 ? "" : "s")}</div>`}
+      </div>
+      </div>
        ${!isDm && ch.kind !== "lobby" ? `<div class="ci-description-row"><div class="ci-description" id="ciDescriptionText"><span class="ci-description-copy" id="ciDescriptionCopy">${_ciEsc(description || "No group description yet.")}</span>${canEditDescription ? '<button type="button" id="ciDescEditBtn" class="ci-name-edit ci-desc-edit" aria-label="Edit channel description" title="Edit channel description"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>' : ""}</div></div>` : ""}
        ${canEditDescription ? `
          <form id="ciEditNameForm" class="ci-edit-group" hidden>
@@ -4657,25 +4661,31 @@ async function renderChannelInfo() {
     <section class="ci-section">
       <div class="ci-section-head"><span>Shared content</span><span id="ciSharedCount" aria-live="polite">Counting loaded items…</span></div>
       <div class="ci-browser-tabs" role="tablist" aria-label="Shared content type">
-        <button type="button" class="ci-browser-tab ${_channelInfoTab === "media" ? "active" : ""}" data-ci-tab="media">Media</button>
-        <button type="button" class="ci-browser-tab ${_channelInfoTab === "links" ? "active" : ""}" data-ci-tab="links">Links</button>
-        <button type="button" class="ci-browser-tab ${_channelInfoTab === "files" ? "active" : ""}" data-ci-tab="files">Files</button>
+        <button type="button" role="tab" aria-selected="${_channelInfoTab === "media" ? "true" : "false"}" tabindex="${_channelInfoTab === "media" ? "0" : "-1"}" class="ci-browser-tab ${_channelInfoTab === "media" ? "active" : ""}" data-ci-tab="media">Media</button>
+        <button type="button" role="tab" aria-selected="${_channelInfoTab === "links" ? "true" : "false"}" tabindex="${_channelInfoTab === "links" ? "0" : "-1"}" class="ci-browser-tab ${_channelInfoTab === "links" ? "active" : ""}" data-ci-tab="links">Links</button>
+        <button type="button" role="tab" aria-selected="${_channelInfoTab === "files" ? "true" : "false"}" tabindex="${_channelInfoTab === "files" ? "0" : "-1"}" class="ci-browser-tab ${_channelInfoTab === "files" ? "active" : ""}" data-ci-tab="files">Files</button>
       </div>
       <div id="ciSharedItems" class="ci-items"><div class="ci-empty">Preparing shared items…</div></div>
       <div class="muted xs">Shared content is loaded in pages. Direct-message content is indexed locally only when it can be decrypted by this device.</div>
     </section>
-    <section class="ci-section">
-      <div class="ci-section-head"><span>${isDm ? "Conversation" : "Members"}</span><span>${members.length}</span></div>
-      ${!isDm ? '<input id="ciMemberSearch" class="ci-search" type="search" placeholder="Search members…" aria-label="Search members" autocomplete="off">' : ""}
-      <div id="ciMembers" class="ci-members"></div>
-    </section>
+    ${!isDm ? `
+      <section class="ci-section">
+        <div class="ci-section-head"><span>Members</span><span>${members.length}</span></div>
+        <input id="ciMemberSearch" class="ci-search" type="search" placeholder="Search members…" aria-label="Search members" autocomplete="off">
+        <div id="ciMembers" class="ci-members"></div>
+      </section>` : ""}
   `;
   updateBrowserNotificationButton();
   const descriptionNode = $("ciDescriptionCopy");
   if (descriptionNode && description) { descriptionNode.replaceChildren(); appendLinkedText(descriptionNode, description); }
   root.querySelectorAll("[data-ci-tab]").forEach(btn => btn.addEventListener("click", async () => {
     _channelInfoTab = btn.dataset.ciTab;
-    root.querySelectorAll("[data-ci-tab]").forEach(b => b.classList.toggle("active", b === btn));
+    root.querySelectorAll("[data-ci-tab]").forEach(b => {
+      const selected = b === btn;
+      b.classList.toggle("active", selected);
+      b.setAttribute("aria-selected", selected ? "true" : "false");
+      b.tabIndex = selected ? 0 : -1;
+    });
     const activeChannel = S.channels.get(S.active);
     if (activeChannel && activeChannel.kind !== "dm") requestChannelSharedItems(true);
     await renderChannelInfoItems();
@@ -4937,11 +4947,20 @@ function onSharedItemsList(e) {
     const itemKey = String(item.messageId) + "|" + item.itemType + "|" + item.itemKey;
     if (!known.has(itemKey)) { cache.items.push(item); known.add(itemKey); }
   }
-  if (S.active === e.channel && _channelInfoTab === e.type && !$("channelInfoDrawer")?.classList.contains("hidden")) renderChannelInfoItems();
+  if (S.active === e.channel && _channelInfoTab === e.type && !$("channelInfoDrawer")?.classList.contains("hidden")) {
+    const refreshOverlay = !!_ciExpandedOverlay && _ciExpandedType === e.type;
+    renderChannelInfoItems().then(() => {
+      if (refreshOverlay && _ciExpandedType === e.type && _ciExpandedOverlay) {
+        openSharedItemsOverlay(e.type, _ciRenderedItems, cache.hasMore ? () => requestChannelSharedItems(false) : null);
+      }
+    });
+  }
 }
 let _ciVisibleItems = 12;
 let _ciExpandedOverlay = null;
-function closeSharedItemsOverlay() { _ciExpandedOverlay?.remove(); _ciExpandedOverlay = null; }
+let _ciExpandedType = null;
+let _ciRenderedItems = [];
+function closeSharedItemsOverlay() { _ciExpandedOverlay?.remove(); _ciExpandedOverlay = null; _ciExpandedType = null; }
 function openSharedItemsOverlay(type, items, loadMore) {
   closeSharedItemsOverlay();
   const drawer = $("channelInfoDrawer"); if (!drawer) return;
@@ -4973,9 +4992,9 @@ function openSharedItemsOverlay(type, items, loadMore) {
     }); tile.append(view); grid.append(tile);
   }
   panel.append(head, grid);
-  if (loadMore) { const more = document.createElement("button"); more.type = "button"; more.className = "ci-expanded-load"; more.textContent = "Load more"; more.addEventListener("click", () => { closeSharedItemsOverlay(); loadMore(); }); panel.append(more); }
+  if (loadMore) { const more = document.createElement("button"); more.type = "button"; more.className = "ci-expanded-load"; more.textContent = "Load more"; more.addEventListener("click", () => { more.disabled = true; more.textContent = "Loading…"; loadMore(); }); panel.append(more); }
   overlay.append(panel); overlay.addEventListener("click", ev => { if (ev.target === overlay) closeSharedItemsOverlay(); });
-  drawer.append(overlay); _ciExpandedOverlay = overlay; close.focus();
+  drawer.append(overlay); _ciExpandedOverlay = overlay; _ciExpandedType = type; close.focus();
   overlay.addEventListener("keydown", ev => { if (ev.key === "Escape") { ev.stopPropagation(); closeSharedItemsOverlay(); } });
 }
 async function renderChannelInfoItems() {
@@ -5035,6 +5054,7 @@ async function renderChannelInfoItems() {
     }
   }
   items.sort((a,b) => (b.ts || 0) - (a.ts || 0));
+  _ciRenderedItems = items;
   const countLabel = $("ciSharedCount");
   const counts = serverCache?.counts;
   if (countLabel) countLabel.textContent = counts
