@@ -45,6 +45,7 @@ pub async fn serve(
     let app = Router::new()
         .route("/ws", get(ws_upgrade))
         .route("/api/info", get(info))
+        .route("/api/tls/ca.pem", get(download_ca_certificate))
         .route("/api/update/install", post(install_update))
         .route("/api/share", get(share))
         .route(
@@ -80,19 +81,49 @@ async fn serve_tls(
     let _ = rustls::crypto::ring::default_provider().install_default();
 
     let tls_dir = state.app_root.join("tls");
+    std::fs::create_dir_all(&tls_dir)?;
     let cert_path = tls_dir.join("cert.pem");
     let key_path = tls_dir.join("key.pem");
+    let ca_cert_path = tls_dir.join("ca-cert.pem");
+    let ca_key_path = tls_dir.join("ca-key.pem");
 
-    if !cert_path.exists() || !key_path.exists() {
-        std::fs::create_dir_all(&tls_dir)?;
-        let san = build_cert_sans();
-        let cert = rcgen::generate_simple_self_signed(san)?;
-        std::fs::write(&cert_path, cert.cert.pem())?;
-        std::fs::write(&key_path, cert.key_pair.serialize_pem())?;
+    // Create a persistent local CA once, then issue a server certificate for
+    // localhost and the current LAN addresses. Only the public CA certificate
+    // is exposed to clients; the CA private key never leaves the host.
+    if !ca_key_path.exists() || !ca_cert_path.exists() {
+        use rcgen::{BasicConstraints, CertificateParams, DnType, IsCa, KeyPair, KeyUsagePurpose};
+        let ca_key = KeyPair::generate()?;
+        let mut ca_params = CertificateParams::new(Vec::<String>::new())?;
+        ca_params.distinguished_name.push(DnType::CommonName, "LocalChat Local Network CA");
+        ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+        ca_params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
+        let ca_cert = ca_params.self_signed(&ca_key)?;
+        std::fs::write(&ca_cert_path, ca_cert.pem())?;
+        std::fs::write(&ca_key_path, ca_key.serialize_pem())?;
         crate::applog::log(format_args!(
-            "tls: generated self-signed cert at {}", tls_dir.display()
+            "tls: created local CA; public certificate at {}", ca_cert_path.display()
         ));
     }
+
+    // Rebuild the issuer object from the persistent key. The CA's subject and
+    // parameters remain stable so certificates issued on later launches chain
+    // to the same trusted root.
+    use rcgen::{BasicConstraints, CertificateParams, DnType, ExtendedKeyUsagePurpose, IsCa, KeyPair, KeyUsagePurpose};
+    let ca_key_pem = std::fs::read_to_string(&ca_key_path)?;
+    let ca_key = KeyPair::from_pem(&ca_key_pem)?;
+    let mut ca_params = CertificateParams::new(Vec::<String>::new())?;
+    ca_params.distinguished_name.push(DnType::CommonName, "LocalChat Local Network CA");
+    ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+    ca_params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
+    let ca_cert = ca_params.self_signed(&ca_key)?;
+
+    let mut server_params = CertificateParams::new(build_cert_sans())?;
+    server_params.distinguished_name.push(DnType::CommonName, "LocalChat Server");
+    server_params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ServerAuth];
+    let server_key = KeyPair::generate()?;
+    let server_cert = server_params.signed_by(&server_key, &ca_cert, &ca_key)?;
+    std::fs::write(&cert_path, server_cert.pem())?;
+    std::fs::write(&key_path, server_key.serialize_pem())?;
 
     let cfg = RustlsConfig::from_pem_file(cert_path, key_path).await?;
     let addr: std::net::SocketAddr = ([0, 0, 0, 0], port).into();
@@ -100,6 +131,25 @@ async fn serve_tls(
         .serve(app.into_make_service_with_connect_info::<std::net::SocketAddr>())
         .await?;
     Ok(())
+}
+
+/// Downloadable public trust anchor for this LocalChat host. The private CA
+/// key is never served by this endpoint.
+async fn download_ca_certificate(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let path = state.app_root.join("tls").join("ca-cert.pem");
+    match tokio::fs::read(path).await {
+        Ok(cert) => (
+            StatusCode::OK,
+            [
+                (header::CONTENT_TYPE, HeaderValue::from_static("application/x-pem-file")),
+                (header::CONTENT_DISPOSITION, HeaderValue::from_static("attachment; filename=localchat-root-ca.pem")),
+                (header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff")),
+            ],
+            cert,
+        )
+            .into_response(),
+        Err(_) => StatusCode::NOT_FOUND.into_response(),
+    }
 }
 
 /// Subject-Alternative-Names that the cert should cover. Includes
