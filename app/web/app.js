@@ -11,7 +11,7 @@ const $ = (id) => document.getElementById(id);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Stable avatar color from a username — mirrors server's pick_color_for (FNV-1a 32, lowercased).
-const _AVATAR_COLORS = ["#6366f1","#8b5cf6","#ec4899","#ef4444","#f97316","#eab308","#22c55e","#14b8a6","#06b6d4","#3b82f6"];
+const _AVATAR_COLORS = ["#087a50","#35a875","#4f8b6a","#659a78","#317b5c","#79ad8d","#226849","#4c9b73","#6d9c81","#3a7258"];
 function userNameNode(user) {
   let profile = typeof user === "string" ? { username: user } : (user || {});
   if (!profile.designation && S.userProfiles) {
