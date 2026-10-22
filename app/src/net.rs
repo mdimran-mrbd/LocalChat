@@ -77,8 +77,11 @@ pub fn print_banner(port: u16, addrs: &[String], state: &std::sync::Arc<crate::s
         }
     }
     println!();
-    println!("  🔒  HTTPS uses a self-signed certificate. Accept the browser warning");
-    println!("      once per device — required for mic/camera + E2EE.");
+    println!("  🔒  HTTPS uses a LocalChat local CA.");
+    println!("      To remove browser warnings, install this public CA certificate");
+    println!("      on each trusted device:");
+    println!("      {}", state.app_root.join("tls").join("ca-cert.pem").display());
+    println!("      Copy it to each device over a trusted channel before installing.");
     println!();
     println!("  📁  Data folder:     {}", state.app_root.display());
     println!("  📝  Log file:        {}", state.logs_dir.join("localchat.log").display());
