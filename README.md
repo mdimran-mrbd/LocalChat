@@ -64,9 +64,7 @@ people share a network but not necessarily the internet:
    and share it with anyone on the same Wi-Fi.
 5. They open the URL, pick a name, and start chatting. No install, no signup.
 
-> 💡 The first visit shows a browser warning because the cert is self-signed.
-> Click **Advanced → Proceed**. To replace it with a real cert, see
-> [`app/scripts/`](app/scripts/).
+> 🔒 **HTTPS certificate note:** On a private LAN, browsers may show a certificate-authority warning until the LocalChat host's public CA certificate is trusted on the connecting device. Follow [the LAN HTTPS trust guide](docs/lan-https-trust.md). Do not proceed past a certificate warning unless you have verified you are connecting to your own trusted LocalChat host.
 
 ## Admin dashboard
 
