@@ -3719,7 +3719,7 @@ function submitProfileField(field) {
   const save = $(field === "username" ? "saveUsernameBtn" : "saveDesignationBtn");
   if (save) { save.disabled = true; save.textContent = "Saving…"; }
   status.textContent = "Saving changes…";
-  sendOp({ op: "profile_update", username, designation });
+  sendOp(field === "username" ? { op: "profile_update", username } : { op: "profile_update", designation });
   setTimeout(() => { if (save?.isConnected) { save.disabled = false; save.textContent = field === "username" ? "Save username" : "Save designation"; } }, 3000);
 }
 function signOut() {
