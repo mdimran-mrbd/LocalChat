@@ -4657,9 +4657,9 @@ async function renderChannelInfo() {
     <section class="ci-section">
       <div class="ci-section-head"><span>Shared content</span><span id="ciSharedCount" aria-live="polite">Counting loaded items…</span></div>
       <div class="ci-browser-tabs" role="tablist" aria-label="Shared content type">
-        <button type="button" class="ci-browser-tab ${_channelInfoTab === "media" ? "active" : ""}" data-ci-tab="media">Media</button>
-        <button type="button" class="ci-browser-tab ${_channelInfoTab === "links" ? "active" : ""}" data-ci-tab="links">Links</button>
-        <button type="button" class="ci-browser-tab ${_channelInfoTab === "files" ? "active" : ""}" data-ci-tab="files">Files</button>
+        <button type="button" role="tab" aria-selected="${_channelInfoTab === "media" ? "true" : "false"}" tabindex="${_channelInfoTab === "media" ? "0" : "-1"}" class="ci-browser-tab ${_channelInfoTab === "media" ? "active" : ""}" data-ci-tab="media">Media</button>
+        <button type="button" role="tab" aria-selected="${_channelInfoTab === "links" ? "true" : "false"}" tabindex="${_channelInfoTab === "links" ? "0" : "-1"}" class="ci-browser-tab ${_channelInfoTab === "links" ? "active" : ""}" data-ci-tab="links">Links</button>
+        <button type="button" role="tab" aria-selected="${_channelInfoTab === "files" ? "true" : "false"}" tabindex="${_channelInfoTab === "files" ? "0" : "-1"}" class="ci-browser-tab ${_channelInfoTab === "files" ? "active" : ""}" data-ci-tab="files">Files</button>
       </div>
       <div id="ciSharedItems" class="ci-items"><div class="ci-empty">Preparing shared items…</div></div>
       <div class="muted xs">Shared content is loaded in pages. Direct-message content is indexed locally only when it can be decrypted by this device.</div>
@@ -4675,7 +4675,12 @@ async function renderChannelInfo() {
   if (descriptionNode && description) { descriptionNode.replaceChildren(); appendLinkedText(descriptionNode, description); }
   root.querySelectorAll("[data-ci-tab]").forEach(btn => btn.addEventListener("click", async () => {
     _channelInfoTab = btn.dataset.ciTab;
-    root.querySelectorAll("[data-ci-tab]").forEach(b => b.classList.toggle("active", b === btn));
+    root.querySelectorAll("[data-ci-tab]").forEach(b => {
+      const selected = b === btn;
+      b.classList.toggle("active", selected);
+      b.setAttribute("aria-selected", selected ? "true" : "false");
+      b.tabIndex = selected ? 0 : -1;
+    });
     const activeChannel = S.channels.get(S.active);
     if (activeChannel && activeChannel.kind !== "dm") requestChannelSharedItems(true);
     await renderChannelInfoItems();
