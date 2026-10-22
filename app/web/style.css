@@ -3625,3 +3625,64 @@ body.poll-modal-open { overflow:hidden; }
   .channel-info-content .ci-avatar { width: 56px; height: 56px; border-radius: 16px; }
   .channel-info-content .ci-section { padding: 16px; }
 }
+
+
+/* LocalChat 3.2.0 Chat Info UX — compact, minimal, theme-aware layout. */
+.channel-info-drawer { width:min(360px,calc(100vw - 12px)); max-width:100vw; box-shadow:-10px 0 28px rgba(15,23,42,.14); animation-duration:.14s; }
+.channel-info-head { min-height:54px; padding:12px 16px; }
+.channel-info-content { min-height:0; gap:18px; padding:16px; overscroll-behavior:contain; scrollbar-gutter:stable; }
+.ci-profile { text-align:left; padding:0 0 15px; border-bottom:1px solid var(--border,rgba(128,128,128,.22)); }
+.ci-profile-top { display:flex; align-items:center; gap:13px; min-width:0; }
+.ci-avatar { flex:0 0 52px; width:52px; height:52px; margin:0; border-radius:16px; font-size:20px; }
+.ci-profile-identity { min-width:0; flex:1; }
+.ci-name-row { display:flex; align-items:center; justify-content:flex-start; gap:6px; min-width:0; }
+.ci-name { min-width:0; font-size:16px; line-height:1.3; font-weight:700; }
+.ci-name-edit { flex:0 0 28px; width:28px; height:28px; display:inline-flex; align-items:center; justify-content:center; opacity:0; border-radius:7px; color:var(--fg-2,#6b7280); background:transparent; border:1px solid transparent; }
+.ci-name-row:hover .ci-name-edit, .ci-name-row:focus-within .ci-name-edit, .ci-name-edit:focus-visible { opacity:1; }
+.ci-name-edit:hover { background:var(--bg-hover,rgba(128,128,128,.12)); border-color:var(--border,rgba(128,128,128,.2)); }
+@media (hover:none) { .ci-name-edit { opacity:1; } }
+.ci-handle { margin-top:3px; font-size:12px; color:var(--fg-2,#6b7280); overflow-wrap:anywhere; }
+.ci-designation { margin-top:3px; font-size:12px; color:var(--fg-1,#6b7280); overflow-wrap:anywhere; }
+.ci-subtitle { margin-top:4px; font-size:11px; line-height:1.45; }
+.ci-description-row { margin-top:12px; }
+.ci-description { margin-top:0; font-size:13px; line-height:1.55; }
+.ci-desc-edit { margin-left:4px; vertical-align:middle; }
+.ci-section { gap:9px; }
+.ci-section-head { font-size:11px; letter-spacing:.045em; }
+.ci-search, .ci-role-select { border-radius:8px; }
+.ci-search { min-height:38px; padding:8px 10px; }
+.ci-browser-tabs { display:flex; gap:2px; padding:3px; border:1px solid var(--border,rgba(128,128,128,.2)); border-radius:10px; background:var(--bg-2,#181c26); }
+.ci-browser-tab { flex:1 1 0; min-width:0; padding:8px 3px; border:1px solid transparent; border-radius:7px; font-size:12px; font-weight:600; white-space:nowrap; }
+.ci-browser-tab.active { box-shadow:none; }
+.ci-items { gap:8px; }
+.ci-media-grid, .ci-links-grid, .ci-files-grid { grid-template-columns:repeat(3,minmax(0,1fr)); gap:7px; }
+.ci-links-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.ci-preview-tile { border-radius:9px; aspect-ratio:1/.88; padding:0; transition:border-color .12s ease,background-color .12s ease; }
+.ci-preview-tile:hover { border-color:var(--brand,#6366f1); }
+.ci-preview-open { padding:7px; gap:5px; }
+.ci-media-thumb { border-radius:5px; }
+.ci-preview-icon { font-size:21px; }
+.ci-preview-caption { display:-webkit-box; width:100%; min-width:0; font-size:10px; line-height:1.35; overflow:hidden; text-overflow:ellipsis; overflow-wrap:anywhere; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+.ci-preview-more { border-style:dashed; background:transparent; }
+.ci-empty { padding:13px 10px; border-radius:9px; }
+.ci-member { padding:8px 4px; border-radius:8px; }
+.ci-member-avatar { width:32px; height:32px; flex-basis:32px; border-radius:50%; }
+.ci-member-name { font-size:12px; }
+.ci-member-role { font-size:11px; }
+.ci-expanded-overlay { padding:12px; }
+.ci-expanded-panel { border-radius:12px; }
+.ci-expanded-head { padding:12px 14px; }
+.ci-expanded-grid { padding:12px; gap:9px; }
+.ci-expanded-tile { min-width:0; }
+.ci-expanded-label { overflow-wrap:anywhere; }
+.ci-expanded-open, .ci-expanded-load { min-height:34px; }
+.channel-info-drawer input, .channel-info-drawer textarea, .channel-info-drawer select { border-radius:8px; }
+.channel-info-drawer button:focus-visible, .channel-info-drawer a:focus-visible, .channel-info-drawer input:focus-visible, .channel-info-drawer textarea:focus-visible, .channel-info-drawer select:focus-visible { outline:2px solid var(--brand,#6366f1); outline-offset:2px; }
+[data-theme="light"] .channel-info-drawer { color:#111827; background:#fff; border-left-color:#e5e7eb; }
+[data-theme="light"] .channel-info-drawer .ci-browser-tabs { background:#f8fafc; border-color:#e5e7eb; }
+[data-theme="light"] .channel-info-drawer .ci-browser-tab { color:#64748b; }
+[data-theme="light"] .channel-info-drawer .ci-browser-tab.active { color:#3730a3; background:#eef2ff; border-color:#c7d2fe; }
+[data-theme="light"] .channel-info-drawer input, [data-theme="light"] .channel-info-drawer textarea, [data-theme="light"] .channel-info-drawer select { color:#111827; background:#f8fafc; border-color:#cbd5e1; }
+[data-theme="light"] .channel-info-drawer option { color:#111827; background:#fff; }
+[data-theme="light"] .channel-info-drawer .ci-subtitle, [data-theme="light"] .channel-info-drawer .ci-handle, [data-theme="light"] .channel-info-drawer .ci-designation, [data-theme="light"] .channel-info-drawer .ci-item-sub, [data-theme="light"] .channel-info-drawer .ci-member-role { color:#64748b; }
+@media (max-width:520px) { .channel-info-drawer { width:100vw; } .channel-info-content { padding:14px; gap:16px; } .ci-avatar { width:48px; height:48px; flex-basis:48px; border-radius:14px; } }
