@@ -1582,7 +1582,7 @@ function messageMentionsMe(m) {
     }
     const escaped = S.me.username.replace(/[^A-Za-z0-9._-]/g, (ch) => "\\" + ch);
     const channel = S.channels.get(m.channel);
-    if (channel?.kind === "group" && /(^|\\s)@all(?=$|[\\s.,!?])/i.test(text)) return true;
+    if (channel?.kind === "group" && text.toLowerCase().split(/[^a-z0-9@_-]+/).includes("@all")) return true;
     return new RegExp(`(^|[^A-Za-z0-9._-])@${escaped}(?=$|[^A-Za-z0-9._-])`, "i").test(text);
   };
   return inspect().catch(() => false);
@@ -1792,7 +1792,7 @@ function _channelItem(c) {
     c.kind === "group" && S.unreadIndicators.get(c.id)?.mention ? el("span", { class: "chat-unread-signal mention-signal", title: "Unread mention", "aria-label": "Unread mention" }, "@") : null,
     c.kind === "group" && S.unreadIndicators.get(c.id)?.reply ? el("span", { class: "chat-unread-signal reply-signal", title: "Unread reply to you", "aria-label": "Unread reply to you" }, "↩") : null,
     unread ? el("span", { class: "badge badge-unread" }, String(unread)) : null,
-    el("button", { class: "chat-pin" + (pinned ? " is-pinned" : ""), type: "button", title: pinned ? "Unpin chat" : "Pin chat", "aria-label": pinned ? "Unpin chat" : "Pin chat", onclick: (ev) => { ev.stopPropagation(); toggleChatPin(c.id); }, html: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s7-4.5 7-12a7 7 0 1 0-14 0c0 7.5 7 12 7 12Z"/><circle cx="12" cy="10" r="2.4"/></svg>' }),
+    el("button", { class: "chat-pin" + (pinned ? " is-pinned" : ""), type: "button", title: pinned ? "Unpin chat" : "Pin chat", "aria-label": pinned ? "Unpin chat" : "Pin chat", onclick: (ev) => { ev.stopPropagation(); toggleChatPin(c.id); }, html: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 3 5 5-4 1-4 4-1 5-2-2-4 4-2-2 4-4-2-2 5-1 4-4 1-4Z"/><path d="m10 14-6 6"/></svg>' }),
     canDelete ? el("button", {
       class: "chat-del",
       title: `Delete #${c.name || c.id}`,
@@ -1861,7 +1861,7 @@ function _dmItem(c) {
       el("div", { class: "chat-sub muted xs" }, online ? "online" : "offline"),
     ]),
     unread ? el("span", { class: "badge badge-unread" }, String(unread)) : null,
-    el("button", { class: "chat-pin" + (pinned ? " is-pinned" : ""), type: "button", title: pinned ? "Unpin chat" : "Pin chat", "aria-label": pinned ? "Unpin chat" : "Pin chat", onclick: (ev) => { ev.stopPropagation(); toggleChatPin(c.id); }, html: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s7-4.5 7-12a7 7 0 1 0-14 0c0 7.5 7 12 7 12Z"/><circle cx="12" cy="10" r="2.4"/></svg>' }),
+    el("button", { class: "chat-pin" + (pinned ? " is-pinned" : ""), type: "button", title: pinned ? "Unpin chat" : "Pin chat", "aria-label": pinned ? "Unpin chat" : "Pin chat", onclick: (ev) => { ev.stopPropagation(); toggleChatPin(c.id); }, html: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 3 5 5-4 1-4 4-1 5-2-2-4 4-2-2 4-4-2-2 5-1 4-4 1-4Z"/><path d="m10 14-6 6"/></svg>' }),
     el("button", {
       class: "chat-del",
       title: `Delete conversation with ${peerName}`,
@@ -3573,8 +3573,7 @@ function renderInviteList() {
         renderInviteList();
       },
     }, [
-      el("div", { class: "avatar xs", style: `background:${u.color}` },
-        u.avatar || (u.username?.[0] || "?").toUpperCase()),
+      (() => { const node = el("div", { class: "avatar xs", style: `background:${u.color}` }); renderAvatarContent(node, u.avatar, u.username?.[0] || "?"); return node; })(),
       el("span", { class: "inv-name" }, u.username),
       el("span", { class: "inv-check", "aria-hidden": "true" }, checked ? "✓" : ""),
     ]);
