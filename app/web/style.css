@@ -3487,18 +3487,20 @@ body.poll-modal-open { overflow:hidden; }
   border-radius: 7px;
   color: var(--fg-2, #9ca3af);
   background: transparent;
-  opacity: .7;
+  opacity: 0;
 }
 .channel-info-content .ci-name-row:hover .ci-name-edit,
 .channel-info-content .ci-name-row:focus-within .ci-name-edit,
 .channel-info-content .ci-name-edit:focus-visible,
-.channel-info-content .ci-name-edit[aria-expanded="true"] { opacity: 1; }
+.channel-info-content .ci-name-edit[aria-expanded="true"],
+.channel-info-content .ci-description:hover .ci-desc-edit,
+.channel-info-content .ci-description:focus-within .ci-desc-edit { opacity: 1; }
 .channel-info-content .ci-name-edit:hover {
   color: var(--fg-0, #eef0f6);
   background: var(--bg-hover, #202634);
   border-color: var(--border, #303544);
 }
-  .channel-info-content .ci-designation {
+.channel-info-content .ci-designation {
   min-width: 0;
   font-size: 12px;
   line-height: 1.35;
