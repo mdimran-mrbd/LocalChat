@@ -54,6 +54,7 @@ jobs:
             IFS='.' read -r MA MI PA <<< "$LATEST_VERSION"
             TAG="v${MA}.${MI}.$((PA + 1))"
           fi
+          # End of non-tag push path; tag pushes use the tag as-is.
           fi
           echo "Selected tag: $TAG"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
