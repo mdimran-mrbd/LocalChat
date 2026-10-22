@@ -118,3 +118,5 @@ Typography target: system sans-serif stack led by `Inter` when locally available
 - [x] Documented E2EE, permission, stable-selector, and release guardrails.
 - [x] Created a dedicated redesign branch from the latest tested Chat Info UX branch.
 - [x] Began implementation incrementally on the dedicated redesign branch; updated shared tokens, core shell/message/composer styling, Info/settings styling, favicon, and generated avatar accents.\n- [ ] Validate in CI and a Windows test executable before asking the user to test.
+- [x] Added a first cohesive styling pass for the composer, emoji/mention pickers, menus, dialogs, and Info/settings surfaces; behavior selectors remain unchanged.
+- [ ] Review the resulting UI in both themes and fix any contrast/layout regressions found by validation.
