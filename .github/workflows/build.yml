@@ -24,6 +24,7 @@ jobs:
       tag: ${{ steps.meta.outputs.tag }}
       version: ${{ steps.meta.outputs.version }}
       build: ${{ steps.meta.outputs.build }}
+      republish: ${{ steps.meta.outputs.republish }}
     steps:
       - name: Checkout (full history + tags)
         uses: actions/checkout@v4
