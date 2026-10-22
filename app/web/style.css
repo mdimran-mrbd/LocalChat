@@ -3498,8 +3498,7 @@ body.poll-modal-open { overflow:hidden; }
   background: var(--bg-hover, #202634);
   border-color: var(--border, #303544);
 }
-.channel-info-content .ci-handle,
-.channel-info-content .ci-designation {
+  .channel-info-content .ci-designation {
   min-width: 0;
   font-size: 12px;
   line-height: 1.35;

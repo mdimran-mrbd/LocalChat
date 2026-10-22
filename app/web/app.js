@@ -4634,7 +4634,7 @@ async function renderChannelInfo() {
       ${canEditPhoto ? '<input id="ciPhotoFileInput" type="file" accept="image/png,image/jpeg,image/webp" hidden aria-label="Choose group photo">' : ""}
       <div class="ci-profile-identity">
       <div class="ci-name-row"><div class="ci-name">${_ciEsc(title)}</div>${canEditDescription ? '<button type="button" id="ciNameEditBtn" class="ci-name-edit" aria-label="Edit channel name" title="Edit channel name" aria-expanded="false"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>' : ""}</div>
-        ${isDm ? `<div class="ci-handle">@${_ciEsc(title)}</div>${peer?.designation ? `<div class="ci-designation">${_ciEsc(peer.designation)}</div>` : ""}<div class="ci-subtitle">Direct message · End-to-end encryption when available</div>` : `<div class="ci-subtitle">${(ch.kind === "lobby" ? "Public channel" : (ch.isPrivate ? "Private group" : "Group conversation")) + " · " + members.length + " member" + (members.length === 1 ? "" : "s")}</div>`}
+        ${isDm ? `${peer?.designation ? `<div class="ci-designation">${_ciEsc(peer.designation)}</div>` : ""}<div class="ci-subtitle">Direct message · End-to-end encryption when available</div>` : `<div class="ci-subtitle">${(ch.kind === "lobby" ? "Public channel" : (ch.isPrivate ? "Private group" : "Group conversation")) + " · " + members.length + " member" + (members.length === 1 ? "" : "s")}</div>`}
       </div>
       </div>
        ${!isDm && ch.kind !== "lobby" ? `<div class="ci-description-row"><div class="ci-description" id="ciDescriptionText"><span class="ci-description-copy" id="ciDescriptionCopy">${_ciEsc(description || "No group description yet.")}</span>${canEditDescription ? '<button type="button" id="ciDescEditBtn" class="ci-name-edit ci-desc-edit" aria-label="Edit channel description" title="Edit channel description"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>' : ""}</div></div>` : ""}
@@ -4668,11 +4668,12 @@ async function renderChannelInfo() {
       <div id="ciSharedItems" class="ci-items"><div class="ci-empty">Preparing shared items…</div></div>
       <div class="muted xs">Shared content is loaded in pages. Direct-message content is indexed locally only when it can be decrypted by this device.</div>
     </section>
-    <section class="ci-section">
-      <div class="ci-section-head"><span>${isDm ? "Conversation" : "Members"}</span><span>${members.length}</span></div>
-      ${!isDm ? '<input id="ciMemberSearch" class="ci-search" type="search" placeholder="Search members…" aria-label="Search members" autocomplete="off">' : ""}
-      <div id="ciMembers" class="ci-members"></div>
-    </section>
+    ${!isDm ? `
+      <section class="ci-section">
+        <div class="ci-section-head"><span>Members</span><span>${members.length}</span></div>
+        <input id="ciMemberSearch" class="ci-search" type="search" placeholder="Search members…" aria-label="Search members" autocomplete="off">
+        <div id="ciMembers" class="ci-members"></div>
+      </section>` : ""}
   `;
   updateBrowserNotificationButton();
   const descriptionNode = $("ciDescriptionCopy");
