@@ -4003,3 +4003,70 @@ input:focus, textarea:focus, select:focus {
     transition-duration: .01ms !important;
   }
 }
+
+/* UX finishing pass: pickers, contextual menus, and dialog controls. */
+.emoji-pop,
+.mention-picker,
+.reaction-picker {
+  color: var(--fg-0);
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-lg);
+}
+.emoji-pop .ep-search input,
+.mention-picker input {
+  color: var(--fg-0);
+  background: var(--bg-2);
+  border-color: var(--border);
+}
+.emoji-pop .ep-tabs button { color: var(--fg-2); }
+.emoji-pop .ep-tabs button.active {
+  color: var(--brand);
+  background: var(--brand-soft);
+}
+.emoji-pop .ep-grid button:hover,
+.emoji-pop .ep-grid button:focus-visible {
+  background: var(--brand-soft);
+  outline-color: var(--brand);
+}
+.mention-picker { overflow: hidden; }
+.mention-option {
+  color: var(--fg-0);
+  border-radius: 8px;
+  margin: 2px 5px;
+}
+.mention-option:hover,
+.mention-option.active {
+  color: var(--fg-0);
+  background: var(--brand-soft);
+}
+.mention-option-status { color: var(--fg-2); }
+.sb-new-item:hover,
+.browser-notification-menu button:hover,
+.msg-menu-item:hover {
+  color: var(--fg-0);
+  background: var(--bg-hover);
+}
+.msg-menu-item.danger:hover,
+.ci-member-menu-item.danger:hover { background: color-mix(in srgb, var(--danger) 12%, var(--bg-1)); }
+.modal-backdrop,
+.modal-overlay { backdrop-filter: blur(4px); }
+.modal-panel :where(input, textarea, select),
+.settings-panel :where(input, textarea, select),
+.channel-info-drawer :where(input, textarea, select) {
+  color: var(--fg-0);
+  border-color: var(--border);
+}
+.modal-panel :where(input, textarea, select):focus-visible,
+.settings-panel :where(input, textarea, select):focus-visible,
+.channel-info-drawer :where(input, textarea, select):focus-visible {
+  border-color: var(--brand);
+  outline-color: var(--brand);
+}
+.toast { border: 1px solid var(--border-strong); }
+@media (max-width: 520px) {
+  .emoji-pop { width: min(340px, calc(100vw - 20px)); right: -4px; }
+  .mention-picker { max-width: calc(100vw - 20px); }
+}
+
