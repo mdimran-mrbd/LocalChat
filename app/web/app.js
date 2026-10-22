@@ -20,7 +20,7 @@ function userNameNode(user) {
   }
   const root = el("span", { class: "user-name-display" });
   root.append(document.createTextNode(profile.username || "Unknown"));
-  if (profile.designation) root.append(el("span", { class: "user-designation" }, " • " + (profile.designation === "CSA" ? "Customer Service Advisor" : profile.designation)));
+  if (profile.designation) root.append(el("span", { class: "user-designation" }, " • " + profile.designation));
   return root;
 }
 
@@ -1563,6 +1563,8 @@ function messageMentionsMe(m) {
       text = decrypted;
     }
     const escaped = S.me.username.replace(/[^A-Za-z0-9._-]/g, (ch) => "\\" + ch);
+    const channel = S.channels.get(m.channel);
+    if (channel?.kind === "group" && /(^|\\s)@all(?=$|[\\s.,!?])/i.test(text)) return true;
     return new RegExp(`(^|[^A-Za-z0-9._-])@${escaped}(?=$|[^A-Za-z0-9._-])`, "i").test(text);
   };
   return inspect().catch(() => false);
@@ -1765,14 +1767,14 @@ function _channelItem(c) {
   }, [
     el("div", { class: "avatar", style: `background:var(--brand)` }, isNotes ? "📝" : "#"),
     el("div", { class: "chat-meta" }, [
-      el("div", { class: "chat-name" }, [pinned ? el("span", { class: "chat-pin-mark", title: "Pinned chat", "aria-hidden": "true", html: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s7-4.5 7-12a7 7 0 1 0-14 0c0 7.5 7 12 7 12Z"/><circle cx="12" cy="10" r="2.4"/></svg>' }) : null, c.name || c.id]),
+      el("div", { class: "chat-name" }, [pinned ? el("span", { class: "chat-pin-mark", title: "Pinned chat", "aria-hidden": "true", html: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 3 5 5-4 1-4 4-1 5-2-2-4 4-2-2 4-4-2-2 5-1 4-4 1-4Z"/><path d="m10 14-6 6"/></svg>' }) : null, c.name || c.id]),
       el("div", { class: "chat-sub muted xs" },
         isNotes ? "Personal notes · only you" : (c.kind === "lobby" ? "lobby · everyone" : (c.isPrivate ? "private channel" : "channel"))),
     ]),
     c.kind === "group" && S.unreadIndicators.get(c.id)?.mention ? el("span", { class: "chat-unread-signal mention-signal", title: "Unread mention", "aria-label": "Unread mention" }, "@") : null,
     c.kind === "group" && S.unreadIndicators.get(c.id)?.reply ? el("span", { class: "chat-unread-signal reply-signal", title: "Unread reply to you", "aria-label": "Unread reply to you" }, "↩") : null,
     unread ? el("span", { class: "badge badge-unread" }, String(unread)) : null,
-    el("button", { class: "chat-pin", type: "button", title: pinned ? "Unpin chat" : "Pin chat", "aria-label": pinned ? "Unpin chat" : "Pin chat", onclick: (ev) => { ev.stopPropagation(); toggleChatPin(c.id); }, html: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s7-4.5 7-12a7 7 0 1 0-14 0c0 7.5 7 12 7 12Z"/><circle cx="12" cy="10" r="2.4"/></svg>' }),
+    el("button", { class: "chat-pin" + (pinned ? " is-pinned" : ""), type: "button", title: pinned ? "Unpin chat" : "Pin chat", "aria-label": pinned ? "Unpin chat" : "Pin chat", onclick: (ev) => { ev.stopPropagation(); toggleChatPin(c.id); }, html: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s7-4.5 7-12a7 7 0 1 0-14 0c0 7.5 7 12 7 12Z"/><circle cx="12" cy="10" r="2.4"/></svg>' }),
     canDelete ? el("button", {
       class: "chat-del",
       title: `Delete #${c.name || c.id}`,
@@ -1840,11 +1842,11 @@ function _dmItem(c) {
       el("span", { class: "presence-dot" }),
     ]),
     el("div", { class: "chat-meta" }, [
-      el("div", { class: "chat-name" }, [pinned ? el("span", { class: "chat-pin-mark", title: "Pinned chat", "aria-hidden": "true", html: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s7-4.5 7-12a7 7 0 1 0-14 0c0 7.5 7 12 7 12Z"/><circle cx="12" cy="10" r="2.4"/></svg>' }) : null, userNameNode(u || { username: peerName })]),
+      el("div", { class: "chat-name" }, [pinned ? el("span", { class: "chat-pin-mark", title: "Pinned chat", "aria-hidden": "true", html: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 3 5 5-4 1-4 4-1 5-2-2-4 4-2-2 4-4-2-2 5-1 4-4 1-4Z"/><path d="m10 14-6 6"/></svg>' }) : null, userNameNode(u || { username: peerName })]),
       el("div", { class: "chat-sub muted xs" }, online ? "online" : "offline"),
     ]),
     unread ? el("span", { class: "badge badge-unread" }, String(unread)) : null,
-    el("button", { class: "chat-pin", type: "button", title: pinned ? "Unpin chat" : "Pin chat", "aria-label": pinned ? "Unpin chat" : "Pin chat", onclick: (ev) => { ev.stopPropagation(); toggleChatPin(c.id); }, html: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s7-4.5 7-12a7 7 0 1 0-14 0c0 7.5 7 12 7 12Z"/><circle cx="12" cy="10" r="2.4"/></svg>' }),
+    el("button", { class: "chat-pin" + (pinned ? " is-pinned" : ""), type: "button", title: pinned ? "Unpin chat" : "Pin chat", "aria-label": pinned ? "Unpin chat" : "Pin chat", onclick: (ev) => { ev.stopPropagation(); toggleChatPin(c.id); }, html: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s7-4.5 7-12a7 7 0 1 0-14 0c0 7.5 7 12 7 12Z"/><circle cx="12" cy="10" r="2.4"/></svg>' }),
     el("button", {
       class: "chat-del",
       title: `Delete conversation with ${peerName}`,
@@ -2486,6 +2488,7 @@ async function renderMessage(m, { follow, peer, ch }) {
   // WhatsApp-style hover controls: reaction stays outside the bubble; arrow lives inside it.
   const savedNow = isMessageSaved(m);
   const canDeleteMessage = isOwn || ch?.kind === "group";
+  const canPinMessage = ch?.kind !== "group" || ch.createdBy === S.me?.id || ch.memberRoles?.[S.me?.id] === "moderator" || ch.memberRoles?.[S.me?.id] === "owner";
   const quickReaction = el("button", {
     type: "button",
     class: "msg-hover-reaction",
@@ -2509,7 +2512,7 @@ async function renderMessage(m, { follow, peer, ch }) {
   const menu = el("div", { class: "msg-menu", role: "menu" }, [
     el("button", { type: "button", class: "msg-menu-item", onclick: (ev) => { ev.stopPropagation(); closeMessageMenu(row, menu, bubble); startReplyTo(m, displayText, fileRealName); } }, [svg("M10 9V5l-7 7 7 7v-4c5 0 8 1.5 10 5-1-7-5-11-10-11z", 16), "Reply"]),
     el("button", { type: "button", class: "msg-menu-item", onclick: (ev) => { ev.stopPropagation(); closeMessageMenu(row, menu, bubble); openForwardDialog(m, displayText, fileRealName, peer); } }, [svg("M14 5l7 7-7 7M21 12H9a6 6 0 0 0-6 6", 16), "Forward"]),
-    el("button", { type: "button", class: "msg-menu-item", onclick: (ev) => { ev.stopPropagation(); closeMessageMenu(row, menu, bubble); toggleMessagePin(m); } }, [svg("M16 3l5 5-4 1-4 4-1 5-2-2-4 4-2-2 4-4-2-2 5-1 4-4z", 16), isMessagePinned(m) ? "Unpin" : "Pin"]),
+    ...(canPinMessage ? [el("button", { type: "button", class: "msg-menu-item", onclick: (ev) => { ev.stopPropagation(); closeMessageMenu(row, menu, bubble); toggleMessagePin(m); } }, [svg("m16 3 5 5-4 1-4 4-1 5-2-2-4 4-2-2 4-4-2-2 5-1 4-4z", 16), isMessagePinned(m) ? "Unpin" : "Pin"])] : []),
     el("button", { type: "button", class: "msg-menu-item", onclick: (ev) => { ev.stopPropagation(); closeMessageMenu(row, menu, bubble); toggleMessageBookmark(m); } }, [svg("M6 4h12v17l-6-4-6 4z", 16), savedNow ? "Remove saved message" : "Save message"]),
     el("button", { type: "button", class: "msg-menu-item", onclick: async (ev) => { ev.stopPropagation(); closeMessageMenu(row, menu, bubble); try { await navigator.clipboard.writeText(displayText || fileRealName || ""); toast("Copied"); } catch { toast("Could not copy this message"); } } }, [svg("M8 8V4h12v12h-4M4 8h12v12H4z", 16), "Copy"]),
     el("button", { type: "button", class: "msg-menu-item danger", disabled: !canDeleteMessage, title: canDeleteMessage ? "Delete for everyone" : "Only the sender or group admin can delete this message", onclick: (ev) => { ev.stopPropagation(); closeMessageMenu(row, menu, bubble); if (canDeleteMessage && confirm("Delete this message for everyone? This cannot be undone.")) sendOp({ op: "delete_message", channel: m.channel, msgId: Number(m.id) }); } }, [svg("M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14M10 10v6M14 10v6", 16), "Delete for everyone"]),
@@ -2740,15 +2743,19 @@ function openReactionPicker(anchor, msgId) {
   };
   renderQuick(); document.body.append(pop); position(); requestAnimationFrame(position);
   setTimeout(() => {
-    document.addEventListener("click", _rpDismiss, { once: true, capture: true });
+    document.addEventListener("click", _rpDismiss, true);
     document.addEventListener("keydown", _rpKey);
   }, 0);
 }
 function closeReactionPicker() {
   document.querySelectorAll(".reaction-pop").forEach((n) => n.remove());
   document.removeEventListener("keydown", _rpKey);
+  document.removeEventListener("click", _rpDismiss, true);
 }
-function _rpDismiss() { closeReactionPicker(); }
+function _rpDismiss(ev) {
+  if (ev?.target?.closest?.(".reaction-pop")) return;
+  closeReactionPicker();
+}
 function _rpKey(e) { if (e.key === "Escape") closeReactionPicker(); }
 
 function updateHeader() {
@@ -3240,10 +3247,14 @@ function updateMentionPicker() {
   const token = getMentionToken();
   if (!token) { closeMentionPicker(); return; }
   const query = token.query.toLowerCase();
-  const candidates = [...S.users.values()]
+  const activeChannel = S.channels.get(S.active);
+  const allCandidate = activeChannel?.kind === "group" && "all".startsWith(query)
+    ? [{ id: "__all__", username: "all", color: "var(--brand)", avatar: "@", online: true, isAll: true }]
+    : [];
+  const candidates = [...allCandidate, ...[...S.users.values()]
     .filter((u) => u.username && u.username.toLowerCase() !== (S.me?.username || "").toLowerCase())
     .filter((u) => u.username.toLowerCase().startsWith(query))
-    .sort((a, b) => a.username.localeCompare(b.username))
+    .sort((a, b) => a.username.localeCompare(b.username))]
     .slice(0, 8);
   if (!candidates.length) { closeMentionPicker(); return; }
   mentionToken = token;
@@ -3259,7 +3270,7 @@ function updateMentionPicker() {
     }, [
       el("span", { class: "mention-option-avatar", style: `background:${u.color || colorForName(u.username)}` }, (u.avatar || u.username[0] || "?").toUpperCase()),
       el("span", { class: "mention-option-name" }, "@" + u.username),
-      el("span", { class: "mention-option-status" }, u.online ? "online" : ""),
+      el("span", { class: "mention-option-status" }, u.isAll ? "everyone in group" : (u.online ? "online" : "")),
     ]);
     return item;
   }));
@@ -4567,7 +4578,7 @@ async function renderChannelInfo() {
       ${canEditPhoto ? '<input id="ciPhotoFileInput" type="file" accept="image/png,image/jpeg,image/webp" hidden aria-label="Choose group photo">' : ""}
       <div class="ci-name-row"><div class="ci-name">${_ciEsc(title)}</div>${canEditDescription ? '<button type="button" id="ciNameEditBtn" class="ci-name-edit" aria-label="Edit channel name" title="Edit channel name" aria-expanded="false"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>' : ""}</div>
        <div class="ci-subtitle">${isDm ? "Direct message · End-to-end encryption when available" : (ch.kind === "lobby" ? "Public channel" : (ch.isPrivate ? "Private group" : "Group conversation")) + " · " + members.length + " member" + (members.length === 1 ? "" : "s")}</div>
-       ${!isDm && ch.kind !== "lobby" ? `<div class="ci-description-row"><div class="ci-description" id="ciDescriptionText">${_ciEsc(description || "No group description yet.")}${canEditDescription ? '<button type="button" id="ciDescEditBtn" class="ci-name-edit ci-desc-edit" aria-label="Edit channel description" title="Edit channel description"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>' : ""}</div></div>` : ""}
+       ${!isDm && ch.kind !== "lobby" ? `<div class="ci-description-row"><div class="ci-description" id="ciDescriptionText"><span class="ci-description-copy" id="ciDescriptionCopy">${_ciEsc(description || "No group description yet.")}</span>${canEditDescription ? '<button type="button" id="ciDescEditBtn" class="ci-name-edit ci-desc-edit" aria-label="Edit channel description" title="Edit channel description"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>' : ""}</div></div>` : ""}
        ${canEditDescription ? `
          <form id="ciEditNameForm" class="ci-edit-group" hidden>
            <label for="ciNameInput">Channel name</label>
@@ -4605,7 +4616,7 @@ async function renderChannelInfo() {
     </section>
   `;
   updateBrowserNotificationButton();
-  const descriptionNode = root.querySelector(".ci-description");
+  const descriptionNode = $("ciDescriptionCopy");
   if (descriptionNode && description) { descriptionNode.replaceChildren(); appendLinkedText(descriptionNode, description); }
   root.querySelectorAll("[data-ci-tab]").forEach(btn => btn.addEventListener("click", async () => {
     _channelInfoTab = btn.dataset.ciTab;

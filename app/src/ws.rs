@@ -1713,6 +1713,13 @@ async fn handle_op(
             let msg_id = v.get("msgId").and_then(Value::as_u64).ok_or("missing msgId")?;
             let ch = state.channels.get(channel_id).ok_or("no such channel")?;
             if !can_send(&ch, &user_id) { return Err("not a member".into()); }
+            if matches!(ch.kind, ChannelKind::Group) {
+                let role = state.db.member_role(channel_id, user_id.as_str()).await
+                    .map_err(|_| "could not verify group role".to_string())?;
+                if ch.created_by != user_id && role.as_deref() != Some("owner") && role.as_deref() != Some("moderator") {
+                    return Err("only group owners and moderators can pin or unpin messages".into());
+                }
+            }
             let exists = state.db.message_exists_in_channel(channel_id, msg_id).await
                 .map_err(|_| "could not verify message".to_string())?;
             if !exists { return Err("message not found".into()); }

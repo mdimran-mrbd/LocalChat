@@ -3341,3 +3341,24 @@ body.poll-modal-open { overflow:hidden; }
 .ci-description { display:flex; align-items:flex-start; gap:6px; }
 .ci-description .ci-desc-edit { flex:0 0 auto; margin-top:-3px; }
 .ci-description:hover .ci-desc-edit,.ci-description:focus-within .ci-desc-edit { opacity:1; }
+
+
+/* Reaction picker: expanded emoji catalog and quick actions. */
+.reaction-pop{position:fixed;z-index:10050;display:flex;align-items:center;gap:4px;padding:6px;border:1px solid var(--border);border-radius:14px;background:var(--bg-1);color:var(--fg-0);box-shadow:0 12px 36px rgba(0,0,0,.24);max-width:calc(100vw - 16px);box-sizing:border-box}
+.reaction-pop .rp-btn{flex:0 0 34px;width:34px;height:34px;display:grid;place-items:center;border:0;border-radius:8px;padding:0;background:transparent;color:inherit;font-size:22px;line-height:1;cursor:pointer}
+.reaction-pop .rp-btn:hover{background:var(--bg-hover)}
+.reaction-pop .rp-more{font-size:22px;font-weight:500}
+.reaction-pop.expanded{display:flex;flex-direction:column;align-items:stretch;gap:8px;max-height:min(440px,calc(100vh - 16px));padding:10px}
+.rp-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.rp-close{border:0;background:transparent;color:var(--fg-2);font-size:22px;cursor:pointer}
+.rp-search{width:100%;min-width:0;box-sizing:border-box;border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--fg-0);background:var(--bg-0)}
+.rp-tabs{display:flex;gap:4px;overflow-x:auto;flex:0 0 auto}
+.rp-tabs button{border:0;border-radius:7px;padding:6px 8px;background:transparent;color:var(--fg-2);white-space:nowrap;cursor:pointer}
+.rp-tabs button.active{background:var(--bg-hover);color:var(--fg-0)}
+.rp-grid{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:2px;overflow-y:auto;min-height:0;flex:1 1 auto}
+.rp-grid .rp-btn{width:100%;min-width:0}
+.rp-empty{grid-column:1/-1;padding:18px 6px;color:var(--fg-2);text-align:center;font-size:13px}
+.chat-pin.is-pinned{color:var(--fg-0);background:var(--bg-hover)}
+.chat-pin-mark{color:var(--fg-1)}
+.ci-description .ci-desc-edit{opacity:1;visibility:visible}
+.ci-description-copy{min-width:0;overflow-wrap:anywhere}
