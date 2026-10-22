@@ -2183,7 +2183,7 @@ function renderEmptyState(ch) {
     ? "Messages here are end-to-end encrypted. The server admin cannot read them."
     : "Say hi or share a file. Messages stay on this local network.";
   return el("div", { class: "stream-empty" }, [
-    el("div", { class: "brand-mark", html: `<svg viewBox="0 0 32 32" width="56" height="56"><defs><linearGradient id="lcEmpty" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#6366f1"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#lcEmpty)"/><path d="M8 10a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3h-5l-4 3v-3h-1a3 3 0 0 1-3-3z" fill="white"/><circle cx="13" cy="13.5" r="1.3" fill="#6366f1"/><circle cx="16" cy="13.5" r="1.3" fill="#6366f1"/><circle cx="19" cy="13.5" r="1.3" fill="#6366f1"/></svg>` }),
+    el("div", { class: "brand-mark", html: `<svg viewBox="0 0 32 32" width="56" height="56"><defs><linearGradient id="lcEmpty" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#087a50"/><stop offset="1" stop-color="#35a875"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#lcEmpty)"/><path d="M8 10a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3h-5l-4 3v-3h-1a3 3 0 0 1-3-3z" fill="white"/><circle cx="13" cy="13.5" r="1.3" fill="#087a50"/><circle cx="16" cy="13.5" r="1.3" fill="#087a50"/><circle cx="19" cy="13.5" r="1.3" fill="#087a50"/></svg>` }),
     el("h3", {}, title),
     el("p", {}, sub),
   ]);
@@ -2217,7 +2217,7 @@ async function renderMessage(m, { follow, peer, ch }) {
     avatar = el("button", {
       type: "button",
       class: "avatar avatar-link",
-      style: `background:${m.color || "#6366f1"}`,
+      style: `background:${m.color || "#087a50"}`,
       title: `Message ${m.username}`,
       onclick: (ev) => {
         ev.stopPropagation();
@@ -4621,7 +4621,7 @@ async function renderChannelInfo() {
   const isDm = ch.kind === "dm";
   const peer = isDm ? _ciPeer(ch) : null;
   const title = isDm ? (peer?.username || ch.dmUsers?.find(n => n?.toLowerCase() !== S.me?.username?.toLowerCase()) || "Direct message") : (ch.name || "Group");
-  const members = (ch.members || []).map(id => S.users.get(id) || { id, username: id === S.me?.id ? (S.me?.username || "You") : "Offline member", avatar: "?", color: "#6366f1" });
+  const members = (ch.members || []).map(id => S.users.get(id) || { id, username: id === S.me?.id ? (S.me?.username || "You") : "Offline member", avatar: "?", color: "#087a50" });
   const profileAvatar = isDm ? (peer?.avatar || "?") : (title.slice(0,1).toUpperCase() || "#");
   const canEditPhoto = ch.kind === "group" && (ch.createdBy === S.me?.id || ch.memberRoles?.[S.me?.id] === "moderator" || ch.memberRoles?.[S.me?.id] === "owner");
   const description = ch.description || "";
@@ -4748,7 +4748,7 @@ function renderChannelInfoMembers(members) {
   if (!filtered.length) { root.innerHTML = '<div class="ci-empty">No matching members.</div>'; return; }
   for (const u of filtered) {
     const row = document.createElement("div"); row.className = "ci-member";
-    const avatar = document.createElement("div"); avatar.className = "ci-member-avatar"; avatar.style.background = u.color || "#6366f1"; renderAvatarContent(avatar, u.avatar, (u.username || "?").slice(0,1));
+    const avatar = document.createElement("div"); avatar.className = "ci-member-avatar"; avatar.style.background = u.color || "#087a50"; renderAvatarContent(avatar, u.avatar, (u.username || "?").slice(0,1));
     const main = document.createElement("div"); main.className = "ci-member-main";
     const name = document.createElement("div"); name.className = "ci-member-name"; name.append(userNameNode(u)); if (u.id === S.me?.id) name.append(document.createTextNode(" (you)"));
     const role = document.createElement("div"); role.className = "ci-member-role"; role.textContent = u.role === "owner" || u.id === S.channels.get(S.active)?.createdBy ? "Group owner" : (u.role === "moderator" ? "Moderator" : (u.online ? "Online" : "Member"));
