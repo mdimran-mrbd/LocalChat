@@ -99,8 +99,16 @@ async fn users(
     // accounts are not omitted if the in-memory cache is stale after restart.
     let persisted = state.db.list_users().await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("could not load users: {e}")))?;
-    for u in &persisted { state.known_users.insert(u.id.clone(), u.clone()); }
-    let mut list: Vec<serde_json::Value> = persisted
+    let mut all_users: Vec<_> = state.known_users.iter().map(|entry| entry.value().clone()).collect();
+    for user in persisted {
+        state.known_users.insert(user.id.clone(), user.clone());
+        if let Some(existing) = all_users.iter_mut().find(|known| known.id == user.id) {
+            *existing = user;
+        } else {
+            all_users.push(user);
+        }
+    }
+    let mut list: Vec<serde_json::Value> = all_users
         .into_iter()
         .map(|u| {
             let u = &u;
