@@ -117,4 +117,4 @@ Typography target: system sans-serif stack led by `Inter` when locally available
 - [x] Identified major screens, drawers, menus, dialogs, and interaction groups.
 - [x] Documented E2EE, permission, stable-selector, and release guardrails.
 - [x] Created a dedicated redesign branch from the latest tested Chat Info UX branch.
-- [ ] Begin implementation only after this baseline is recorded; validate changes incrementally.
+- [x] Began implementation incrementally on the dedicated redesign branch; updated shared tokens, core shell/message/composer styling, Info/settings styling, favicon, and generated avatar accents.\n- [ ] Validate in CI and a Windows test executable before asking the user to test.
