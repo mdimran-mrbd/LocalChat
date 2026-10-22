@@ -35,28 +35,36 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          REPUBLISH=false
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             TAG="${GITHUB_REF#refs/tags/}"
           else
             git fetch --tags --force >/dev/null 2>&1 || true
             LATEST=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -n1)
-          PACKAGE_VERSION="$(sed -n 's/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' app/Cargo.toml | head -n1)"
-          if [[ -z "$PACKAGE_VERSION" ]]; then
-            echo "Could not read package version from app/Cargo.toml" >&2
-            exit 1
-          fi
-          LATEST_VERSION="${LATEST#v}"
-          # Honor an explicitly prepared package version when it is newer than
-          # the latest release tag; otherwise automatically increment the patch.
-          if [[ -z "$LATEST" ]] || [[ "$PACKAGE_VERSION" != "$LATEST_VERSION" && "$(printf '%s\n' "$LATEST_VERSION" "$PACKAGE_VERSION" | sort -V | tail -n1)" == "$PACKAGE_VERSION" ]]; then
-            TAG="v$PACKAGE_VERSION"
-          else
-            IFS='.' read -r MA MI PA <<< "$LATEST_VERSION"
-            TAG="v${MA}.${MI}.$((PA + 1))"
-          fi
-          # End of non-tag push path; tag pushes use the tag as-is.
+            PACKAGE_VERSION="$(sed -n 's/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' app/Cargo.toml | head -n1)"
+            if [[ -z "$PACKAGE_VERSION" ]]; then
+              echo "Could not read package version from app/Cargo.toml" >&2
+              exit 1
+            fi
+            COMMIT_SUBJECT="$(git log -1 --pretty=%s)"
+            if [[ "$COMMIT_SUBJECT" =~ \[republish[[:space:]]+(v[0-9]+\.[0-9]+\.[0-9]+)\] ]]; then
+              TAG="${BASH_REMATCH[1]}"
+              REPUBLISH=true
+            else
+              LATEST_VERSION="${LATEST#v}"
+              # Honor an explicitly prepared package version when newer than
+              # the latest release tag; otherwise automatically increment patch.
+              if [[ -z "$LATEST" ]] || [[ "$PACKAGE_VERSION" != "$LATEST_VERSION" && "$(printf '%s\n' "$LATEST_VERSION" "$PACKAGE_VERSION" | sort -V | tail -n1)" == "$PACKAGE_VERSION" ]]; then
+                TAG="v$PACKAGE_VERSION"
+              else
+                IFS='.' read -r MA MI PA <<< "$LATEST_VERSION"
+                TAG="v${MA}.${MI}.$((PA + 1))"
+              fi
+            fi
           fi
           echo "Selected tag: $TAG"
+          echo "republish=$REPUBLISH" >> "$GITHUB_OUTPUT"
+
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           # Bare semver (no leading 'v') for embedding in the binary.
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
@@ -126,6 +134,14 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
+      - name: Move existing release tag for an intentional documentation rebuild
+        if: needs.version.outputs.republish == 'true'
+        env:
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          git tag -f "$TAG" "$GITHUB_SHA"
+          git push --force origin "$TAG"
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -144,6 +160,19 @@ jobs:
           sha256sum LocalChat.exe > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
+      - name: Select release notes
+        id: notes
+        shell: bash
+        run: |
+          NOTES="docs/releases/${{ needs.version.outputs.tag }}.md"
+          if [[ -f "$NOTES" ]]; then
+            echo "path=$NOTES" >> "$GITHUB_OUTPUT"
+            echo "generated=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "path=" >> "$GITHUB_OUTPUT"
+            echo "generated=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Create / update Release
         uses: softprops/action-gh-release@v2
         with:
@@ -151,7 +180,8 @@ jobs:
           name: LocalChat ${{ needs.version.outputs.version }} — Build ${{ needs.version.outputs.build }}
           target_commitish: ${{ github.sha }}
           files: release/*
-          generate_release_notes: true
+          body_path: ${{ steps.notes.outputs.path }}
+          generate_release_notes: ${{ steps.notes.outputs.generated }}
           draft: false
           prerelease: false
           make_latest: true
