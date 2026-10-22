@@ -95,11 +95,23 @@ async fn users(
     // Return *every* user the server has ever seen (not just live ones)
     // so the admin can audit who has connected, when, and from where.
     // Online status is derived from the live `users` map.
-    let mut list: Vec<serde_json::Value> = state
-        .known_users
-        .iter()
-        .map(|e| {
-            let u = e.value();
+    // Re-read the durable user table for each admin listing so historical
+    // accounts are not omitted if the in-memory cache is stale after restart.
+    let persisted = state.db.list_users().await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("could not load users: {e}")))?;
+    let mut all_users: Vec<_> = state.known_users.iter().map(|entry| entry.value().clone()).collect();
+    for user in persisted {
+        state.known_users.insert(user.id.clone(), user.clone());
+        if let Some(existing) = all_users.iter_mut().find(|known| known.id == user.id) {
+            *existing = user;
+        } else {
+            all_users.push(user);
+        }
+    }
+    let mut list: Vec<serde_json::Value> = all_users
+        .into_iter()
+        .map(|u| {
+            let u = &u;
             let live = state.users.get(&u.id).map(|l| l.value().clone());
             let online = live.is_some();
             let sockets = state.connections.get(&u.id).map(|n| *n).unwrap_or(0);

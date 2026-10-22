@@ -42,9 +42,12 @@
     })();
     // Apply saved theme before paint to avoid flash.
     (function () {
-      // Dark mode is disabled; always use light.
-      document.documentElement.setAttribute("data-theme", "light");
-      try { localStorage.setItem("localchat-theme", "light"); } catch (e) {}
+      var theme = "light";
+      try {
+        var savedTheme = localStorage.getItem("localchat-theme");
+        if (savedTheme === "light" || savedTheme === "dark") theme = savedTheme;
+      } catch (e) {}
+      document.documentElement.setAttribute("data-theme", theme);
     })();
   </script>
 </head>
@@ -173,7 +176,7 @@
 
         <div class="sb-search">
           <svg class="sb-search-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>
-          <input id="sbSearch" type="search" placeholder="Search people, channels…" autocomplete="off" oninput="setSidebarFilter(this.value)"/>
+          <input id="sbSearch" type="search" placeholder="Search chats; press Enter for messages…" autocomplete="off" oninput="setSidebarFilter(this.value)" onkeydown="handleSidebarSearchKeydown(event)"/>
           <button type="button" class="sb-search-clear" id="sbSearchClear" title="Clear" aria-label="Clear search" hidden onclick="setSidebarFilter('')">×</button>
         </div>
 
@@ -188,6 +191,20 @@
       <div class="sb-foot">
         <div class="sb-foot-row">
           <div class="me-chip" id="meChip"></div>
+          <div id="browserNotificationControl" class="browser-notification-control">
+            <button id="browserNotificationsBtn" class="icon-btn browser-notification-button" type="button" title="Enable browser notifications" aria-label="Enable browser notifications" aria-haspopup="true" aria-expanded="false">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/><path d="m3 3 18 18"/></svg>
+            </button>
+            <div id="browserNotificationMenu" class="browser-notification-menu" role="menu" aria-label="Browser notification controls" hidden>
+              <button type="button" role="menuitem" data-notification-action="enable">Enable browser notifications</button>
+              <button type="button" role="menuitem" data-notification-action="resume" hidden>Resume notifications now</button>
+              <div class="browser-notification-menu-label">Snooze notifications</div>
+              <button type="button" role="menuitem" data-snooze-minutes="5">For 5 minutes</button>
+              <button type="button" role="menuitem" data-snooze-minutes="30">For 30 minutes</button>
+              <button type="button" role="menuitem" data-snooze-minutes="60">For 1 hour</button>
+              <button type="button" role="menuitem" data-snooze-minutes="480">For 8 hours</button>
+            </div>
+          </div>
         </div>
       </div>
     </aside>
@@ -207,8 +224,8 @@
           <span class="badge-lock hidden" id="e2eeBadge" title="End-to-end encrypted" aria-label="End-to-end encrypted">
             <svg viewBox="0 0 24 24" width="14" height="14"><path d="M6 10V7a6 6 0 0112 0v3M5 10h14v10H5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
           </span>
-          <button id="browserNotificationsBtn" class="icon-btn ch-tool-btn" title="Enable browser notifications" aria-label="Enable browser notifications" onclick="toggleBrowserNotifications()"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg></button>
           <button id="savedMessagesBtn" class="icon-btn ch-tool-btn" title="View saved messages" aria-label="View saved messages" onclick="openSavedMessages()"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/></svg><span id="savedMessagesCount" class="saved-count hidden"></span></button>
+          <button id="channelInfoBtn" class="icon-btn ch-tool-btn" title="Chat info" aria-label="Chat info" onclick="openChannelInfo()"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7h.01"/></svg></button>
           <button id="messageSearchBtn" class="icon-btn ch-tool-btn" title="Search this channel's messages" aria-label="Search this channel's messages" onclick="openMessageSearch()"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg></button>
           <form id="messageSearchBar" class="message-search-bar hidden" onsubmit="runMessageSearch(event)" role="search" aria-label="Search channel messages">
             <input id="messageSearchInput" type="search" placeholder="Search messages…" minlength="2" maxlength="100" autocomplete="off" aria-label="Search messages" onkeydown="handleMessageSearchKeydown(event)" />
@@ -255,6 +272,7 @@
         </div>
         <button type="button" id="mentionJumpBtn" class="mention-jump hidden" title="Jump to latest @mention" aria-label="Jump to latest @mention" aria-hidden="true">@</button>
         <textarea id="msgInput" rows="1" placeholder="Type a message" maxlength="4000"></textarea>
+        <button type="button" class="emoji-btn poll-create-btn" id="createPollBtn" title="Create group poll" aria-label="Create poll" onclick="createPollPrompt()">▤</button>
         <button type="button" class="emoji-btn" id="emojiBtn" title="Emoji" aria-label="Emoji">
           <span aria-hidden="true">😊</span>
         </button>
@@ -270,6 +288,19 @@
   </div>
 
   <!-- ═══════════════════ MODALS ═══════════════════ -->
+  <div id="pollCreateModal" class="modal hidden poll-create-modal" role="dialog" aria-modal="true" aria-labelledby="pollCreateTitle" aria-hidden="true" onclick="if(event.target===this)closePollModal()">
+    <form class="modal-panel poll-create-panel" onsubmit="submitPollCreate(event)">
+      <header class="modal-head"><div><h3 id="pollCreateTitle">Create a poll</h3><p class="muted sm">Ask your group a question and collect votes.</p></div><button type="button" class="icon-btn" onclick="closePollModal()" aria-label="Close poll form">×</button></header>
+      <div class="modal-body poll-create-body">
+        <label class="field"><span>Poll question</span><input id="pollQuestionInput" type="text" maxlength="180" required placeholder="What would you like to ask?" autocomplete="off"></label>
+        <div class="poll-options-label"><strong>Answer options</strong><span id="pollOptionCount" class="muted xs">2/10 options</span></div>
+        <div id="pollOptionsList" class="poll-options-list"></div>
+        <button type="button" id="pollAddOptionBtn" class="poll-add-option" onclick="addPollOption()">＋ Add option</button>
+        <p id="pollCreateStatus" class="status err" role="status" aria-live="polite"></p>
+      </div>
+      <footer class="modal-foot"><button type="button" class="btn btn-ghost" onclick="closePollModal()">Cancel</button><button type="submit" class="btn btn-primary">Create poll</button></footer>
+    </form>
+  </div>
   <div id="createModal" class="modal hidden" role="dialog" aria-labelledby="cmTitle">
     <form class="modal-panel" onsubmit="createChannel(event)">
       <header class="modal-head">
@@ -329,6 +360,34 @@
         <button type="button" class="btn btn-primary" id="invSendBtn" onclick="sendInvites()" disabled>Add</button>
       </footer>
     </div>
+  </div>
+
+  <!-- ═══════════════════ DESIGNATION ASSIGNMENT ═══════════════════ -->
+  <div id="designationModal" class="modal hidden" role="dialog" aria-labelledby="designationTitle" aria-modal="true">
+    <form class="modal-panel" onsubmit="submitDesignation(event)">
+      <header class="modal-head">
+        <h3 id="designationTitle">Set your designation</h3>
+      </header>
+      <div class="modal-body">
+        <p class="muted sm">Choose your current designation. This is a one-time account setting and will appear beside your name in LocalChat.</p>
+        <label class="field">
+          <span>Designation</span>
+          <select id="designationSelect" required>
+            <option value="">Choose designation…</option>
+            <option value="AM">Assistant Manager - AM</option>
+            <option value="TL">Team Leader - TL</option>
+            <option value="STL">Senior Team Leader - STL</option>
+            <option value="QDE">Quality Development Executive - QDE</option>
+            <option value="LRD">Learning &amp; Resource Development Lead - LRD</option>
+            <option value="EE">Escalation Executive - EE</option>
+            <option value="CSA">Customer Service Advisor - CSA</option>
+          </select>
+        </label>
+      </div>
+      <footer class="modal-foot">
+        <button id="designationSubmit" type="submit" class="btn btn-primary">Save designation</button>
+      </footer>
+    </form>
   </div>
 
   <!-- ═══════════════════ CHANGE PASSWORD MODAL ═══════════════════ -->
@@ -422,7 +481,7 @@
           </div>
         </div>
 
-        <section aria-labelledby="updateConsentTitle" style="margin-top:14px;padding:10px;background:var(--bg-2);border-radius:8px;">
+        <section id="updateConsentSection" aria-labelledby="updateConsentTitle" hidden style="margin-top:14px;padding:10px;background:var(--bg-2);border-radius:8px;">
           <label for="updateChecksOptIn" style="display:flex;gap:9px;align-items:flex-start;font-size:13px;font-weight:600;">
             <input id="updateChecksOptIn" type="checkbox" style="margin-top:3px;"/>
             <span id="updateConsentTitle">Check for updates (optional)</span>
@@ -499,6 +558,56 @@
     </div>
   </div>
 
+  <!-- Chat information drawer -->
+  <div id="settingsBackdrop" class="settings-backdrop hidden" onclick="closeSettingsPanel()" aria-hidden="true"></div>
+  <aside id="settingsPanel" class="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settingsTitle" aria-hidden="true">
+    <header class="settings-head">
+      <div><h2 id="settingsTitle">Settings</h2><p class="muted sm">Your LocalChat account and preferences</p></div>
+      <button type="button" class="icon-btn settings-close" onclick="closeSettingsPanel()" aria-label="Close settings">×</button>
+    </header>
+    <div class="settings-content">
+      <section class="settings-section">
+        <h3>Profile</h3>
+        <div class="profile-avatar-row">
+          <div class="avatar profile-avatar-preview" id="profileAvatarPreview" aria-label="Profile picture preview"></div>
+          <div class="profile-avatar-controls"><strong>Profile picture</strong><p class="muted xs">Upload a picture or choose a built-in avatar.</p>
+            <input id="profileAvatarFileInput" type="file" accept="image/png,image/jpeg,image/webp" hidden aria-label="Choose profile picture">
+            <button type="button" class="btn btn-ghost btn-sm" id="profileAvatarUploadBtn">Upload picture</button>
+            <div class="profile-avatar-presets" aria-label="Predefined avatars">
+              <button type="button" class="profile-avatar-preset" data-avatar="😀" aria-label="Smiling avatar" onclick="setProfileAvatarPreset('😀')">😀</button><button type="button" class="profile-avatar-preset" data-avatar="😎" aria-label="Cool avatar" onclick="setProfileAvatarPreset('😎')">😎</button><button type="button" class="profile-avatar-preset" data-avatar="🐱" aria-label="Cat avatar" onclick="setProfileAvatarPreset('🐱')">🐱</button><button type="button" class="profile-avatar-preset" data-avatar="🐼" aria-label="Panda avatar" onclick="setProfileAvatarPreset('🐼')">🐼</button><button type="button" class="profile-avatar-preset" data-avatar="🦊" aria-label="Fox avatar" onclick="setProfileAvatarPreset('🦊')">🦊</button><button type="button" class="profile-avatar-preset" data-avatar="🐸" aria-label="Frog avatar" onclick="setProfileAvatarPreset('🐸')">🐸</button><button type="button" class="profile-avatar-preset" data-avatar="🐙" aria-label="Octopus avatar" onclick="setProfileAvatarPreset('🐙')">🐙</button><button type="button" class="profile-avatar-preset" data-avatar="🦄" aria-label="Unicorn avatar" onclick="setProfileAvatarPreset('🦄')">🦄</button><button type="button" class="profile-avatar-preset" data-avatar="🐧" aria-label="Penguin avatar" onclick="setProfileAvatarPreset('🐧')">🐧</button><button type="button" class="profile-avatar-preset" data-avatar="🐨" aria-label="Koala avatar" onclick="setProfileAvatarPreset('🐨')">🐨</button><button type="button" class="profile-avatar-preset" data-avatar="🐯" aria-label="Tiger avatar" onclick="setProfileAvatarPreset('🐯')">🐯</button><button type="button" class="profile-avatar-preset" data-avatar="🦋" aria-label="Butterfly avatar" onclick="setProfileAvatarPreset('🦋')">🦋</button><button type="button" class="profile-avatar-preset" data-avatar="🌟" aria-label="Star avatar" onclick="setProfileAvatarPreset('🌟')">🌟</button><button type="button" class="profile-avatar-preset" data-avatar="🌈" aria-label="Rainbow avatar" onclick="setProfileAvatarPreset('🌈')">🌈</button><button type="button" class="profile-avatar-preset" data-avatar="🚀" aria-label="Rocket avatar" onclick="setProfileAvatarPreset('🚀')">🚀</button>
+            </div><p id="profileAvatarStatus" class="status" role="status" aria-live="polite"></p>
+          </div>
+        </div>
+        <form id="profileSettingsForm" onsubmit="event.preventDefault()">
+          <div class="profile-edit-row"><label class="field" for="profileUsername"><span>Username</span><input id="profileUsername" minlength="3" maxlength="24" required autocomplete="username" pattern="[A-Za-z0-9][A-Za-z0-9_.-]{2,23}" disabled></label>
+            <button type="button" class="profile-edit-icon" id="editUsernameBtn" title="Edit username" aria-label="Edit username" onclick="setProfileFieldEditing('username',true)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg></button>
+          </div>
+          <div class="profile-edit-actions" id="usernameEditActions" hidden><button type="button" class="btn btn-ghost btn-sm" onclick="cancelProfileFieldEdit('username')">Cancel</button><button type="button" class="btn btn-primary btn-sm" id="saveUsernameBtn" onclick="submitProfileField('username')">Save username</button></div>
+          <div class="profile-edit-row"><label class="field" for="profileDesignation"><span>Designation</span><select id="profileDesignation" required disabled>
+            <option value="AM">Assistant Manager - AM</option><option value="TL">Team Leader - TL</option><option value="STL">Senior Team Leader - STL</option><option value="QDE">Quality Development Executive - QDE</option><option value="LRD">Learning &amp; Resource Development Lead - LRD</option><option value="EE">Escalation Executive - EE</option><option value="CSA">Customer Service Advisor</option>
+          </select></label>
+            <button type="button" class="profile-edit-icon" id="editDesignationBtn" title="Edit designation" aria-label="Edit designation" onclick="setProfileFieldEditing('designation',true)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg></button>
+          </div>
+          <div class="profile-edit-actions" id="designationEditActions" hidden><button type="button" class="btn btn-ghost btn-sm" onclick="cancelProfileFieldEdit('designation')">Cancel</button><button type="button" class="btn btn-primary btn-sm" id="saveDesignationBtn" onclick="submitProfileField('designation')">Save designation</button></div>
+          <p id="profileSettingsStatus" class="status" role="status" aria-live="polite"></p>
+        </form>
+      </section>
+      <section class="settings-section"><h3 class="settings-section-heading"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="8" cy="18" r="2"/></svg>Appearance</h3><button id="themeToggle" class="settings-action" type="button" onclick="toggleTheme()">Toggle theme</button></section>
+      <section class="settings-section"><h3 class="settings-section-heading"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>Notifications</h3><div id="settingsNotificationsSlot"></div></section>
+      <section class="settings-section"><h3>Account security</h3><button class="settings-action" type="button" onclick="openChangePasswordModal({ forced: false }); closeSettingsPanel();">Change password</button></section>
+    </div>
+    <footer class="settings-logout-footer"><button type="button" class="settings-logout-btn" onclick="signOut()"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 17l5-5-5-5M15 12H3M12 3h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-6"/></svg>Logout</button></footer>
+  </aside>
+
+  <div id="channelInfoBackdrop" class="channel-info-backdrop hidden" onclick="closeChannelInfo()" aria-hidden="true"></div>
+  <aside id="channelInfoDrawer" class="channel-info-drawer hidden" role="dialog" aria-modal="true" aria-labelledby="channelInfoTitle">
+    <header class="channel-info-head">
+      <h2 id="channelInfoTitle">Chat info</h2>
+      <button type="button" class="icon-btn" onclick="closeChannelInfo()" aria-label="Close chat info">×</button>
+    </header>
+    <div id="channelInfoContent" class="channel-info-content"></div>
+  </aside>
+
   <!-- ═══════════════════ UPDATE NOTICE (host browser only) ═══════════════════ -->
   <div id="updateBanner" class="update-banner hidden" role="status" aria-live="polite">
     <div class="update-banner-copy">
@@ -507,6 +616,7 @@
       <span id="updateStatus" class="update-status"></span>
     </div>
     <button id="updateNowBtn" type="button" class="btn btn-primary btn-sm">Update now</button>
+    <button id="dismissUpdateBanner" type="button" class="update-banner-dismiss" aria-label="Dismiss update notice" title="Dismiss">×</button>
   </div>
 
   <!-- ═══════════════════ TOAST ═══════════════════ -->
@@ -561,6 +671,6 @@
     <audio id="remoteAudio" autoplay></audio>
   </div>
 
-  <script src="/app.js?v=20261018o"></script>
+  <script src="/app.js?v=20261021b"></script>
 </body>
 </html>

@@ -64,9 +64,7 @@ people share a network but not necessarily the internet:
    and share it with anyone on the same Wi-Fi.
 5. They open the URL, pick a name, and start chatting. No install, no signup.
 
-> 💡 The first visit shows a browser warning because the cert is self-signed.
-> Click **Advanced → Proceed**. To replace it with a real cert, see
-> [`app/scripts/`](app/scripts/).
+> 🔒 **HTTPS certificate note:** On a private LAN, browsers may show a certificate-authority warning until the LocalChat host's public CA certificate is trusted on the connecting device. Follow [the LAN HTTPS trust guide](docs/lan-https-trust.md). Do not proceed past a certificate warning unless you have verified you are connecting to your own trusted LocalChat host.
 
 ## Admin dashboard
 
@@ -114,7 +112,7 @@ cargo run --release                          # tray + browser auto-open
 cargo build --release --features tray        # produces target/release/localchat.exe
 ```
 
-CI publishes a single `LocalChat.exe` when you push a tag (`git tag v2.0.0 && git push origin v2.0.0`). Official release build numbering is maintained in [`app/BUILD_NUMBER`](app/BUILD_NUMBER), starting at Build 1; increment it for each official release. GitHub Actions run numbers are separate and are not product build numbers.
+Official releases are built and published by GitHub Actions when a release-ready change reaches `main`. Set the intended semantic version in `app/Cargo.toml` and the product build number in [`app/BUILD_NUMBER`](app/BUILD_NUMBER); when that version is newer than the latest release tag, the workflow uses it (otherwise it increments the latest patch version). The release includes `LocalChat.exe` and `SHA256SUMS.txt`. GitHub Actions run numbers are separate and are not product build numbers.
 
 > 🛠️ **Hacking on the internals?** See [`DESIGN.md`](DESIGN.md) for the full
 > architecture — concurrency model, persistence layout, E2EE protocol, wire

@@ -407,6 +407,10 @@ function paintUsers(host) {
   host.replaceChildren(...list.map((u) => userRow(u)));
 }
 
+function avatarContentAdmin(avatar, fallback) {
+  if (typeof avatar === "string" && avatar.startsWith("/uploads/") && !avatar.slice(9).includes("/")) return el("img", { src: avatar, alt: "", loading: "lazy" });
+  return document.createTextNode(avatar || fallback || "?");
+}
 function userRow(u) {
   const initial = (u.username?.[0] || "?").toUpperCase();
   const online = !!u.online;
@@ -429,11 +433,7 @@ function userRow(u) {
   sub.push(el("span", null, (u.msgCount || 0) + " msgs"));
 
   return el("div", { class: "ad-row ad-user-row" + (online ? " online" : " offline") }, [
-    el("div", { class: "ad-avatar", style: `background:${u.color || colorForName(u.username || "")}`, title: u.username }, [
-      document.createTextNode(initial),
-      el("span", { class: "ad-presence-dot " + (online ? "on" : "off"),
-                   title: online ? "Online" : "Offline" }),
-    ]),
+    (() => { const isImage = typeof u.avatar === "string" && u.avatar.startsWith("/uploads/") && !u.avatar.slice(9).includes("/"); const node = el("div", { class: "ad-avatar" + (isImage ? " has-avatar-image" : ""), style: `background:${u.color || colorForName(u.username || "")}`, title: u.username }); node.append(avatarContentAdmin(u.avatar, initial)); node.append(el("span", { class: "ad-presence-dot " + (online ? "on" : "off"), title: online ? "Online" : "Offline" })); return node; })(),
     el("div", { class: "ad-row-meta" }, [
       el("div", { class: "ad-row-title" }, [
         document.createTextNode(u.username || "—"),

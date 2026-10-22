@@ -49,4 +49,7 @@ pub struct UserInfo {
     /// Total number of WebSocket sessions this user has ever opened.
     #[serde(default)]
     pub total_sessions: u64,
+    /// Optional job designation selected once by each account.
+    #[serde(default)]
+    pub designation: CompactString,
 }

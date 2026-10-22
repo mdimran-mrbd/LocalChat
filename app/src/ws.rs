@@ -260,10 +260,18 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
     } else {
         pick_color_for(&username).to_compact_string()
     };
-    let pubkey = if !join.pubkey.is_empty() {
+    // If a password-wrapped key backup exists, keep the established public
+    // key until the client restores the matching private key from that backup.
+    let key_backup = state.db.get_e2ee_key_backup(&user_id).await.ok().flatten();
+    let has_existing_pubkey = prior.as_ref().map_or(false, |p| !p.pubkey.is_empty());
+    let pubkey = if key_backup.is_some() || has_existing_pubkey {
+        // Never replace an established DM identity with a fresh device key.
+        // A first device must upload its encrypted backup before another device can restore it.
+        prior.as_ref().map(|p| p.pubkey.clone()).unwrap_or_default()
+    } else if !join.pubkey.is_empty() {
         join.pubkey.chars().take(512).collect::<String>().to_compact_string()
     } else {
-        prior.as_ref().map(|p| p.pubkey.clone()).unwrap_or_default()
+        CompactString::const_new("")
     };
 
     let info = UserInfo {
@@ -280,6 +288,7 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
         last_seen: prior.as_ref().map(|p| p.last_seen).unwrap_or(0),
         last_connect: now_secs(),
         total_sessions: prior.as_ref().map(|p| p.total_sessions).unwrap_or(0) + 1,
+        designation: prior.as_ref().map(|p| p.designation.clone()).unwrap_or_default(),
     };
     state.users.insert(user_id.clone(), info.clone());
     state.known_users.insert(user_id.clone(), info.clone());
@@ -333,6 +342,24 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
         }
         PasswordAction::None => {}
     }
+
+    // Every account gets a durable, private Notes chat.
+    let notes_id = format!("notes:{}", user_id).to_compact_string();
+    let notes_channel = if let Some(existing) = state.channels.get(notes_id.as_str()) {
+        existing
+    } else {
+        let created = Arc::new(Channel::new(
+            notes_id.clone(), ChannelKind::Group, CompactString::const_new("Notes"), true,
+            user_id.clone(), state.channels.history_cap,
+        ));
+        created.members.insert(user_id.clone());
+        state.channels.map.insert(notes_id.clone(), Arc::clone(&created));
+        created
+    };
+    notes_channel.members.insert(user_id.clone());
+    state.channels.add_user_channel(user_id.clone(), &notes_id);
+    let _ = state.db.upsert_channel(&notes_channel.meta()).await;
+    let _ = state.db.add_member(&notes_id, user_id.clone(), now_secs()).await;
 
     // Auto-join the lobby.
     let lobby = state.channels.get(LOBBY_ID).expect("lobby always exists");
@@ -388,6 +415,7 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
         "lobby": LOBBY_ID,
         "session": session_token,
         "mustChangePassword": must_change_password,
+        "e2eeKeyBackup": key_backup,
     });
     if sink.send(Message::Text(welcome.to_string())).await.is_err() {
         // Session token is intentionally NOT removed on disconnect:
@@ -517,7 +545,7 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
                                             let invited = json!({
                                                 "ev":"ch_invited",
                                                 "channel": ch.id,
-                                                "channelName": ch.name,
+                                                "channelName": ch.name(),
                                                 "inviter": v.get("inviter").and_then(Value::as_str).unwrap_or("")
                                             });
                                             let _ = sink.send(Message::Text(invited.to_string())).await;
@@ -864,6 +892,70 @@ async fn handle_op(
     let op = v.get("op").and_then(Value::as_str).ok_or("missing op")?;
 
     match op {
+        "poll_create" => {
+            let channel_id = v.get("channel").and_then(Value::as_str).ok_or("missing channel")?.to_compact_string();
+            let question = v.get("question").and_then(Value::as_str).unwrap_or("").trim();
+            let options_value = v.get("options").and_then(Value::as_array).ok_or("missing poll options")?;
+            let ch = state.channels.get(&channel_id).ok_or("no such channel")?;
+            if !can_send(&ch, &user_id) { return Err("not a member".into()); }
+            if ch.kind != ChannelKind::Group || channel_id.starts_with("notes:") { return Err("polls are only available in group chats".into()); }
+            if question.is_empty() || question.chars().count() > 180 { return Err("Poll question must be 1–180 characters".into()); }
+            if options_value.len() < 2 || options_value.len() > 10 { return Err("Polls need 2–10 options".into()); }
+            let mut options = Vec::new();
+            for item in options_value {
+                let option = item.as_str().unwrap_or("").trim();
+                if option.is_empty() || option.chars().count() > 100 { return Err("Each poll option must be 1–100 characters".into()); }
+                options.push(option.to_string());
+            }
+            let unique: std::collections::HashSet<String> = options.iter().map(|s| s.to_lowercase()).collect();
+            if unique.len() != options.len() { return Err("Poll options must be unique".into()); }
+            let user = state.users.get(&user_id).ok_or("user gone")?.clone();
+            let poll_text = format!("poll:v1:{}", json!({"question":question,"options":options}));
+            let msg = Arc::new(WireMsg {
+                id: state.next_msg_id(), channel: channel_id.clone(), kind: MsgKind::Text,
+                user_id: user_id.clone(), username: user.username.clone(), avatar: user.avatar.clone(),
+                color: user.color.clone(), ts: now_secs(), text: poll_text, file: None,
+                reply_to: None, edited_at: None, deleted: false,
+            });
+            ch.push_history(msg.clone()).await;
+            state.db.insert_message(&msg).await.map_err(|_| "could not save poll".to_string())?;
+            state.metrics.inc_messages();
+            let _ = ch.tx.send(msg);
+        }
+
+        "poll_vote" | "poll_state" => {
+            let channel_id = v.get("channel").and_then(Value::as_str).ok_or("missing channel")?.to_compact_string();
+            let message_id = v.get("msgId").and_then(Value::as_u64).ok_or("missing poll message")?;
+            let ch = state.channels.get(&channel_id).ok_or("no such channel")?;
+            if !can_send(&ch, &user_id) { return Err("not a member".into()); }
+            if ch.kind == ChannelKind::Dm { return Err("polls are only available in group chats".into()); }
+            let poll_text = state.db.poll_message_text(&channel_id, message_id).await
+                .map_err(|_| "could not load poll".to_string())?.ok_or("poll not found")?;
+            let payload = poll_text.strip_prefix("poll:v1:").ok_or("message is not a poll")?;
+            let poll: Value = serde_json::from_str(payload).map_err(|_| "invalid poll data")?;
+            let option_count = poll.get("options").and_then(Value::as_array).map(|a| a.len()).ok_or("invalid poll options")?;
+            if op == "poll_vote" {
+                let option_index = v.get("optionIndex").and_then(Value::as_u64).ok_or("missing option")? as usize;
+                if option_index >= option_count { return Err("invalid poll option".into()); }
+                let saved = state.db.cast_poll_vote(&channel_id, message_id, user_id.as_str(), option_index, now_secs()).await
+                    .map_err(|_| "could not save vote".to_string())?;
+                if !saved { return Err("poll is no longer available".into()); }
+            }
+            let (counts, mine) = state.db.poll_results(&channel_id, message_id, user_id.as_str(), option_count).await
+                .map_err(|_| "could not load poll results".to_string())?;
+            let event = json!({"ev":"poll_update","channel":channel_id,"msgId":message_id,"counts":counts,"userVote":mine});
+            let _ = sink.send(Message::Text(event.to_string())).await;
+            if op == "poll_vote" {
+                let update = json!({"channel":channel_id,"msgId":message_id,"counts":counts});
+                let _ = ch.tx.send(Arc::new(WireMsg {
+                    id: 0, channel: channel_id, kind: MsgKind::System, user_id: user_id.clone(),
+                    username: CompactString::const_new("__poll"), avatar: CompactString::const_new(""),
+                    color: CompactString::const_new(""), ts: now_secs(), text: update.to_string(),
+                    file: None, reply_to: None, edited_at: None, deleted: true,
+                }));
+            }
+        }
+
         "send" => {
             let channel_id = v
                 .get("channel")
@@ -1026,7 +1118,7 @@ async fn handle_op(
 
             let out = json!({"ev":"ch_created","channel":ch.meta()});
             let _ = sink.send(Message::Text(out.to_string())).await;
-            broadcast_system(state, &ch, &format!("Channel #{} created", ch.name)).await;
+            broadcast_system(state, &ch, &format!("Channel #{} created", ch.name())).await;
             let _ = state.db.upsert_channel(&ch.meta()).await;
             let _ = state.db.add_member(&ch.id, user_id, now_secs()).await;
         }
@@ -1052,7 +1144,7 @@ async fn handle_op(
                 .get(&user_id)
                 .map(|u| u.value().username.to_string())
                 .unwrap_or_default();
-            broadcast_system(state, &ch, &format!("{} joined #{}", username, ch.name)).await;
+            broadcast_system(state, &ch, &format!("{} joined #{}", username, ch.name())).await;
             let _ = state.db.add_member(&ch.id, user_id, now_secs()).await;
         }
 
@@ -1063,6 +1155,9 @@ async fn handle_op(
                 .ok_or("missing channel")?;
             if id == LOBBY_ID {
                 return Err("cannot leave lobby".into());
+            }
+            if id.starts_with("notes:") {
+                return Err("Personal Notes cannot be left".into());
             }
             if let Some(ch) = state.channels.get(id) {
                 ch.members.remove(&user_id);
@@ -1085,6 +1180,7 @@ async fn handle_op(
                 .and_then(Value::as_array)
                 .ok_or("missing users")?;
             let ch = state.channels.get(id).ok_or("no such channel")?;
+            if id.starts_with("notes:") { return Err("Personal Notes cannot be shared with other members".into()); }
             if !ch.members.contains(&user_id) {
                 return Err("not a member".into());
             }
@@ -1120,7 +1216,7 @@ async fn handle_op(
                             "channel": ch.id,
                             "forUserId": uid.as_str(),
                             "inviter": inviter_name,
-                            "channelName": ch.name,
+                            "channelName": ch.name(),
                         });
                         let _ = lobby.tx.send(Arc::new(WireMsg {
                             id: 0,
@@ -1151,7 +1247,7 @@ async fn handle_op(
                             format!("{}, and {}", head.join(", "), last)
                         }
                     };
-                    let text = format!("{} added {} to #{}", inviter_name, joined, ch.name);
+                    let text = format!("{} added {} to #{}", inviter_name, joined, ch.name());
                     broadcast_system(state, &ch, &text).await;
                 }
                 let now = now_secs();
@@ -1256,6 +1352,7 @@ async fn handle_op(
             if !matches!(ch.kind, ChannelKind::Group) {
                 return Err("only group channels can be deleted".into());
             }
+            if id.starts_with("notes:") { return Err("Personal Notes cannot be deleted".into()); }
             if ch.created_by != user_id {
                 return Err("only the creator can delete this channel".into());
             }
@@ -1287,6 +1384,318 @@ async fn handle_op(
                 .await;
         }
 
+        "ch_info" => {
+            let id = v.get("channel").and_then(Value::as_str).ok_or("missing channel")?;
+            let ch = state.channels.get(id).ok_or("no such channel")?;
+            if !can_send(&ch, &user_id) { return Err("not a member".into()); }
+            let (name, description, photo_url) = state.db.channel_details(id).await
+                .map_err(|_| "could not load chat details".to_string())?
+                .unwrap_or_else(|| (ch.name().to_string(), String::new(), String::new()));
+            let member_ids: Vec<String> = ch.members.iter().map(|uid| uid.key().to_string()).collect();
+            let mut members = Vec::new();
+            for uid in member_ids {
+                let profile = state.users.get(uid.as_str()).map(|p| p.value().clone())
+                    .or_else(|| state.known_users.get(uid.as_str()).map(|p| p.value().clone()));
+                let role = state.db.member_role(id, &uid).await
+                    .ok().flatten().unwrap_or_else(|| {
+                        if uid == ch.created_by.as_str() { "owner".to_string() }
+                        else { "member".to_string() }
+                    });
+                if let Some(profile) = profile {
+                    members.push(json!({
+                        "id": profile.id,
+                        "username": profile.username,
+                        "avatar": profile.avatar,
+                        "color": profile.color,
+                        "pubkey": profile.pubkey,
+                        "designation": profile.designation,
+                        "online": state.users.contains_key(uid.as_str()),
+                        "role": role
+                    }));
+                } else {
+                    members.push(json!({"id": uid, "username":"Offline member", "avatar":"", "color":"", "online":false, "role":role}));
+                }
+            }
+            members.sort_by(|a, b| a.get("username").and_then(Value::as_str).unwrap_or("").to_lowercase()
+                .cmp(&b.get("username").and_then(Value::as_str).unwrap_or("").to_lowercase()));
+            let notification_mode = state.db.channel_notification(id, user_id.as_str()).await
+                .unwrap_or_else(|_| "all".to_string());
+            let out = json!({
+                "ev":"ch_info",
+                "channel":id,
+                "name":name,
+                "description":description,
+                "photoUrl":photo_url,
+                "members":members,
+                "notificationMode":notification_mode,
+                "createdBy":ch.created_by,
+                "kind":ch.kind,
+                "isPrivate":ch.is_private
+            });
+            let _ = sink.send(Message::Text(out.to_string())).await;
+        }
+
+        "ch_role_set" => {
+            let id = v.get("channel").and_then(Value::as_str).ok_or("missing channel")?;
+            let target = v.get("userId").and_then(Value::as_str).ok_or("missing userId")?;
+            let role = v.get("role").and_then(Value::as_str).ok_or("missing role")?;
+            if !matches!(role, "moderator" | "member") { return Err("invalid target role".into()); }
+            let ch = state.channels.get(id).ok_or("no such channel")?;
+            if !matches!(ch.kind, ChannelKind::Group) { return Err("roles are only available in groups".into()); }
+            if ch.created_by != user_id { return Err("only the group owner can change roles".into()); }
+            if !ch.members.contains(target) { return Err("target is not a group member".into()); }
+            let changed = state.db.set_member_role(id, target, role).await
+                .map_err(|_| "could not save member role".to_string())?;
+            if !changed { return Err("member role was not changed".into()); }
+            let out = json!({"ev":"ch_role_updated","channel":id,"userId":target,"role":role});
+            let _ = sink.send(Message::Text(out.to_string())).await;
+        }
+
+        "ch_member_remove" => {
+            let id = v.get("channel").and_then(Value::as_str).ok_or("missing channel")?;
+            let target = v.get("userId").and_then(Value::as_str).ok_or("missing userId")?;
+            if target == user_id.as_str() { return Err("use Leave group to remove yourself".into()); }
+            let ch = state.channels.get(id).ok_or("no such channel")?;
+            if !matches!(ch.kind, ChannelKind::Group) { return Err("member removal is only available in groups".into()); }
+            if !ch.members.contains(&user_id) { return Err("not a member".into()); }
+            let actor_role = state.db.member_role(id, user_id.as_str()).await
+                .ok().flatten().unwrap_or_else(|| if ch.created_by == user_id { "owner".to_string() } else { "member".to_string() });
+            let target_role = state.db.member_role(id, target).await
+                .ok().flatten().unwrap_or_else(|| if ch.created_by.as_str() == target { "owner".to_string() } else { "member".to_string() });
+            if actor_role != "owner" && actor_role != "moderator" { return Err("only owners and moderators can remove members".into()); }
+            if target_role == "owner" { return Err("the group owner cannot be removed".into()); }
+            if actor_role == "moderator" && target_role != "member" { return Err("moderators can only remove regular members".into()); }
+            let target_id = target.to_compact_string();
+            ch.members.remove(&target_id);
+            state.channels.remove_user_channel(target_id.clone(), id);
+            state.db.remove_member(id, target_id.clone()).await
+                .map_err(|_| "could not remove group member".to_string())?;
+            if let Some(lobby) = state.channels.get(LOBBY_ID) {
+                let payload = json!({"channel":id,"forUserId":target,"byUserId":user_id.as_str()});
+                let _ = lobby.tx.send(Arc::new(WireMsg {
+                    id: 0,
+                    channel: lobby.id.clone(),
+                    kind: MsgKind::System,
+                    user_id: user_id.clone(),
+                    username: CompactString::const_new("__ch_member_removed"),
+                    avatar: CompactString::const_new(""),
+                    color: CompactString::const_new(""),
+                    ts: now_secs(),
+                    text: payload.to_string(),
+                    file: None,
+                    reply_to: None,
+                    edited_at: None,
+                    deleted: true,
+                }));
+            }
+            let out = json!({"ev":"ch_member_removed","channel":id,"userId":target});
+            let _ = sink.send(Message::Text(out.to_string())).await;
+        }
+
+        "ch_update" => {
+            let id = v.get("channel").and_then(Value::as_str).ok_or("missing channel")?;
+            let ch = state.channels.get(id).ok_or("no such channel")?;
+            if !matches!(ch.kind, ChannelKind::Group) { return Err("only groups have editable details".into()); }
+            if id.starts_with("notes:") { return Err("Personal Notes name and privacy are fixed".into()); }
+            if ch.created_by != user_id { return Err("only the group owner can edit details".into()); }
+
+            let current_name = ch.name();
+            let name = v.get("name").and_then(Value::as_str).unwrap_or(current_name.as_str()).trim();
+            if name.chars().count() < 2 || name.chars().count() > 48 {
+                return Err("channel name must be between 2 and 48 characters".into());
+            }
+            let description = v.get("description").and_then(Value::as_str).unwrap_or("").trim();
+            if description.chars().count() > 500 { return Err("description is too long (max 500 characters)".into()); }
+
+            // Description edits must not overwrite or revalidate the existing photo URL.
+            // Group photos uploaded by the app use local /uploads/... paths, not remote HTTP(S) URLs.
+            let photo_url = if let Some(value) = v.get("photoUrl").and_then(Value::as_str) {
+                let value = value.trim();
+                if value.len() > 2048 || (!value.is_empty() && !(value.starts_with("https://") || value.starts_with("http://") || value.starts_with("/uploads/"))) {
+                    return Err("photo URL must be an HTTP(S) URL or an app upload path under 2048 characters".into());
+                }
+                value.to_string()
+            } else {
+                state.db.channel_details(id).await
+                    .map_err(|_| "could not load current group details".to_string())?
+                    .map(|details| details.2)
+                    .unwrap_or_default()
+            };
+            let updated = state.db.update_channel_details(id, name, description, &photo_url).await
+                .map_err(|_| "could not save group details".to_string())?;
+            if !updated { return Err("group no longer exists".into()); }
+            ch.set_name(name);
+            let (name, description, photo_url) = state.db.channel_details(id).await
+                .map_err(|_| "could not load updated group details".to_string())?
+                .unwrap_or_else(|| (name.to_string(), description.to_string(), photo_url.to_string()));
+            let payload = json!({"channel":id,"name":name,"description":description,"photoUrl":photo_url});
+            let _ = ch.tx.send(Arc::new(WireMsg {
+                id: 0,
+                channel: ch.id.clone(),
+                kind: MsgKind::System,
+                user_id: user_id.clone(),
+                username: CompactString::const_new("__ch_updated"),
+                avatar: CompactString::const_new(""),
+                color: CompactString::const_new(""),
+                ts: now_secs(),
+                text: payload.to_string(),
+                file: None,
+                reply_to: None,
+                edited_at: None,
+                deleted: false,
+            }));
+        }
+
+        "key_backup_set" => {
+            let payload = v.get("payload").and_then(Value::as_str).ok_or("missing encrypted key backup")?;
+            if payload.len() > 20000 { return Err("encrypted key backup is too large".into()); }
+            let envelope: Value = serde_json::from_str(payload).map_err(|_| "invalid key backup envelope")?;
+            if envelope.get("v").and_then(Value::as_u64) != Some(1)
+                || envelope.get("kdf").and_then(Value::as_str) != Some("PBKDF2-SHA-256")
+                || envelope.get("salt").and_then(Value::as_str).map_or(true, |s| s.len() > 128 || s.is_empty())
+                || envelope.get("iv").and_then(Value::as_str).map_or(true, |s| s.len() > 128 || s.is_empty())
+                || envelope.get("ciphertext").and_then(Value::as_str).map_or(true, |s| s.len() > 18000 || s.is_empty())
+            {
+                return Err("invalid encrypted key backup envelope".into());
+            }
+            state.db.set_e2ee_key_backup(user_id.clone(), payload, now_secs()).await
+                .map_err(|_| "could not save encrypted key backup".to_string())?;
+        }
+
+        "avatar_set" => {
+            let avatar = v.get("avatar").and_then(Value::as_str).ok_or("missing avatar")?;
+            if !matches!(avatar, "😀" | "😎" | "😊" | "🐱" | "🐼" | "🦊" | "🐸" | "🐙" | "🦄" | "🐧" | "🐨" | "🐯" | "🦋" | "🌟" | "🌈" | "🚀") {
+                return Err("choose one of the predefined avatars".into());
+            }
+            let old = state.users.get(&user_id).map(|u| u.avatar.to_string()).unwrap_or_default();
+            state.db.update_user_avatar(user_id.clone(), avatar).await.map_err(|_| "could not save avatar".to_string())?;
+            if let Some(mut user) = state.users.get_mut(&user_id) { user.avatar = avatar.to_compact_string(); }
+            if let Some(mut user) = state.known_users.get_mut(&user_id) { user.avatar = avatar.to_compact_string(); }
+            if old.starts_with("/uploads/") {
+                let name = old.trim_start_matches("/uploads/");
+                if !name.contains('/') && !name.contains('\\') { let _ = tokio::fs::remove_file(state.uploads_dir.join(name)).await; }
+            }
+            broadcast_users(state).await;
+        }
+
+        "profile_update" => {
+            let mut info = state.users.get(&user_id).map(|entry| entry.value().clone()).ok_or("user not found")?;
+            let username_value = v.get("username").and_then(Value::as_str);
+            let designation_value = v.get("designation").and_then(Value::as_str);
+            if username_value.is_none() && designation_value.is_none() {
+                return Err("no profile fields to update".into());
+            }
+            let username = if let Some(value) = username_value { sanitize_username(value).to_string() } else { info.username.to_string() };
+            if username.is_empty() {
+                return Err("Username must be 3–24 characters: letters, digits, underscore, hyphen, or dot.".into());
+            }
+            let designation = if let Some(value) = designation_value {
+                if !matches!(value, "AM" | "TL" | "STL" | "QDE" | "LRD" | "EE" | "CSA") {
+                    return Err("choose a valid designation".into());
+                }
+                value.to_string()
+            } else {
+                info.designation.to_string()
+            };
+            let old_key = info.username.to_lowercase().to_compact_string();
+            let new_key = username.to_lowercase().to_compact_string();
+            let changed = state.db.update_user_profile(user_id.clone(), &username, &designation).await
+                .map_err(|_| "could not save profile".to_string())?;
+            if !changed { return Err("That username is already in use. Choose another one.".into()); }
+            if old_key != new_key {
+                state.username_to_id.remove(&old_key);
+                state.username_to_id.insert(new_key, user_id.clone());
+            }
+            info.username = username.to_compact_string();
+            info.designation = designation.to_compact_string();
+            state.users.insert(user_id.clone(), info.clone());
+            state.known_users.insert(user_id.clone(), info);
+            broadcast_users(&state).await;
+        }
+
+        "designation_set" => {
+            let designation = v.get("designation").and_then(Value::as_str).ok_or("missing designation")?;
+            if !matches!(designation, "AM" | "TL" | "STL" | "QDE" | "LRD" | "EE" | "CSA") {
+                return Err("choose a valid designation".into());
+            }
+            let changed = state.db.set_user_designation(user_id.clone(), designation).await
+                .map_err(|_| "could not save designation".to_string())?;
+            if !changed { return Err("your designation has already been assigned".into()); }
+            let mut info = state.users.get(&user_id).map(|entry| entry.value().clone()).ok_or("user not found")?;
+            info.designation = designation.to_compact_string();
+            state.users.insert(user_id.clone(), info.clone());
+            state.known_users.insert(user_id.clone(), info);
+            broadcast_users(&state).await;
+        }
+
+        "ch_notification_set" => {
+            let id = v.get("channel").and_then(Value::as_str).ok_or("missing channel")?;
+            let mode = v.get("mode").and_then(Value::as_str).ok_or("missing mode")?;
+            let ch = state.channels.get(id).ok_or("no such channel")?;
+            if !can_send(&ch, &user_id) { return Err("not a member".into()); }
+            if !matches!(mode, "all" | "mentions" | "mute") { return Err("invalid notification mode".into()); }
+            state.db.set_channel_notification(id, user_id.as_str(), mode, now_secs()).await
+                .map_err(|_| "could not save notification setting".to_string())?;
+            let out = json!({"ev":"ch_notification_set","channel":id,"mode":mode});
+            let _ = sink.send(Message::Text(out.to_string())).await;
+        }
+
+        "shared_items_list" => {
+            let id = v.get("channel").and_then(Value::as_str).ok_or("missing channel")?;
+            let item_type = v.get("type").and_then(Value::as_str).ok_or("missing type")?;
+            // The UI uses plural tab names ("links", "files"), while the
+            // persisted index uses singular item types ("link", "file").
+            // Normalize the tab name before querying the index.
+            if !matches!(item_type, "media" | "link" | "links" | "file" | "files") { return Err("invalid shared item type".into()); }
+            let db_item_type = match item_type {
+                "links" => "link",
+                "files" => "file",
+                other => other,
+            };
+            let limit = v.get("limit").and_then(Value::as_u64).unwrap_or(48).clamp(1, 100) as usize;
+            let before_id = v.get("beforeId").and_then(Value::as_u64);
+            let ch = state.channels.get(id).ok_or("no such channel")?;
+            if !can_send(&ch, &user_id) { return Err("not a member".into()); }
+            let counts = state.db.shared_item_counts(id).await
+                .map_err(|_| "could not count shared items".to_string())?;
+            let items = state.db.shared_items_page(id, db_item_type, before_id, limit).await
+                .map_err(|_| "could not load shared items".to_string())?;
+            let has_more = items.len() == limit;
+            let next_cursor = items.last().map(|item| item.cursor);
+            let resp = json!({
+                "ev":"shared_items_list",
+                "channel":id,
+                "type":item_type,
+                "requestId":v.get("requestId").cloned().unwrap_or(Value::Null),
+                "items":items,
+                "counts":{"media":counts.0,"links":counts.1,"files":counts.2},
+                "nextCursor":next_cursor,
+                "hasMore":has_more,
+            });
+            let _ = sink.send(Message::Text(resp.to_string())).await;
+        }
+
+        "history_before" => {
+            let id = v.get("channel").and_then(Value::as_str).ok_or("missing channel")?;
+            let before_id = v.get("beforeId").and_then(Value::as_u64).ok_or("missing beforeId")?;
+            let limit = v.get("limit").and_then(Value::as_u64).unwrap_or(50).clamp(1, 500) as usize;
+            let ch = state.channels.get(id).ok_or("no such channel")?;
+            if !can_send(&ch, &user_id) { return Err("not a member".into()); }
+            let from_db = state.db.messages_before(id, before_id, limit).await
+                .map_err(|_| "could not load older messages".to_string())?;
+            let has_more = from_db.len() == limit;
+            let out: Vec<Arc<WireMsg>> = from_db.into_iter().map(Arc::new).collect();
+            let msgs: Vec<&WireMsg> = out.iter().map(|a| a.as_ref()).collect();
+            let resp = json!({
+                "ev":"history_before",
+                "channel":id,
+                "beforeId":before_id,
+                "messages":msgs,
+                "hasMore":has_more,
+            });
+            let _ = sink.send(Message::Text(resp.to_string())).await;
+        }
+
         "history" => {
             let id = v
                 .get("channel")
@@ -1298,8 +1707,10 @@ async fn handle_op(
                 .unwrap_or(50)
                 .min(500) as usize;
             // Authoritative read from SQLite — never trust in-memory ring.
-            let _ch = state.channels.get(id).ok_or("no such channel")?;
-            let from_db = state.db.tail_messages(id, limit).await.unwrap_or_default();
+            let ch = state.channels.get(id).ok_or("no such channel")?;
+            if !can_send(&ch, &user_id) { return Err("not a member".into()); }
+            let from_db = state.db.tail_messages(id, limit).await
+                .map_err(|_| "could not load history".to_string())?;
             let out: Vec<Arc<WireMsg>> = from_db.into_iter().map(Arc::new).collect();
             let msgs: Vec<&WireMsg> = out.iter().map(|a| a.as_ref()).collect();
             let reactions = collect_reactions(state, &id.to_compact_string());
@@ -1326,6 +1737,13 @@ async fn handle_op(
             let msg_id = v.get("msgId").and_then(Value::as_u64).ok_or("missing msgId")?;
             let ch = state.channels.get(channel_id).ok_or("no such channel")?;
             if !can_send(&ch, &user_id) { return Err("not a member".into()); }
+            if matches!(ch.kind, ChannelKind::Group) {
+                let role = state.db.member_role(channel_id, user_id.as_str()).await
+                    .map_err(|_| "could not verify group role".to_string())?;
+                if ch.created_by != user_id && role.as_deref() != Some("owner") && role.as_deref() != Some("moderator") {
+                    return Err("only group owners and moderators can pin or unpin messages".into());
+                }
+            }
             let exists = state.db.message_exists_in_channel(channel_id, msg_id).await
                 .map_err(|_| "could not verify message".to_string())?;
             if !exists { return Err("message not found".into()); }
@@ -1423,6 +1841,24 @@ async fn handle_op(
                 edited_at: None,
                 deleted: false,
             }));
+        }
+
+        "search_all" => {
+            let query = v.get("query").and_then(Value::as_str).unwrap_or("").trim();
+            if query.chars().count() < 2 || query.chars().count() > 100 {
+                return Err("Search must be between 2 and 100 characters.".into());
+            }
+            // DB query enforces membership and excludes all DMs, whose contents
+            // must remain encrypted and unsearchable by the server.
+            let matches = state.db.search_messages_across_channels(user_id.as_str(), query, 100).await
+                .map_err(|_| "message search failed".to_string())?;
+            let results: Vec<Value> = matches.into_iter().map(|(message, channel_name)| json!({
+                "channelId": message.channel,
+                "channelName": channel_name,
+                "message": message
+            })).collect();
+            let out = json!({"ev":"search_all_results","query":query,"results":results});
+            let _ = sink.send(Message::Text(out.to_string())).await;
         }
 
         "search" => {

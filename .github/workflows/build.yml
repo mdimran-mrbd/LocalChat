@@ -40,19 +40,19 @@ jobs:
           else
             git fetch --tags --force >/dev/null 2>&1 || true
             LATEST=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -n1)
-            if [[ -z "$LATEST" ]]; then
-              # On a repository's first official tag, honor the package version
-              # already set for the intended release instead of guessing 0.1.0.
-              PACKAGE_VERSION="$(sed -n 's/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' app/Cargo.toml | head -n1)"
-              if [[ -z "$PACKAGE_VERSION" ]]; then
-                echo "Could not read package version from app/Cargo.toml" >&2
-                exit 1
-              fi
-              TAG="v$PACKAGE_VERSION"
-            else
-              IFS='.' read -r MA MI PA <<< "${LATEST#v}"
-              TAG="v${MA}.${MI}.$((PA + 1))"
-            fi
+          PACKAGE_VERSION="$(sed -n 's/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' app/Cargo.toml | head -n1)"
+          if [[ -z "$PACKAGE_VERSION" ]]; then
+            echo "Could not read package version from app/Cargo.toml" >&2
+            exit 1
+          fi
+          LATEST_VERSION="${LATEST#v}"
+          # Honor an explicitly prepared package version when it is newer than
+          # the latest release tag; otherwise automatically increment the patch.
+          if [[ -z "$LATEST" ]] || [[ "$PACKAGE_VERSION" != "$LATEST_VERSION" && "$(printf '%s\n' "$LATEST_VERSION" "$PACKAGE_VERSION" | sort -V | tail -n1)" == "$PACKAGE_VERSION" ]]; then
+            TAG="v$PACKAGE_VERSION"
+          else
+            IFS='.' read -r MA MI PA <<< "$LATEST_VERSION"
+            TAG="v${MA}.${MI}.$((PA + 1))"
           fi
           echo "Selected tag: $TAG"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"

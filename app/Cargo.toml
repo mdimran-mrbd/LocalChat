@@ -1,6 +1,6 @@
 [package]
 name        = "localchat"
-version     = "2.0.1"
+version     = "3.0.123"
 edition     = "2021"
 rust-version = "1.75"
 description = "LAN Instant Messenger — self-contained, tray-only, ultra-light"
@@ -104,4 +104,4 @@ default = ["tray"]
 tray    = ["dep:tray-icon", "dep:tao", "dep:image", "dep:arboard", "dep:winreg"]
 
 [build-dependencies]
-# Nothing yet. Reserved for Windows resource embedding (icon) later.
+winres = "0.1"

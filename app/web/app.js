@@ -12,6 +12,29 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Stable avatar color from a username — mirrors server's pick_color_for (FNV-1a 32, lowercased).
 const _AVATAR_COLORS = ["#6366f1","#8b5cf6","#ec4899","#ef4444","#f97316","#eab308","#22c55e","#14b8a6","#06b6d4","#3b82f6"];
+function userNameNode(user) {
+  let profile = typeof user === "string" ? { username: user } : (user || {});
+  if (!profile.designation && S.userProfiles) {
+    const cached = [...S.userProfiles.values()].find(item => (item.username || "").toLowerCase() === (profile.username || "").toLowerCase());
+    if (cached) profile = { ...cached, ...profile, designation: cached.designation || profile.designation };
+  }
+  const root = el("span", { class: "user-name-display" });
+  root.append(document.createTextNode(profile.username || "Unknown"));
+  if (profile.designation) root.append(el("span", { class: "user-designation" }, " • " + profile.designation));
+  return root;
+}
+
+function avatarContent(avatar, fallback = "?") {
+  if (typeof avatar === "string" && avatar.startsWith("/uploads/") && !avatar.slice(9).includes("/") && !avatar.slice(9).includes("\\")) return el("img", { src: avatar, alt: "", loading: "lazy", decoding: "async", draggable: "false" });
+  return document.createTextNode(avatar || String(fallback || "?").slice(0,1).toUpperCase());
+}
+function renderAvatarContent(node, avatar, fallback = "?") {
+  if (!node) return;
+  const presence = node.querySelector(":scope > .presence-dot");
+  node.replaceChildren(avatarContent(avatar, fallback));
+  if (presence) node.append(presence);
+  node.classList.toggle("has-avatar-image", typeof avatar === "string" && avatar.startsWith("/uploads/") && !avatar.slice(9).includes("/"));
+}
 function colorForName(name) {
   if (!name) return _AVATAR_COLORS[0];
   let h = 0x811c9dc5 >>> 0;
@@ -59,6 +82,20 @@ function fmtSize(n) {
   if (n < 1024 ** 3) return (n / 1024 / 1024).toFixed(1) + " MB";
   return (n / 1024 / 1024 / 1024).toFixed(2) + " GB";
 }
+function sharedFileIcon(mime, name) {
+  const type = String(mime || "").toLowerCase();
+  const ext = String(name || "").split(".").pop().toLowerCase();
+  if (type.startsWith("image/") || /^(png|jpe?g|gif|webp|svg|bmp|heic)$/.test(ext)) return "🖼️";
+  if (type.startsWith("video/") || /^(mp4|mov|avi|mkv|webm)$/.test(ext)) return "🎬";
+  if (type.startsWith("audio/") || /^(mp3|wav|ogg|m4a|flac)$/.test(ext)) return "🎵";
+  if (ext === "pdf" || type === "application/pdf") return "📕";
+  if (/^(doc|docx|odt|rtf)$/.test(ext)) return "📝";
+  if (/^(xls|xlsx|csv|ods)$/.test(ext)) return "📊";
+  if (/^(ppt|pptx|odp)$/.test(ext)) return "📽️";
+  if (/^(zip|rar|7z|tar|gz)$/.test(ext)) return "🗜️";
+  if (/^(js|ts|jsx|tsx|rs|py|java|c|cpp|html|css|json|sql|sh)$/.test(ext)) return "💻";
+  return "📄";
+}
 function fileExt(name) {
   const i = name.lastIndexOf(".");
   if (i < 0 || i === name.length - 1) return "file";
@@ -76,6 +113,61 @@ function isJumbo(text) {
   } catch {
     return false;
   }
+}
+
+const LINK_TOKEN_RE = /(?:https?:\/\/[^\s<>"']+|www\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+(?:\/[^\s<>"']*)?|(?<![\w@.-])(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}(?::\d{1,5})?(?:\/[^\s<>"']*)?)/gi;
+function normalizeChatUrl(raw) {
+  let value = String(raw || "").replace(/[),.!?;:]+$/, "");
+  if (!value) return null;
+  if (/^www\./i.test(value) || !/^https?:\/\//i.test(value)) value = "https://" + value;
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    if (!parsed.hostname || !parsed.hostname.includes(".")) return null;
+    return parsed.href;
+  } catch { return null; }
+}
+function extractChatUrls(text) {
+  const found = [];
+  LINK_TOKEN_RE.lastIndex = 0;
+  for (const match of String(text || "").matchAll(LINK_TOKEN_RE)) {
+    const raw = match[0].replace(/[),.!?;:]+$/, "");
+    const url = normalizeChatUrl(raw);
+    if (url && !found.some(item => item.url === url)) found.push({ raw, url, index: match.index });
+  }
+  return found;
+}
+function appendLinkedText(container, text, channelId = null) {
+  const source = String(text || "");
+  const tokens = extractChatUrls(source).map(item => ({ ...item, kind: "url" }));
+  if (channelId) {
+    const users = new Map(S.users);
+    if (S.me?.id) users.set(S.me.id, S.me);
+    const byName = new Map([...users.values()].filter(u => u?.username && u?.id).map(u => [u.username.toLowerCase(), u]));
+    for (const match of source.matchAll(/@([A-Za-z0-9._-]+)/g)) {
+      const user = byName.get(match[1].toLowerCase());
+      if (user) tokens.push({ raw: match[0], index: match.index, kind: "mention", user });
+    }
+  }
+  tokens.sort((a, b) => a.index - b.index || (a.kind === "url" ? -1 : 1));
+  let cursor = 0;
+  for (const item of tokens) {
+    if (item.index < cursor) continue;
+    if (item.index > cursor) container.append(document.createTextNode(source.slice(cursor, item.index)));
+    const anchor = document.createElement("a");
+    if (item.kind === "mention") {
+      anchor.className = "message-mention"; anchor.href = "#"; anchor.textContent = item.raw;
+      anchor.title = "Open direct chat with " + item.user.username;
+      anchor.setAttribute("aria-label", "Open direct chat with " + item.user.username);
+      anchor.addEventListener("click", ev => { ev.preventDefault(); openDmWithUserId(item.user.id, item.user.username); });
+    } else {
+      anchor.className = "message-link"; anchor.href = item.url; anchor.target = "_blank";
+      anchor.rel = "noopener noreferrer"; anchor.textContent = item.raw;
+      anchor.setAttribute("aria-label", "Open link " + item.raw);
+    }
+    container.append(anchor); cursor = item.index + item.raw.length;
+  }
+  if (cursor < source.length) container.append(document.createTextNode(source.slice(cursor)));
 }
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -122,14 +214,28 @@ async function checkForUpdates(currentVersion, currentBuild) {
         !assets.some((a) => a.name === "SHA256SUMS.txt")) return;
     $("updateVersion").textContent = latest;
     $("updateBanner").classList.remove("hidden");
+    scheduleUpdateBannerDismiss();
   } catch {
     // Offline / rate-limited checks are intentionally silent; chat still works.
   }
 }
 
+let _updateBannerTimer = null;
+function dismissUpdateBanner() { clearTimeout(_updateBannerTimer); $("updateBanner")?.classList.add("hidden"); }
+function scheduleUpdateBannerDismiss() {
+  clearTimeout(_updateBannerTimer);
+  _updateBannerTimer = setTimeout(() => {
+    const status = $("updateStatus")?.textContent || "";
+    if (!/Downloading|Update requested|restart|Preparing/i.test(status)) dismissUpdateBanner();
+  }, 12000);
+}
+$("dismissUpdateBanner")?.addEventListener("click", dismissUpdateBanner);
+
 // Update checks are explicitly opt-in; the install action remains separately user-confirmed.
+const updateConsentSection = $("updateConsentSection");
+if (updateConsentSection) updateConsentSection.hidden = !["localhost", "127.0.0.1", "[::1]", "::1"].includes(location.hostname.toLowerCase());
 const updateChecksOptIn = $("updateChecksOptIn");
-if (updateChecksOptIn) {
+if (updateChecksOptIn && updateConsentSection && !updateConsentSection.hidden) {
   try { updateChecksOptIn.checked = localStorage.getItem("localchat-update-checks") === "yes"; } catch {}
   updateChecksOptIn.addEventListener("change", async () => {
     try {
@@ -140,6 +246,7 @@ if (updateChecksOptIn) {
       } else {
         localStorage.removeItem("localchat-update-checks");
         $("updateBanner").classList.add("hidden");
+        clearTimeout(_updateBannerTimer);
         $("updateStatus").textContent = "";
       }
     } catch {
@@ -151,6 +258,7 @@ if (updateChecksOptIn) {
 $("updateNowBtn").addEventListener("click", async () => {
   const button = $("updateNowBtn");
   const status = $("updateStatus");
+  clearTimeout(_updateBannerTimer);
   button.disabled = true;
   button.textContent = "Preparing…";
   status.textContent = "Downloading and verifying the release. LocalChat will restart.";
@@ -269,6 +377,7 @@ function bindServerId(id) {
 const E2EE = {
   kp: null,         // { privateKey, publicKey, publicJwk }
   available: false, // false on insecure contexts (plain HTTP non-localhost)
+  backupReady: false,
   peerKeyCache: new Map(),  // userId → CryptoKey (imported peer pubkey)
   sharedCache: new Map(),   // userId → AES-GCM CryptoKey (derived)
 
@@ -303,6 +412,87 @@ const E2EE = {
 
   myPubJwk() { return this.kp?.publicJwk || null; },
   myPubStr() { return this.kp ? JSON.stringify(this.kp.publicJwk) : ""; },
+
+  async _backupWrappingKey(password, salt, iterations) {
+    const material = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveKey"]);
+    return crypto.subtle.deriveKey({ name: "PBKDF2", salt, iterations, hash: "SHA-256" }, material,
+      { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
+  },
+
+  async createKeyBackup(password) {
+    if (!this.available || !password) return null;
+    const stored = lstore.get("e2ee-kp");
+    if (!stored) return null;
+    const pair = JSON.parse(stored);
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const key = await this._backupWrappingKey(password, salt, 310000);
+    const aad = new TextEncoder().encode("LocalChat E2EE key backup v1");
+    const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv, additionalData: aad },
+      key, new TextEncoder().encode(JSON.stringify(pair)));
+    return JSON.stringify({ v: 1, kdf: "PBKDF2-SHA-256", iterations: 310000,
+      salt: b64(salt), iv: b64(iv), ciphertext: b64(ciphertext) });
+  },
+
+  async restoreKeyBackup(password, payload) {
+    if (!this.available || !password || !payload) return false;
+    const envelope = JSON.parse(payload);
+    if (envelope.v !== 1 || envelope.kdf !== "PBKDF2-SHA-256" || envelope.iterations !== 310000 ||
+        !envelope.salt || !envelope.iv || !envelope.ciphertext) throw new Error("Unsupported encrypted key backup format");
+    const key = await this._backupWrappingKey(password, unb64(envelope.salt), envelope.iterations);
+    const aad = new TextEncoder().encode("LocalChat E2EE key backup v1");
+    const plaintext = await crypto.subtle.decrypt({ name: "AES-GCM", iv: unb64(envelope.iv), additionalData: aad },
+      key, unb64(envelope.ciphertext));
+    const pair = JSON.parse(new TextDecoder().decode(plaintext));
+    if (!pair?.privJwk || !pair?.pubJwk) throw new Error("Backup is missing key material");
+    const privateKey = await crypto.subtle.importKey("jwk", pair.privJwk, { name: "ECDH", namedCurve: "P-256" }, false, ["deriveKey"]);
+    const publicKey = await crypto.subtle.importKey("jwk", pair.pubJwk, { name: "ECDH", namedCurve: "P-256" }, true, []);
+    lstore.set("e2ee-kp", JSON.stringify(pair));
+    this.kp = { privateKey, publicKey, publicJwk: pair.pubJwk };
+    this.peerKeyCache.clear(); this.sharedCache.clear();
+    this.backupReady = true;
+    return true;
+  },
+
+  async unlockOrCreateBackup(password, payload) {
+    if (!this.available || !password) return false;
+    if (payload) {
+      try { await this.restoreKeyBackup(password, payload); return true; }
+      catch (error) {
+        console.warn("Could not unlock the encrypted DM key backup", error);
+        // If this device already has the established private key, it is safe
+        // to re-wrap it with the current password. Never overwrite a backup
+        // with a newly generated key that doesn't match the server identity.
+        if (S.me?.pubkey && S.me.pubkey === this.myPubStr()) {
+          const refreshed = await this.createKeyBackup(password);
+          if (refreshed) {
+            sendOp({ op: "key_backup_set", payload: refreshed });
+            this.backupReady = true;
+            return true;
+          }
+        }
+        this.backupReady = false;
+        toast("This device cannot unlock the old DM key. Sign in once on the device that can still read your old DMs to create a secure backup, then sign in here again.", 7000);
+        return false;
+      }
+    }
+    if (S.me?.pubkey && S.me.pubkey !== this.myPubStr()) {
+      this.backupReady = false;
+      toast("This device has a different DM key. Sign in on the device that can read your old DMs to create a secure backup first.", 7000);
+      return false;
+    }
+    const encrypted = await this.createKeyBackup(password);
+    if (encrypted) { sendOp({ op: "key_backup_set", payload: encrypted }); this.backupReady = true; return true; }
+    return false;
+  },
+
+  async refreshKeyBackup(password) {
+    if (!this.available || !password || !this.backupReady) return false;
+    const encrypted = await this.createKeyBackup(password);
+    if (!encrypted) return false;
+    sendOp({ op: "key_backup_set", payload: encrypted });
+    return true;
+  },
 
   async _derive(userId, peerPubKeyStr) {
     if (!this.available || !this.kp) return null;
@@ -440,15 +630,19 @@ async function getDecryptedBlobUrl(storageName, fetchUrl, envelope, peer) {
 const S = {
   ws: null,
   me: null,                // { id, username, avatar, color, pubkey }
-  users: new Map(),        // id → user
+  users: new Map(),        // online users by id
+  userProfiles: new Map(), // known user profiles, including offline designation labels
   channels: new Map(),     // id → meta
   msgs: new Map(),         // channelId → array of wire messages (raw)
   reactions: new Map(),    // channelId → Map<msgId, Map<emoji, Set<userId>>>
+  polls: new Map(),        // channelId:messageId → { counts, userVote }
+  pollRequests: new Set(), // avoid repeated state requests during rerenders
   pins: new Map(),         // channelId → pinned-message metadata array
   pinsExpanded: false,
   mentions: new Map(),      // channelId → latest message ID mentioning me
   readMarks: new Map(),    // channelId → Map<userId, latestReadMsgId>
   unread: new Map(),       // channelId → count
+  unreadIndicators: new Map(), // channelId → { mention, reply }
   typing: new Map(),       // channelId → Map<userId, { username, until }>
   active: "pub:general",
   hasHistory: new Set(),   // channels we've requested history for
@@ -457,6 +651,7 @@ const S = {
   hostname: "",
   sidebarTab: "mine",
   sidebarFilter: "",
+  sidebarMessageResults: [],
   searchChannel: null,
   replyTo: null,           // { channelId, msgId, username, preview }
 };
@@ -536,7 +731,11 @@ $("joinForm").addEventListener("submit", (e) => {
   connect(username, password);
 });
 
+let _activePassword = "";
+let _pendingNewPassword = "";
+
 function connect(username, password) {
+  _activePassword = password || "";
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   const ws = new WebSocket(`${proto}//${location.host}/ws`);
   S.ws = ws;
@@ -553,13 +752,20 @@ function connect(username, password) {
     // Drain anything that was queued while the socket was down.
     flushOutbox();
   };
-  ws.onmessage = (ev) => handleEvent(JSON.parse(ev.data));
+  let eventQueue = Promise.resolve();
+  ws.onmessage = (ev) => {
+    let payload;
+    try { payload = JSON.parse(ev.data); } catch (error) { console.warn("Invalid server event", error); return; }
+    eventQueue = eventQueue.then(() => handleEvent(payload, _activePassword)).catch((error) => {
+      console.warn("LocalChat event handler failed", error);
+    });
+  };
   ws.onclose = () => {
     setStatus("off", "disconnected");
     if (S.me) {
       S.reconnectTries += 1;
       setStatus("warn", "reconnecting…");
-      setTimeout(() => connect(S.me.username, password), Math.min(6000, 400 * S.reconnectTries));
+      setTimeout(() => connect(S.me.username, _activePassword), Math.min(6000, 400 * S.reconnectTries));
     } else {
       const status = $("joinStatus");
       // If the server already pushed a specific error (e.g. username taken),
@@ -585,39 +791,55 @@ function setStatus(kind, label) {
   pill.querySelector(".txt").textContent = label;
 }
 
-// ── Browser notifications (only while LocalChat is open) ──────────────
-const BROWSER_NOTIFICATIONS_KEY = "localchat-browser-notifications";
+// ── Browser notifications ─────────────────────────────────────────────
+// Permission is granted by the browser, but snooze is deliberately session-only:
+// reloading or signing in again resumes notifications automatically.
+let _browserNotificationSnoozedUntil = 0;
+let _browserNotificationSnoozeTimer = null;
 
 function browserNotificationsEnabled() {
-  try { return localStorage.getItem(BROWSER_NOTIFICATIONS_KEY) === "1"; }
-  catch { return false; }
+  return typeof Notification !== "undefined" &&
+    Notification.permission === "granted" &&
+    Date.now() >= _browserNotificationSnoozedUntil;
 }
 
 function updateBrowserNotificationButton() {
   const button = $("browserNotificationsBtn");
   if (!button) return;
-  const enabled = browserNotificationsEnabled() &&
-    typeof Notification !== "undefined" && Notification.permission === "granted";
+  const supported = "Notification" in window;
+  const granted = supported && Notification.permission === "granted";
+  const enabled = browserNotificationsEnabled();
+  const snoozed = granted && !enabled && Date.now() < _browserNotificationSnoozedUntil;
   button.classList.toggle("active", enabled);
-  button.title = enabled ? "Disable browser notifications" : "Enable browser notifications";
+  button.classList.toggle("snoozed", snoozed);
+  button.title = !supported ? "Browser notifications are not supported here"
+    : !granted ? (Notification.permission === "denied" ? "Notifications blocked by browser" : "Enable browser notifications")
+    : snoozed ? "Notifications snoozed" : "Browser notifications enabled";
   button.setAttribute("aria-label", button.title);
   button.setAttribute("aria-pressed", String(enabled));
-  // Make the state visible at a glance: crossed-out bell when disabled,
-  // regular bell when enabled. Keep the button's shape and sizing unchanged.
+  button.setAttribute("aria-expanded", String(!!$("browserNotificationMenu") && !$("browserNotificationMenu").hidden));
   button.innerHTML = enabled
     ? '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg>'
-    : '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/><path d="m3 3 18 18"/></svg>';
+    : snoozed
+      ? '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/><circle cx="18" cy="18" r="4" fill="var(--bg-1)"/><path d="M18 16v2l1.2 1"/></svg>'
+      : '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/><path d="m3 3 18 18"/></svg>';
+  const menu = $("browserNotificationMenu");
+  if (menu) {
+    const enable = menu.querySelector('[data-notification-action="enable"]');
+    const resume = menu.querySelector('[data-notification-action="resume"]');
+    if (enable) enable.hidden = granted;
+    if (resume) resume.hidden = !snoozed;
+    menu.querySelectorAll("[data-snooze-minutes]").forEach(item => { item.hidden = !granted; });
+  }
 }
 
-async function toggleBrowserNotifications() {
+async function enableBrowserNotifications() {
   if (!("Notification" in window)) {
-    toast("This browser does not support desktop notifications.", 3500);
+    toast("This browser does not support desktop notifications.", 4000);
     return;
   }
-  if (browserNotificationsEnabled()) {
-    try { localStorage.setItem(BROWSER_NOTIFICATIONS_KEY, "0"); } catch {}
-    updateBrowserNotificationButton();
-    toast("Browser notifications disabled.");
+  if (!window.isSecureContext && !["localhost", "127.0.0.1", "::1"].includes(location.hostname)) {
+    toast("Browser notifications require HTTPS or LocalChat running on this device.", 5000);
     return;
   }
   if (Notification.permission === "denied") {
@@ -634,50 +856,128 @@ async function toggleBrowserNotifications() {
     updateBrowserNotificationButton();
     return;
   }
-  try { localStorage.setItem(BROWSER_NOTIFICATIONS_KEY, "1"); } catch {}
+  _browserNotificationSnoozedUntil = 0;
+  clearTimeout(_browserNotificationSnoozeTimer);
   updateBrowserNotificationButton();
-  toast("Browser notifications enabled. They appear for messages outside your current chat or when this tab is in the background.");
+  toast("Browser notifications are enabled. Snoozing lasts only until you sign out or reload LocalChat.");
 }
 
-function notifyIncomingMessage(m) {
-  if (!browserNotificationsEnabled() || typeof Notification === "undefined" ||
-      Notification.permission !== "granted") return;
-  if (!document.hidden && document.hasFocus() && m.channel === S.active) return;
-  try {
-    const channel = S.channels.get(m.channel);
-    const isDm = channel && channel.kind === "dm";
-    // Never include message text or decrypted DM content in system notifications.
-    const title = isDm ? "New direct message" : `New message in #${channel?.name || "channel"}`;
-    const sender = m.username || "Someone";
-    const notification = new Notification(title, {
-      body: `From ${sender}. Open LocalChat to view it.`,
-      tag: `localchat-${m.channel}`,
-      renotify: true
-    });
-    notification.onclick = () => {
-      try { window.focus(); } catch {}
-      if (S.channels.has(m.channel)) switchChannel(m.channel);
-      notification.close();
-    };
-  } catch (error) {
-    console.debug("[notifications] unable to show browser notification", error);
+function snoozeBrowserNotifications(minutes) {
+  const duration = Number(minutes);
+  if (![5, 30, 60, 480].includes(duration)) return;
+  if (typeof Notification === "undefined" || Notification.permission !== "granted") {
+    toast("Enable browser notifications first.", 3000);
+    return;
   }
+  clearTimeout(_browserNotificationSnoozeTimer);
+  _browserNotificationSnoozedUntil = Date.now() + duration * 60 * 1000;
+  _browserNotificationSnoozeTimer = setTimeout(() => {
+    _browserNotificationSnoozedUntil = 0;
+    updateBrowserNotificationButton();
+    toast("Browser notifications resumed.");
+  }, duration * 60 * 1000);
+  updateBrowserNotificationButton();
+  toast("Browser notifications snoozed for " + (duration === 60 ? "1 hour" : duration === 480 ? "8 hours" : duration + " minutes") + ".");
+}
+
+function toggleBrowserNotifications() {
+  const menu = $("browserNotificationMenu");
+  if (!menu) return;
+  menu.hidden = !menu.hidden;
+  $("browserNotificationsBtn")?.setAttribute("aria-expanded", String(!menu.hidden));
+}
+$("browserNotificationsBtn")?.addEventListener("click", ev => {
+  ev.stopPropagation();
+  toggleBrowserNotifications();
+});
+$("browserNotificationMenu")?.addEventListener("click", async ev => {
+  const action = ev.target.closest("button");
+  if (!action) return;
+  if (action.dataset.notificationAction === "enable") await enableBrowserNotifications();
+  else if (action.dataset.notificationAction === "resume") {
+    clearTimeout(_browserNotificationSnoozeTimer);
+    _browserNotificationSnoozedUntil = 0;
+    updateBrowserNotificationButton();
+    toast("Browser notifications resumed.");
+  } else if (action.dataset.snoozeMinutes) snoozeBrowserNotifications(action.dataset.snoozeMinutes);
+  $("browserNotificationMenu").hidden = true;
+  $("browserNotificationsBtn")?.setAttribute("aria-expanded", "false");
+});
+document.addEventListener("click", ev => {
+  if (!ev.target.closest("#browserNotificationControl") && $("browserNotificationMenu")) {
+    $("browserNotificationMenu").hidden = true;
+  }
+});
+Object.assign(window, { toggleBrowserNotifications, enableBrowserNotifications, snoozeBrowserNotifications });
+
+const _pendingBrowserNotifications = new Map();
+function notifyIncomingMessage(m) {
+  if (!browserNotificationsEnabled() || typeof Notification === "undefined" || Notification.permission !== "granted") return;
+  if (!document.hidden && document.hasFocus() && m.channel === S.active) return;
+  const channel = S.channels.get(m.channel);
+  if (!channel || channel.notificationMode === "mute") return;
+  const sender = m.username || "Someone";
+  const isDm = channel.kind === "dm";
+  const chatName = isDm ? (dmPeer(channel)?.username || sender) : ("#" + (channel.name || "channel"));
+  Promise.resolve(messageMentionsMe(m)).then(mentioned => {
+    const original = m.replyTo != null ? (S.msgs.get(m.channel) || []).find(x => String(x.id) === String(m.replyTo)) : null;
+    const repliedToMe = !!original && (original.userId === S.me?.id || original.username === S.me?.username);
+    // "Mention or reply only" includes both notification types.
+    if ((channel.notificationMode || "all") === "mentions" && !mentioned && !repliedToMe) return;
+    const detail = mentioned ? `${sender} mentioned you in ${chatName}`
+      : repliedToMe ? `${sender} replied to your message in ${chatName}`
+      : `New message from ${sender} in ${chatName}`;
+    const pending = _pendingBrowserNotifications.get(m.channel) || {
+      channelId: m.channel, count: 0, senders: new Set(), special: "", detail: "", timer: null
+    };
+    pending.count += 1; pending.senders.add(sender);
+    if (mentioned) { pending.special = "mention"; pending.detail = detail; }
+    else if (repliedToMe && pending.special !== "mention") { pending.special = "reply"; pending.detail = detail; }
+    if (!pending.detail) pending.detail = detail;
+    clearTimeout(pending.timer);
+    pending.timer = setTimeout(() => {
+      _pendingBrowserNotifications.delete(m.channel);
+      try {
+        const title = pending.special === "mention" ? "You were mentioned"
+          : pending.special === "reply" ? "New reply to your message"
+          : isDm ? `Message from ${[...pending.senders][0] || sender}` : `New messages in ${chatName}`;
+        const senderNames = [...pending.senders].slice(0, 3).join(", ");
+        const extraSenders = pending.senders.size > 3 ? ` and ${pending.senders.size - 3} more` : "";
+        const body = pending.count > 1
+          ? (pending.special ? pending.detail + ` · Plus ${pending.count - 1} other new message${pending.count > 2 ? "s" : ""}.`
+            : `You have multiple notifications from ${chatName}: ${senderNames}${extraSenders} (${pending.count} new messages).`)
+          : pending.detail;
+        const notification = new Notification(title, { body, tag: `localchat-${m.channel}`, renotify: false });
+        notification.onclick = () => { try { window.focus(); } catch {} if (S.channels.has(m.channel)) switchChannel(m.channel); notification.close(); };
+      } catch (error) { console.debug("[notifications] unable to show browser notification", error); }
+    }, 1800);
+    _pendingBrowserNotifications.set(m.channel, pending);
+  }).catch(error => console.debug("[notifications] classification failed", error));
 }
 
 Object.assign(window, { toggleBrowserNotifications });
 
 // ── Event dispatch ───────────────────────────────────────────────────
-function handleEvent(e) {
+function handleEvent(e, password = _activePassword) {
   switch (e.ev) {
-    case "welcome":      return onWelcome(e);
+    case "welcome":      return onWelcome(e, password);
     case "msg":          return onWireMsg(e.m);
     case "users":        return onUsers(e.users);
     case "history":      return onHistory(e);
+    case "history_before": return onHistoryBefore(e);
+    case "shared_items_list": return onSharedItemsList(e);
     case "search_results": return onSearchResults(e);
+    case "search_all_results": return onSearchAllResults(e);
     case "saved_messages": return onSavedMessages(e);
     case "react":        return onReact(e);
     case "pin_update":   return onPinUpdate(e);
+    case "poll_update":  return onPollUpdate(e, true);
     case "ch_created":   return onChannelCreated(e.channel);
+    case "ch_info":      return onChannelInfo(e);
+    case "ch_updated":   return onChannelUpdated(e);
+    case "ch_role_updated": return onChannelRoleUpdated(e);
+    case "ch_member_removed": return onChannelMemberRemoved(e);
+    case "ch_notification_set": return onChannelNotificationSet(e);
     case "ch_invited":   return onChannelInvited(e);
     case "ch_deleted":   return onChannelDeleted(e.channel);
     case "kicked":       return onKicked(e);
@@ -761,9 +1061,10 @@ function onError(e) {
   toast(e.text || "Server error");
 }
 
-function onWelcome(e) {
+async function onWelcome(e, password) {
   S.me = e.user;
   S.session = e.session || null;
+  await E2EE.unlockOrCreateBackup(password, e.e2eeKeyBackup || null);
   S.reconnectTries = 0;
   // Persist the server-issued UserId so a future reconnect (or a brand
   // new browser, after the user re-enters their password) can echo it
@@ -774,7 +1075,8 @@ function onWelcome(e) {
   S.channels.clear();
   for (const c of e.channels) S.channels.set(c.id, c);
   S.users.clear();
-  for (const u of e.users) S.users.set(u.id, u);
+  S.userProfiles.clear();
+  for (const u of e.users) { S.users.set(u.id, u); S.userProfiles.set(u.id, u); }
 
   $("join").classList.add("hidden");
   $("app").classList.remove("hidden");
@@ -786,37 +1088,39 @@ function onWelcome(e) {
     adminLink.hidden = !onHost;
   }
   $("meChip").innerHTML = "";
+  const ownAvatar = el("div", { class: "avatar xs", style: `background:${e.user.color}` });
+  renderAvatarContent(ownAvatar, e.user.avatar, e.user.username?.[0] || "?");
   $("meChip").append(
-    el("div", { class: "avatar xs", style: `background:${e.user.color}` }, e.user.avatar || "?"),
-    el("div", { class: "me-info" }, [
-      el("div", { class: "name" }, e.user.username),
-    ]),
+    ownAvatar,
+    el("div", { class: "me-info" }, [el("div", { class: "name" }, userNameNode(e.user))]),
     el("button", {
-      id: "themeToggle",
-      class: "icon-btn", title: "Toggle theme", "aria-label": "Toggle theme",
-      onclick: toggleTheme,
-    }),
-    el("button", {
-      class: "icon-btn", title: "Change password", "aria-label": "Change password",
-      onclick: () => openChangePasswordModal({ forced: false }),
-      html: `<svg viewBox="0 0 24 24" width="14" height="14"><path d="M12 2a5 5 0 00-5 5v3H6a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2v-8a2 2 0 00-2-2h-1V7a5 5 0 00-5-5zm-3 8V7a3 3 0 016 0v3H9z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>`,
-    }),
-    el("button", {
-      class: "icon-btn", title: "Sign out", "aria-label": "Sign out",
-      onclick: signOut,
-      html: `<svg viewBox="0 0 24 24" width="14" height="14"><path d="M15 17l5-5-5-5M20 12H9M12 19H5a2 2 0 01-2-2V7a2 2 0 012-2h7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+      id: "settingsOpenBtn", class: "icon-btn settings-open-btn", title: "Settings", "aria-label": "Open settings",
+      onclick: openSettingsPanel,
+      html: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2" fill="var(--bg-1)"/><circle cx="15" cy="12" r="2" fill="var(--bg-1)"/><circle cx="8" cy="18" r="2" fill="var(--bg-1)"/></svg>`,
     }),
   );
+  const notificationControl = $("browserNotificationControl");
+  const notificationSlot = $("settingsNotificationsSlot");
+  if (notificationControl && notificationSlot && notificationControl.parentElement !== notificationSlot) notificationSlot.append(notificationControl);
 
   updateThemeIcon();
 
   renderChannels();
   renderMembers();
+  // Load each member chat's persisted notification preference on every session,
+  // not only after the user opens that chat's Info panel.
+  for (const channel of S.channels.values()) {
+    if (channel.kind === "lobby" || (channel.members || []).includes(S.me.id)) {
+      sendOp({ op: "ch_info", channel: channel.id });
+    }
+  }
   switchChannel(e.lobby || "pub:general");
   sendOp({ op: "saved_list" });
   S.lobby = e.lobby || "pub:general";
   if (e.mustChangePassword) {
     setTimeout(() => openChangePasswordModal({ forced: true }), 200);
+  } else if (!e.user.designation) {
+    setTimeout(openDesignationModal, 250);
   }
 }
 
@@ -828,8 +1132,34 @@ function onUsers(list) {
     // If a peer that previously had no key now has one, allow re-warn next time it's lost.
     if (u.pubkey && _warnedNoKey && _warnedNoKey.has(u.id)) _warnedNoKey.delete(u.id);
   }
+  const previousMe = S.me;
   S.users.clear();
-  for (const u of list) S.users.set(u.id, u);
+  for (const u of list) { S.users.set(u.id, u); S.userProfiles.set(u.id, u); }
+  const updatedMe = list.find(u => u.id === S.me?.id);
+  if (updatedMe) {
+    const profileChanged = !!previousMe && (previousMe.username !== updatedMe.username || previousMe.designation !== updatedMe.designation);
+    const avatarChanged = !!previousMe && previousMe.avatar !== updatedMe.avatar;
+    S.me = updatedMe;
+    const ownAvatar = $("meChip")?.querySelector(".avatar");
+    if (ownAvatar) { ownAvatar.style.background = updatedMe.color || "var(--brand)"; renderAvatarContent(ownAvatar, updatedMe.avatar, updatedMe.username?.[0] || "?"); }
+    if ($("settingsPanel")?.classList.contains("open")) renderProfileAvatarSettings();
+    if (avatarChanged && $("profileAvatarStatus")) { $("profileAvatarStatus").textContent = "Profile picture updated."; $("profileAvatarStatus").classList.remove("err"); $("profileAvatarStatus").classList.add("ok"); }
+    const ownName = $("meChip")?.querySelector(".me-info .name");
+    if (ownName) ownName.replaceChildren(userNameNode(updatedMe));
+    if (updatedMe.designation) closeModal("designationModal");
+    if (profileChanged && $("settingsPanel")?.classList.contains("open")) {
+      $("profileUsername").value = updatedMe.username || "";
+      $("profileDesignation").value = updatedMe.designation || "CSA";
+      const status = $("profileSettingsStatus");
+      status.textContent = "Profile saved.";
+      status.classList.remove("err"); status.classList.add("ok");
+      setProfileFieldEditing("username", false);
+      setProfileFieldEditing("designation", false);
+      const us = $("saveUsernameBtn"), ds = $("saveDesignationBtn");
+      if (us) { us.disabled = false; us.textContent = "Save username"; }
+      if (ds) { ds.disabled = false; ds.textContent = "Save designation"; }
+    }
+  }
   const uc = $("userCount"); if (uc) uc.textContent = "";
   renderMembers();
   renderChannels();
@@ -855,6 +1185,10 @@ async function onWireMsg(m) {
     try { onPinUpdate(JSON.parse(m.text)); } catch {}
     return;
   }
+  if (m.username === "__poll") {
+    try { onPollUpdate(JSON.parse(m.text), false); } catch {}
+    return;
+  }
   if (m.username === "__msg_deleted") {
     try {
       const payload = JSON.parse(m.text);
@@ -867,6 +1201,7 @@ async function onWireMsg(m) {
       S.pins.set(channel, Array.isArray(payload.pins) ? payload.pins : []);
       savedMessages = savedMessages.filter((item) => !(item.channel === channel && String(item.id) === String(payload.msgId)));
       if (channel === S.active) renderStream();
+      refreshOpenSharedItems(channel);
       updateSavedCount();
     } catch (err) { console.warn("message deletion update failed", err); }
     return;
@@ -883,6 +1218,31 @@ async function onWireMsg(m) {
     try {
       const id = JSON.parse(m.text).channel || m.channel;
       onChannelDeleted(id);
+    } catch {}
+    return;
+  }
+  if (m.username === "__ch_updated") {
+    try { onChannelUpdated({ ...JSON.parse(m.text), silent: true }); } catch {}
+    return;
+  }
+  if (m.username === "__ch_photo_updated") {
+    try {
+      const data = JSON.parse(m.text);
+      const ch = S.channels.get(data.channel);
+      if (ch) {
+        ch.photoUrl = data.photoUrl || "";
+        if (S.active === data.channel && !$("channelInfoDrawer")?.classList.contains("hidden")) renderChannelInfo();
+      }
+    } catch {}
+    return;
+  }
+  if (m.username === "__ch_member_removed") {
+    try {
+      const data = JSON.parse(m.text);
+      if (data.forUserId === S.me?.id) {
+        onChannelDeleted(data.channel);
+        if (typeof toast === "function") toast("You were removed from the group.");
+      }
     } catch {}
     return;
   }
@@ -910,11 +1270,17 @@ async function onWireMsg(m) {
   const arr = S.msgs.get(m.channel) || [];
   arr.push(m);
   S.msgs.set(m.channel, arr);
+  refreshOpenSharedItems(m.channel);
 
   const isMine = S.me && (m.userId === S.me.id || m.username === S.me.username);
+  let mentionMe = false;
+  let replyToMe = false;
   if (!isMine && m.kind !== "system") {
     notifyIncomingMessage(m);
-    if (await messageMentionsMe(m)) {
+    mentionMe = await messageMentionsMe(m);
+    const original = m.replyTo ? (S.msgs.get(m.channel) || []).find(x => String(x.id) === String(m.replyTo)) : null;
+    replyToMe = !!(original && (original.userId === S.me?.id || original.username === S.me?.username));
+    if (mentionMe) {
       S.mentions.set(m.channel, String(m.id));
       updateMentionBadge();
     }
@@ -922,6 +1288,12 @@ async function onWireMsg(m) {
 
   if (m.channel !== S.active) {
     S.unread.set(m.channel, (S.unread.get(m.channel) || 0) + 1);
+    if (mentionMe || replyToMe) {
+      const flags = S.unreadIndicators.get(m.channel) || { mention: false, reply: false };
+      flags.mention = flags.mention || mentionMe;
+      flags.reply = flags.reply || replyToMe;
+      S.unreadIndicators.set(m.channel, flags);
+    }
     renderChannels();
   } else {
     // Force-scroll if the new message is from us, or if we're already near bottom.
@@ -956,6 +1328,29 @@ async function onHistory({ channel, messages, reactions, pins }) {
   S.reactions.set(channel, rmap);
   S.pins.set(channel, Array.isArray(pins) ? pins : []);
   if (S.active === channel) { await renderStream(); updateMentionBadge(); }
+  if (_ciPendingJump && _ciPendingJump.channelId === channel) {
+    if (filtered.some(m => Number(m.id) === Number(_ciPendingJump.messageId))) {
+      const target = _ciPendingJump.messageId; _ciPendingJump = null; jumpToMessage(channel, target);
+    }
+  }
+}
+function onHistoryBefore({ channel, messages, hasMore }) {
+  const older = Array.isArray(messages) ? messages : [];
+  const current = S.msgs.get(channel) || [];
+  const seen = new Set(current.map(m => Number(m.id)));
+  const merged = [...older.filter(m => !seen.has(Number(m.id))), ...current]
+    .sort((a, b) => Number(a.id) - Number(b.id));
+  S.msgs.set(channel, merged);
+  if (S.active === channel) renderStream();
+  if (!_ciPendingJump || _ciPendingJump.channelId !== channel) return;
+  if (merged.some(m => Number(m.id) === Number(_ciPendingJump.messageId))) {
+    const target = _ciPendingJump.messageId; _ciPendingJump = null; jumpToMessage(channel, target);
+  } else if (hasMore && older.length) {
+    sendOp({ op: "history_before", channel, beforeId: Number(older[0].id), limit: 100 });
+  } else {
+    _ciPendingJump = null;
+    toast("That message could not be found in the available history.", 3000);
+  }
 }
 
 let messageSearchMatches = [];
@@ -1186,6 +1581,8 @@ function messageMentionsMe(m) {
       text = decrypted;
     }
     const escaped = S.me.username.replace(/[^A-Za-z0-9._-]/g, (ch) => "\\" + ch);
+    const channel = S.channels.get(m.channel);
+    if (channel?.kind === "group" && text.toLowerCase().split(/[^a-z0-9@_-]+/).includes("@all")) return true;
     return new RegExp(`(^|[^A-Za-z0-9._-])@${escaped}(?=$|[^A-Za-z0-9._-])`, "i").test(text);
   };
   return inspect().catch(() => false);
@@ -1273,6 +1670,7 @@ function onChannelDeleted(id) {
   S.channels.delete(id);
   S.msgs.delete(id);
   S.unread.delete(id);
+  S.unreadIndicators.delete(id);
   S.typing.delete(id);
   if (S.active === id) {
     // Fall back to lobby (or first remaining channel).
@@ -1353,12 +1751,13 @@ function _sbGroup(key, title, count, items) {
 
 function _channelItem(c) {
   const active = c.id === S.active ? "active" : "";
+  const pinned = isChatPinned(c.id);
   const unread = S.unread.get(c.id) || 0;
   const isMember = !!(S.me && (c.members || []).includes(S.me.id));
-  const canDelete = c.kind === "group" && S.me && c.createdBy === S.me.id;
-  // Creators delete (which removes for everyone). Other members can leave.
-  // Lobby can't be left or deleted.
-  const canLeave = c.kind === "group" && isMember && !canDelete;
+  const isNotes = c.id.startsWith("notes:");
+  const canDelete = !isNotes && c.kind === "group" && S.me && c.createdBy === S.me.id;
+  // Personal Notes are permanent and owner-only; ordinary groups can be deleted/left.
+  const canLeave = !isNotes && c.kind === "group" && isMember && !canDelete;
   const askDelete = canDelete ? (ev) => {
     ev.stopPropagation();
     ev.preventDefault();
@@ -1384,13 +1783,16 @@ function _channelItem(c) {
     onclick: () => switchChannel(c.id),
     oncontextmenu: askDelete || askLeave || undefined,
   }, [
-    el("div", { class: "avatar", style: `background:var(--brand)` }, "#"),
+    el("div", { class: "avatar", style: `background:var(--brand)` }, isNotes ? "📝" : "#"),
     el("div", { class: "chat-meta" }, [
-      el("div", { class: "chat-name" }, c.name || c.id),
+      el("div", { class: "chat-name" }, [pinned ? el("span", { class: "chat-pin-mark", title: "Pinned chat", "aria-hidden": "true", html: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 3 5 5-4 1-4 4-1 5-2-2-4 4-2-2 4-4-2-2 5-1 4-4 1-4Z"/><path d="m10 14-6 6"/></svg>' }) : null, c.name || c.id]),
       el("div", { class: "chat-sub muted xs" },
-        c.kind === "lobby" ? "lobby \u00b7 everyone" : (c.isPrivate ? "private channel" : "channel")),
+        isNotes ? "Personal notes · only you" : (c.kind === "lobby" ? "lobby · everyone" : (c.isPrivate ? "private channel" : "channel"))),
     ]),
+    c.kind === "group" && S.unreadIndicators.get(c.id)?.mention ? el("span", { class: "chat-unread-signal mention-signal", title: "Unread mention", "aria-label": "Unread mention" }, "@") : null,
+    c.kind === "group" && S.unreadIndicators.get(c.id)?.reply ? el("span", { class: "chat-unread-signal reply-signal", title: "Unread reply to you", "aria-label": "Unread reply to you" }, "↩") : null,
     unread ? el("span", { class: "badge badge-unread" }, String(unread)) : null,
+    el("button", { class: "chat-pin" + (pinned ? " is-pinned" : ""), type: "button", title: pinned ? "Unpin chat" : "Pin chat", "aria-label": pinned ? "Unpin chat" : "Pin chat", onclick: (ev) => { ev.stopPropagation(); toggleChatPin(c.id); }, html: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 3 5 5-4 1-4 4-1 5-2-2-4 4-2-2 4-4-2-2 5-1 4-4 1-4Z"/><path d="m10 14-6 6"/></svg>' }),
     canDelete ? el("button", {
       class: "chat-del",
       title: `Delete #${c.name || c.id}`,
@@ -1427,12 +1829,14 @@ function leaveChannel(channelId) {
   if (ch) S.channels.delete(channelId);
   S.msgs.delete(channelId);
   S.unread.delete(channelId);
+  S.unreadIndicators.delete(channelId);
   renderChannels();
   toast(`Left #${ch?.name || channelId}`);
 }
 
 function _dmItem(c) {
   const u = dmPeer(c);
+  const pinned = isChatPinned(c.id);
   const active = c.id === S.active ? "active" : "";
   const unread = S.unread.get(c.id) || 0;
   const online = !!(u && !u.offline);
@@ -1451,15 +1855,13 @@ function _dmItem(c) {
     onclick: () => switchChannel(c.id),
     oncontextmenu: askDelete,
   }, [
-    el("div", { class: `avatar ${online ? "avatar-online" : "avatar-offline"}`, style: `background:${u?.color || "var(--brand)"}` }, [
-      document.createTextNode(u?.avatar || (u?.username?.[0] || "?").toUpperCase()),
-      el("span", { class: "presence-dot" }),
-    ]),
+    (() => { const node = el("div", { class: `avatar ${online ? "avatar-online" : "avatar-offline"}`, style: `background:${u?.color || "var(--brand)"}` }); renderAvatarContent(node, u?.avatar, u?.username?.[0] || "?"); node.append(el("span", { class: "presence-dot" })); return node; })(),
     el("div", { class: "chat-meta" }, [
-      el("div", { class: "chat-name" }, peerName),
+      el("div", { class: "chat-name" }, [pinned ? el("span", { class: "chat-pin-mark", title: "Pinned chat", "aria-hidden": "true", html: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 3 5 5-4 1-4 4-1 5-2-2-4 4-2-2 4-4-2-2 5-1 4-4 1-4Z"/><path d="m10 14-6 6"/></svg>' }) : null, userNameNode(u || { username: peerName })]),
       el("div", { class: "chat-sub muted xs" }, online ? "online" : "offline"),
     ]),
     unread ? el("span", { class: "badge badge-unread" }, String(unread)) : null,
+    el("button", { class: "chat-pin" + (pinned ? " is-pinned" : ""), type: "button", title: pinned ? "Unpin chat" : "Pin chat", "aria-label": pinned ? "Unpin chat" : "Pin chat", onclick: (ev) => { ev.stopPropagation(); toggleChatPin(c.id); }, html: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 3 5 5-4 1-4 4-1 5-2-2-4 4-2-2 4-4-2-2 5-1 4-4 1-4Z"/><path d="m10 14-6 6"/></svg>' }),
     el("button", {
       class: "chat-del",
       title: `Delete conversation with ${peerName}`,
@@ -1511,15 +1913,29 @@ function _personItem(u, online) {
       ? sendOp({ op: "dm_open", user: u.id })
       : toast(`${u.username} is offline`),
   }, [
-    el("div", { class: `avatar ${online ? "avatar-online" : "avatar-offline"}`, style: `background:${u.color || "var(--brand)"}` }, [
-      document.createTextNode(u.avatar || (u.username?.[0] || "?").toUpperCase()),
-      el("span", { class: "presence-dot" }),
-    ]),
+    (() => { const node = el("div", { class: `avatar ${online ? "avatar-online" : "avatar-offline"}`, style: `background:${u.color || "var(--brand)"}` }); renderAvatarContent(node, u.avatar, u.username?.[0] || "?"); node.append(el("span", { class: "presence-dot" })); return node; })(),
     el("div", { class: "chat-meta" }, [
-      el("div", { class: "chat-name" }, u.username),
+      el("div", { class: "chat-name" }, userNameNode(u)),
       el("div", { class: "chat-sub muted xs" }, online ? "online" : "offline"),
     ]),
   ]);
+}
+
+function chatPinsStorageKey() { return "pinned-chats:" + (S.me?.id || "anonymous"); }
+function isChatPinned(channelId) {
+  try { return (JSON.parse(lstore.get(chatPinsStorageKey()) || "[]") || []).includes(channelId); } catch { return false; }
+}
+function toggleChatPin(channelId) {
+  let pinned = [];
+  try { pinned = JSON.parse(lstore.get(chatPinsStorageKey()) || "[]") || []; } catch {}
+  pinned = pinned.filter(id => S.channels.has(id));
+  if (pinned.includes(channelId)) pinned = pinned.filter(id => id !== channelId);
+  else {
+    if (pinned.length >= 5) { toast("You can pin up to 5 chats. Unpin one first.", 3000); return; }
+    pinned.push(channelId);
+  }
+  lstore.set(chatPinsStorageKey(), JSON.stringify(pinned));
+  renderChannels();
 }
 
 function renderChannels() {
@@ -1538,6 +1954,8 @@ function renderChannels() {
     channels.push(c);
   }
   channels.sort((a, b) => {
+    const pinDiff = Number(isChatPinned(b.id)) - Number(isChatPinned(a.id));
+    if (pinDiff) return pinDiff;
     if (a.kind === "lobby") return -1;
     if (b.kind === "lobby") return 1;
     return (a.name || a.id).localeCompare(b.name || b.id);
@@ -1574,7 +1992,7 @@ function renderChannels() {
   const dmGroupedOffline = dmList.filter((c) => {
     const p = dmPeer(c); return !(p && !p.offline) && matches(p?.username);
   });
-  const sortDm = (a, b) => (dmPeer(a)?.username || "").localeCompare(dmPeer(b)?.username || "");
+  const sortDm = (a, b) => Number(isChatPinned(b.id)) - Number(isChatPinned(a.id)) || (dmPeer(a)?.username || "").localeCompare(dmPeer(b)?.username || "");
   dmGroupedOnline.sort(sortDm); dmGroupedOffline.sort(sortDm);
 
   // ── Render based on tab ──────────────────────────────────
@@ -1591,7 +2009,7 @@ function renderChannels() {
   } else if (tab === "mine") {
     // My channels and personal (DM) chats I've actually opened.
     root.append(_sbGroup("ch", "Channels", channels.length, channels.map(_channelItem)));
-    const personal = [...dmGroupedOnline, ...dmGroupedOffline];
+    const personal = [...dmGroupedOnline, ...dmGroupedOffline].sort(sortDm);
     root.append(_sbGroup("personal", "Personal", personal.length, personal.map(_dmItem)));
   } else {
     // All: channels + every DM + every person.
@@ -1606,6 +2024,17 @@ function renderChannels() {
     root.append(_sbGroup("offline", "Offline", offlineItems.length, offlineItems));
   }
 
+  if (S.sidebarMessageResults.length && q) {
+    const results = S.sidebarMessageResults.filter(item => String(item.snippet || item.message?.text || item.message?.file?.name || "").toLowerCase().includes(q));
+    const resultItems = results.slice(0, 20).map(item => el("li", { class: "chat-item search-result-item", title: "Open matching message", onclick: () => openSidebarSearchResult(item) }, [
+      el("div", { class: "avatar", style: "background:var(--brand)" }, "#"),
+      el("div", { class: "chat-meta" }, [
+        el("div", { class: "chat-name" }, item.channelName || item.channelId || "Channel"),
+        el("div", { class: "chat-sub muted xs" }, `${item.message?.username || "Member"}: ${String(item.snippet || item.message?.text || item.message?.file?.name || "Attachment").slice(0, 90)}`),
+      ]),
+    ]));
+    root.append(_sbGroup("message-search-results", "Message matches", results.length, resultItems));
+  }
   if (!root.children.length) {
     root.append(el("div", { class: "chat-empty muted xs" }, "Nothing here yet."));
   }
@@ -1620,7 +2049,65 @@ function setSidebarTab(tab) {
   renderChannels();
 }
 
+function handleSidebarSearchKeydown(event) {
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  const query = (S.sidebarFilter || "").trim();
+  if (query.length < 2 || query.length > 100) { toast("Message search must be 2–100 characters."); return; }
+  sendOp({ op: "search_all", query });
+}
+async function onSearchAllResults(e) {
+  const query = String(e.query || "").trim();
+  if (query.toLowerCase() !== (S.sidebarFilter || "").trim().toLowerCase()) return;
+  const results = Array.isArray(e.results) ? [...e.results] : [];
+  // Keep E2EE DMs out of server search. Search only the DM history already
+  // loaded on this device, decrypting in memory and never sending plaintext.
+  for (const channel of S.channels.values()) {
+    if (channel.kind !== "dm") continue;
+    const peer = dmPeer(channel);
+    if (!peer) continue;
+    for (const message of S.msgs.get(channel.id) || []) {
+      if (message.deleted || message.kind === "system") continue;
+      let text = String(message.text || "");
+      if (text.startsWith("e2e:v1:")) {
+        if (!peer.pubkey) continue;
+        const decrypted = await E2EE.tryDecrypt(peer.id, peer.pubkey, text);
+        if (decrypted == null) continue;
+        text = decrypted;
+      }
+      let searchable = text;
+      if (message.kind === "file" && text.startsWith("{")) {
+        try {
+          const envelope = JSON.parse(text);
+          searchable = [envelope.name, envelope.originalName, envelope.fileName, envelope.caption].filter(Boolean).join(" ") || text;
+        } catch {}
+      }
+      if (searchable.toLowerCase().includes(query.toLowerCase())) {
+        results.push({ channelId: channel.id, channelName: peer.username || "Private chat", message, snippet: searchable, localOnly: true });
+      }
+    }
+  }
+  if (query.toLowerCase() !== (S.sidebarFilter || "").trim().toLowerCase()) return;
+  S.sidebarMessageResults = results.sort((x, y) => Number(y.message?.ts || 0) - Number(x.message?.ts || 0));
+  renderChannels();
+  if (!S.sidebarMessageResults.length) toast("No matches found in searchable channels or locally loaded private-chat history.", 3500);
+}
+function openSidebarSearchResult(result) {
+  const channelId = result?.channelId;
+  const message = result?.message;
+  if (!channelId || !message) return;
+  const existing = S.msgs.get(channelId) || [];
+  if (!existing.some(m => String(m.id) === String(message.id))) {
+    S.msgs.set(channelId, [...existing, message].sort((a,b) => Number(a.id) - Number(b.id)));
+  }
+  S.hasHistory.add(channelId);
+  _ciPendingJump = { channelId, messageId: message.id };
+  switchChannel(channelId);
+  sendOp({ op: "history_before", channel: channelId, beforeId: Number(message.id) + 1, limit: 50 });
+}
+
 function setSidebarFilter(v) {
+  S.sidebarMessageResults = [];
   S.sidebarFilter = v || "";
   const input = $("sbSearch");
   if (input && input.value !== S.sidebarFilter) input.value = S.sidebarFilter;
@@ -1736,7 +2223,7 @@ async function renderMessage(m, { follow, peer, ch }) {
         ev.stopPropagation();
         openDmWithUserId(m.userId, m.username);
       },
-    }, m.avatar || "?");
+    }, avatarContent(m.avatar, m.username?.[0] || "?"));
   }
 
   const bubble = el("div", { class: "bubble" });
@@ -1748,7 +2235,8 @@ async function renderMessage(m, { follow, peer, ch }) {
     let quoteName = "message";
     let quoteColor = "var(--brand)";
     if (orig) {
-      quoteName = orig.username || quoteName;
+      const quoteProfile = S.userProfiles.get(orig.userId) || S.users.get(orig.userId);
+      quoteName = (orig.username || quoteName) + (quoteProfile?.designation ? " • " + quoteProfile.designation : "");
       quoteColor = orig.color || quoteColor;
       if (orig.deleted) {
         quoteText = "This message was deleted.";
@@ -1804,7 +2292,7 @@ async function renderMessage(m, { follow, peer, ch }) {
             ev.stopPropagation();
             openDmWithUserId(m.userId, m.username);
           },
-        }, m.username),
+        }, userNameNode(S.users.get(m.userId) || { username: m.username })),
         el("span", { class: "header-time" }, fmtTime(m.ts)),
       ]);
     } else {
@@ -1956,11 +2444,28 @@ async function renderMessage(m, { follow, peer, ch }) {
     }
     bubble.append(att);
     if (displayText) {
-      bubble.append(el("div", { class: "text" }, displayText));
+      const textNode = el("div", { class: "text" });
+      appendLinkedText(textNode, displayText, m.channel);
+      bubble.append(textNode);
+    }
+  } else if (!m.deleted && !isDm && displayText.startsWith("poll:v1:")) {
+    let poll = null;
+    try { poll = JSON.parse(displayText.slice("poll:v1:".length)); } catch {}
+    if (poll && typeof poll.question === "string" && Array.isArray(poll.options)) {
+      bubble.append(renderPollCard(m, poll));
+      const pollKey = `${m.channel}:${m.id}`;
+      if (!S.pollRequests.has(pollKey)) {
+        S.pollRequests.add(pollKey);
+        sendOp({ op: "poll_state", channel: m.channel, msgId: Number(m.id) });
+      }
+    } else {
+      bubble.append(el("div", { class: "text" }, "This poll cannot be displayed."));
     }
   } else if (displayText) {
     const cls = isJumbo(displayText) ? "text jumbo" : "text";
-    bubble.append(el("div", { class: cls }, displayText));
+    const textNode = el("div", { class: cls });
+    appendLinkedText(textNode, displayText, m.channel);
+    bubble.append(textNode);
   }
 
   // Inline meta inside bubble: only ticks (own) + lock (E2EE). Time is in the header above.
@@ -1995,6 +2500,7 @@ async function renderMessage(m, { follow, peer, ch }) {
   // WhatsApp-style hover controls: reaction stays outside the bubble; arrow lives inside it.
   const savedNow = isMessageSaved(m);
   const canDeleteMessage = isOwn || ch?.kind === "group";
+  const canPinMessage = ch?.kind !== "group" || ch.createdBy === S.me?.id || ch.memberRoles?.[S.me?.id] === "moderator" || ch.memberRoles?.[S.me?.id] === "owner";
   const quickReaction = el("button", {
     type: "button",
     class: "msg-hover-reaction",
@@ -2018,7 +2524,7 @@ async function renderMessage(m, { follow, peer, ch }) {
   const menu = el("div", { class: "msg-menu", role: "menu" }, [
     el("button", { type: "button", class: "msg-menu-item", onclick: (ev) => { ev.stopPropagation(); closeMessageMenu(row, menu, bubble); startReplyTo(m, displayText, fileRealName); } }, [svg("M10 9V5l-7 7 7 7v-4c5 0 8 1.5 10 5-1-7-5-11-10-11z", 16), "Reply"]),
     el("button", { type: "button", class: "msg-menu-item", onclick: (ev) => { ev.stopPropagation(); closeMessageMenu(row, menu, bubble); openForwardDialog(m, displayText, fileRealName, peer); } }, [svg("M14 5l7 7-7 7M21 12H9a6 6 0 0 0-6 6", 16), "Forward"]),
-    el("button", { type: "button", class: "msg-menu-item", onclick: (ev) => { ev.stopPropagation(); closeMessageMenu(row, menu, bubble); toggleMessagePin(m); } }, [svg("M16 3l5 5-4 1-4 4-1 5-2-2-4 4-2-2 4-4-2-2 5-1 4-4z", 16), isMessagePinned(m) ? "Unpin" : "Pin"]),
+    ...(canPinMessage ? [el("button", { type: "button", class: "msg-menu-item", onclick: (ev) => { ev.stopPropagation(); closeMessageMenu(row, menu, bubble); toggleMessagePin(m); } }, [svg("m16 3 5 5-4 1-4 4-1 5-2-2-4 4-2-2 4-4-2-2 5-1 4-4z", 16), isMessagePinned(m) ? "Unpin" : "Pin"])] : []),
     el("button", { type: "button", class: "msg-menu-item", onclick: (ev) => { ev.stopPropagation(); closeMessageMenu(row, menu, bubble); toggleMessageBookmark(m); } }, [svg("M6 4h12v17l-6-4-6 4z", 16), savedNow ? "Remove saved message" : "Save message"]),
     el("button", { type: "button", class: "msg-menu-item", onclick: async (ev) => { ev.stopPropagation(); closeMessageMenu(row, menu, bubble); try { await navigator.clipboard.writeText(displayText || fileRealName || ""); toast("Copied"); } catch { toast("Could not copy this message"); } } }, [svg("M8 8V4h12v12h-4M4 8h12v12H4z", 16), "Copy"]),
     el("button", { type: "button", class: "msg-menu-item danger", disabled: !canDeleteMessage, title: canDeleteMessage ? "Delete for everyone" : "Only the sender or group admin can delete this message", onclick: (ev) => { ev.stopPropagation(); closeMessageMenu(row, menu, bubble); if (canDeleteMessage && confirm("Delete this message for everyone? This cannot be undone.")) sendOp({ op: "delete_message", channel: m.channel, msgId: Number(m.id) }); } }, [svg("M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14M10 10v6M14 10v6", 16), "Delete for everyone"]),
@@ -2065,6 +2571,98 @@ async function renderMessage(m, { follow, peer, ch }) {
   return row;
 }
 
+function createPollPrompt() {
+  const ch = S.channels.get(S.active);
+  if (!ch || ch.kind !== "group" || ch.id.startsWith("notes:")) { toast("Polls are available in group chats only."); return; }
+  const modal = $("pollCreateModal");
+  if (!modal) { toast("Poll form is unavailable. Please reload LocalChat."); return; }
+  $("pollQuestionInput").value = "";
+  $("pollOptionsList").replaceChildren();
+  addPollOption("Option 1"); addPollOption("Option 2");
+  $("pollCreateStatus").textContent = "";
+  modal.classList.remove("hidden"); modal.setAttribute("aria-hidden", "false");
+  document.body.classList.add("poll-modal-open");
+  setTimeout(() => $("pollQuestionInput")?.focus(), 30);
+}
+function closePollModal(force = false) {
+  const modal = $("pollCreateModal");
+  if (!modal || modal.classList.contains("hidden")) return;
+  // Cancel is explicit; closing the popup never opens a browser-native dialog.
+  modal.classList.add("hidden"); modal.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("poll-modal-open");
+  $("createPollBtn")?.focus();
+}
+function addPollOption(value = "") {
+  const list = $("pollOptionsList");
+  if (!list || list.querySelectorAll(".poll-option-row").length >= 10) return;
+  const row = el("div", { class: "poll-option-row" });
+  const input = el("input", { class: "poll-option-input", type: "text", maxlength: "100", placeholder: "Enter an option", value, autocomplete: "off" });
+  const remove = el("button", { type: "button", class: "poll-remove-option", title: "Remove option", "aria-label": "Remove option", onclick: () => { row.remove(); updatePollOptionControls(); } }, "×");
+  row.append(input, remove); list.append(row); updatePollOptionControls();
+}
+function updatePollOptionControls() {
+  const list = $("pollOptionsList"); if (!list) return;
+  const rows = [...list.querySelectorAll(".poll-option-row")];
+  rows.forEach(row => { const b = row.querySelector(".poll-remove-option"); if (b) b.disabled = rows.length <= 2; });
+  const add = $("pollAddOptionBtn");
+  if (add) { add.disabled = rows.length >= 10; add.textContent = rows.length >= 10 ? "Maximum 10 options" : "＋ Add option"; }
+  const count = $("pollOptionCount"); if (count) count.textContent = rows.length + "/10 options";
+}
+function submitPollCreate(ev) {
+  ev.preventDefault();
+  const ch = S.channels.get(S.active);
+  if (!ch || ch.kind !== "group" || ch.id.startsWith("notes:")) { closePollModal(true); toast("Polls are available in group chats only."); return; }
+  const question = ($("pollQuestionInput")?.value || "").trim();
+  const options = [...($("pollOptionsList")?.querySelectorAll(".poll-option-input") || [])].map(i => i.value.trim()).filter(Boolean);
+  const status = $("pollCreateStatus");
+  if (!question || question.length > 180) { status.textContent = "Enter a question (1–180 characters)."; $("pollQuestionInput")?.focus(); return; }
+  if (options.length < 2 || options.length > 10) { status.textContent = "Add 2–10 non-empty answer options."; return; }
+  if (new Set(options.map(x => x.toLocaleLowerCase())).size !== options.length) { status.textContent = "Each answer option must be unique."; return; }
+  if (!S.ws || S.ws.readyState !== WebSocket.OPEN) { status.textContent = "You are disconnected. Reconnect and try again."; return; }
+  sendOp({ op: "poll_create", channel: S.active, question, options });
+  closePollModal(true);
+}
+function renderPollCard(message, poll) {
+  const key = `${message.channel}:${message.id}`;
+  const state = S.polls.get(key) || { counts: [], userVote: null };
+  const counts = Array.isArray(state.counts) ? state.counts : [];
+  const total = counts.reduce((sum, count) => sum + (Number(count) || 0), 0);
+  const card = el("div", { class: "poll-card" });
+  card.append(el("div", { class: "poll-question" }, poll.question));
+  const options = poll.options.slice(0, 10);
+  options.forEach((option, index) => {
+    const count = Number(counts[index] || 0);
+    const percent = total ? Math.round(count * 100 / total) : 0;
+    const chosen = state.userVote === index;
+    const btn = el("button", {
+      type: "button",
+      class: "poll-option" + (chosen ? " selected" : ""),
+      "aria-pressed": chosen ? "true" : "false",
+      title: total ? `${count} vote${count === 1 ? "" : "s"} (${percent}%)` : "Vote for this option",
+      onclick: () => {
+        if (S.channels.get(message.channel)?.kind === "dm") return;
+        sendOp({ op: "poll_vote", channel: message.channel, msgId: Number(message.id), optionIndex: index });
+      },
+    }, [
+      el("span", { class: "poll-option-label" }, option),
+      el("span", { class: "poll-option-count" }, state.counts ? String(count) : ""),
+      el("span", { class: "poll-option-bar", style: `width:${percent}%` }),
+    ]);
+    card.append(btn);
+  });
+  card.append(el("div", { class: "poll-footer" }, `${total} vote${total === 1 ? "" : "s"} · ${state.userVote == null ? "Select an option to vote" : "Your vote is recorded"}`));
+  return card;
+}
+function onPollUpdate(event, rerender = true) {
+  if (!event || !event.channel || event.msgId == null) return;
+  const key = `${event.channel}:${event.msgId}`;
+  const old = S.polls.get(key) || { counts: [], userVote: null };
+  S.polls.set(key, {
+    counts: Array.isArray(event.counts) ? event.counts : old.counts,
+    userVote: Object.prototype.hasOwnProperty.call(event, "userVote") ? event.userVote : old.userVote,
+  });
+  if (rerender && S.active === event.channel) renderStream();
+}
 // Compute tick state for an own message:
 //   "sent"      → message is in the room, no other connected peer.
 //   "delivered" → at least one other channel member is currently online.
@@ -2106,41 +2704,70 @@ function renderTicks(state) {
   });
 }
 
-// Quick-reaction popover (small, fixed set)
-const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏", "🔥", "🎉"];
+// Six quick reactions stay visible; expanded mode uses the full composer emoji catalog.
+const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 function openReactionPicker(anchor, msgId) {
   closeReactionPicker();
   const pop = el("div", { class: "reaction-pop" });
-  for (const e of QUICK_REACTIONS) {
-    pop.append(el("button", {
-      class: "rp-btn",
-      onclick: (ev) => {
-        ev.stopPropagation();
-        toggleReaction(msgId, e);
-        closeReactionPicker();
-      },
-    }, e));
-  }
-  document.body.append(pop);
-  const r = anchor.getBoundingClientRect();
-  // Position above the button, clamped to viewport.
-  const popW = 280;
-  let left = Math.min(window.innerWidth - popW - 8, Math.max(8, r.left + r.width / 2 - popW / 2));
-  let top  = r.top - 48;
-  if (top < 8) top = r.bottom + 6;
-  pop.style.left = `${left}px`;
-  pop.style.top  = `${top}px`;
-  // Dismiss on outside click / escape.
+  let expanded = false;
+  const choose = (emoji, ev) => { ev?.stopPropagation(); toggleReaction(msgId, emoji); closeReactionPicker(); };
+  const position = () => {
+    const r = anchor.getBoundingClientRect(), width = expanded ? Math.min(380, window.innerWidth - 16) : 280;
+    pop.style.width = width + "px";
+    pop.style.left = Math.min(window.innerWidth - width - 8, Math.max(8, r.left + r.width / 2 - width / 2)) + "px";
+    const height = pop.getBoundingClientRect().height || (expanded ? 380 : 48);
+    let top = r.top - height - 8;
+    if (top < 8) top = Math.min(window.innerHeight - height - 8, r.bottom + 6);
+    pop.style.top = Math.max(8, top) + "px";
+  };
+  const renderFullPicker = () => {
+    pop.replaceChildren(); pop.classList.add("expanded");
+    const head = el("div", { class: "rp-head" }, [
+      el("strong", {}, "Choose a reaction"),
+      el("button", { type: "button", class: "rp-close", "aria-label": "Close emoji picker", onclick: ev => { ev.stopPropagation(); closeReactionPicker(); } }, "×")
+    ]);
+    const search = el("input", { type: "search", class: "rp-search", placeholder: "Search emoji…", "aria-label": "Search all emojis", autocomplete: "off" });
+    const tabs = el("div", { class: "rp-tabs", role: "tablist", "aria-label": "Emoji categories" });
+    const grid = el("div", { class: "rp-grid" });
+    let category = Object.keys(EMOJI)[0] || "Smileys";
+    const drawGrid = () => {
+      grid.replaceChildren();
+      const query = search.value.trim().toLocaleLowerCase();
+      const all = Object.values(EMOJI).flat();
+      const source = query ? Object.entries(EMOJI).filter(([name]) => name.toLocaleLowerCase().includes(query)).flatMap(([, items]) => items).concat(all.filter(emoji => emoji.includes(query))) : (EMOJI[category] || []);
+      const choices = [...new Set(source.filter(Boolean))];
+      if (!choices.length) { grid.append(el("div", { class: "rp-empty" }, "No matching emoji")); return; }
+      for (const emoji of choices) grid.append(el("button", { type: "button", class: "rp-btn", title: "React with " + emoji, "aria-label": "React with " + emoji, onclick: ev => choose(emoji, ev) }, emoji));
+    };
+    for (const name of Object.keys(EMOJI)) tabs.append(el("button", { type: "button", role: "tab", class: name === category ? "active" : "", onclick: ev => {
+      ev.stopPropagation(); category = name; search.value = "";
+      tabs.querySelectorAll("button").forEach(b => b.classList.toggle("active", b.textContent === name)); drawGrid();
+    } }, name));
+    search.addEventListener("input", drawGrid);
+    pop.append(head, search, tabs, grid); drawGrid(); search.focus();
+  };
+  const renderQuick = () => {
+    pop.replaceChildren(); pop.classList.remove("expanded");
+    for (const emoji of QUICK_REACTIONS) pop.append(el("button", { type: "button", class: "rp-btn", title: "React with " + emoji, onclick: ev => choose(emoji, ev) }, emoji));
+    pop.append(el("button", { type: "button", class: "rp-btn rp-more", title: "More reactions", "aria-label": "More reactions", onclick: ev => {
+      ev.stopPropagation(); expanded = true; renderFullPicker(); position();
+    } }, "+"));
+  };
+  renderQuick(); document.body.append(pop); position(); requestAnimationFrame(position);
   setTimeout(() => {
-    document.addEventListener("click", _rpDismiss, { once: true, capture: true });
+    document.addEventListener("click", _rpDismiss, true);
     document.addEventListener("keydown", _rpKey);
   }, 0);
 }
 function closeReactionPicker() {
   document.querySelectorAll(".reaction-pop").forEach((n) => n.remove());
   document.removeEventListener("keydown", _rpKey);
+  document.removeEventListener("click", _rpDismiss, true);
 }
-function _rpDismiss() { closeReactionPicker(); }
+function _rpDismiss(ev) {
+  if (ev?.target?.closest?.(".reaction-pop")) return;
+  closeReactionPicker();
+}
 function _rpKey(e) { if (e.key === "Escape") closeReactionPicker(); }
 
 function updateHeader() {
@@ -2162,13 +2789,13 @@ function updateHeader() {
 
   if (ch.kind === "dm") {
     const p = dmPeer(ch);
-    title.textContent = p ? p.username : "unknown";
+    title.replaceChildren(userNameNode(p || { username: "unknown" }));
     sub.textContent = p ? (p.offline ? "offline" : "online") : "";
     badge.classList.remove("hidden");
     composer.placeholder = "Type a message";
     if (avSlot) {
       avSlot.style.background = p?.color || "var(--brand)";
-      avSlot.textContent = p?.avatar || (p?.username?.[0] || "?").toUpperCase();
+      renderAvatarContent(avSlot, p?.avatar, p?.username?.[0] || "?");
       avSlot.classList.remove("hidden");
     }
     if (callBtn) callBtn.classList.toggle("hidden", !p);
@@ -2214,6 +2841,7 @@ function switchChannel(id) {
   S.active = id;
   updateMentionBadge();
   S.unread.set(id, 0);
+  S.unreadIndicators.delete(id);
   if (S.replyTo && S.replyTo.channelId !== id) clearReplyTo();
   else renderReplyPreview();
   renderChannels();
@@ -2631,10 +3259,14 @@ function updateMentionPicker() {
   const token = getMentionToken();
   if (!token) { closeMentionPicker(); return; }
   const query = token.query.toLowerCase();
-  const candidates = [...S.users.values()]
+  const activeChannel = S.channels.get(S.active);
+  const allCandidate = activeChannel?.kind === "group" && "all".startsWith(query)
+    ? [{ id: "__all__", username: "all", color: "var(--brand)", avatar: "@", online: true, isAll: true }]
+    : [];
+  const candidates = [...allCandidate, ...[...S.users.values()]
     .filter((u) => u.username && u.username.toLowerCase() !== (S.me?.username || "").toLowerCase())
     .filter((u) => u.username.toLowerCase().startsWith(query))
-    .sort((a, b) => a.username.localeCompare(b.username))
+    .sort((a, b) => a.username.localeCompare(b.username))]
     .slice(0, 8);
   if (!candidates.length) { closeMentionPicker(); return; }
   mentionToken = token;
@@ -2648,9 +3280,9 @@ function updateMentionPicker() {
       "aria-selected": i === mentionActiveIndex ? "true" : "false",
       onmousedown: (ev) => { ev.preventDefault(); insertMention(u.username); },
     }, [
-      el("span", { class: "mention-option-avatar", style: `background:${u.color || colorForName(u.username)}` }, (u.avatar || u.username[0] || "?").toUpperCase()),
+      (() => { const node = el("span", { class: "mention-option-avatar", style: `background:${u.color || colorForName(u.username)}` }); renderAvatarContent(node, u.avatar, u.username?.[0] || "?"); return node; })(),
       el("span", { class: "mention-option-name" }, "@" + u.username),
-      el("span", { class: "mention-option-status" }, u.online ? "online" : ""),
+      el("span", { class: "mention-option-status" }, u.isAll ? "everyone in group" : (u.online ? "online" : "")),
     ]);
     return item;
   }));
@@ -2870,7 +3502,7 @@ function openDmPicker() {
     list.append(el("li", {
       onclick: () => { sendOp({ op: "dm_open", user: u.id }); closeModal("dmModal"); },
     }, [
-      el("div", { class: "avatar xs", style: `background:${u.color}` }, u.avatar || "?"),
+      (() => { const node = el("div", { class: "avatar xs", style: `background:${u.color}` }); renderAvatarContent(node, u.avatar, u.username?.[0] || "?"); return node; })(),
       el("span", {}, u.username),
       el("span", { class: "e2ee" + (canE2ee ? " ok" : "") }, [
         svg("M6 10V7a6 6 0 0112 0v3M5 10h14v10H5z", 12, 2),
@@ -2941,8 +3573,7 @@ function renderInviteList() {
         renderInviteList();
       },
     }, [
-      el("div", { class: "avatar xs", style: `background:${u.color}` },
-        u.avatar || (u.username?.[0] || "?").toUpperCase()),
+      (() => { const node = el("div", { class: "avatar xs", style: `background:${u.color}` }); renderAvatarContent(node, u.avatar, u.username?.[0] || "?"); return node; })(),
       el("span", { class: "inv-name" }, u.username),
       el("span", { class: "inv-check", "aria-hidden": "true" }, checked ? "✓" : ""),
     ]);
@@ -2991,6 +3622,106 @@ document.addEventListener("visibilitychange", () => {
 });
 window.addEventListener("focus", scheduleReadReceipt);
 
+const PROFILE_AVATAR_PRESETS = ["😀","😎","😊","🐱","🐼","🦊","🐸","🐙","🦄","🐧","🐨","🐯","🦋","🌟","🌈","🚀"];
+function renderProfileAvatarSettings() {
+  const preview = $("profileAvatarPreview");
+  if (preview) { preview.style.background = S.me?.color || "var(--brand)"; renderAvatarContent(preview, S.me?.avatar, S.me?.username?.[0] || "?"); }
+  document.querySelectorAll(".profile-avatar-preset").forEach(button => {
+    const active = button.dataset.avatar === S.me?.avatar;
+    button.classList.toggle("active", active); button.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+}
+function setProfileAvatarPreset(avatar) {
+  if (!PROFILE_AVATAR_PRESETS.includes(avatar)) return;
+  if (!S.ws || S.ws.readyState !== WebSocket.OPEN) { toast("Not connected. Please try again."); return; }
+  sendOp({ op: "avatar_set", avatar });
+  const status = $("profileAvatarStatus"); if (status) { status.textContent = "Updating avatar…"; status.classList.remove("err","ok"); }
+}
+async function uploadProfileAvatar(file) {
+  if (!file || !S.session) { toast("Not connected — try again in a moment."); return; }
+  if (!["image/png","image/jpeg","image/webp"].includes(file.type || "")) { toast("Choose a PNG, JPEG, or WebP image."); return; }
+  let blob;
+  try {
+    const bitmap = await createImageBitmap(file), side = Math.min(bitmap.width, bitmap.height);
+    if (!side) throw new Error("Image dimensions are invalid.");
+    const canvas = document.createElement("canvas"); canvas.width = 256; canvas.height = 256;
+    const context = canvas.getContext("2d"); if (!context) throw new Error("Image processing is unavailable.");
+    context.drawImage(bitmap,(bitmap.width-side)/2,(bitmap.height-side)/2,side,side,0,0,256,256); bitmap.close?.();
+    blob = await new Promise(resolve => canvas.toBlob(resolve,"image/webp",0.82));
+    if (!blob) blob = await new Promise(resolve => canvas.toBlob(resolve,"image/jpeg",0.82));
+    if (!blob) throw new Error("Could not process this image.");
+  } catch(error) { toast("Could not process image: "+(error.message||"unsupported image")); return; }
+  if (blob.size > 2*1024*1024) { toast("Processed picture is too large. Choose a smaller image."); return; }
+  const form = new FormData(); form.append("purpose","profile_avatar"); form.append("session",S.session);
+  form.append("file",blob,blob.type==="image/webp"?"profile-avatar.webp":"profile-avatar.jpg");
+  const status=$("profileAvatarStatus"); if(status){status.textContent="Uploading picture…";status.classList.remove("err","ok");}
+  try {
+    const response=await fetch("/api/upload",{method:"POST",body:form}), result=await response.json().catch(()=>({}));
+    if(!response.ok) throw new Error(result.error||result.message||"Upload failed.");
+    if(status){status.textContent="Profile picture uploaded.";status.classList.remove("err");status.classList.add("ok");}
+  } catch(error) { if(status){status.textContent="Could not upload picture: "+(error.message||"upload failed");status.classList.remove("ok");status.classList.add("err");} }
+}
+$("profileAvatarUploadBtn")?.addEventListener("click",()=> $("profileAvatarFileInput")?.click());
+$("profileAvatarFileInput")?.addEventListener("change",async()=>{const file=$("profileAvatarFileInput").files?.[0];$("profileAvatarFileInput").value="";if(file)await uploadProfileAvatar(file);});
+Object.assign(window,{setProfileAvatarPreset});
+
+function openSettingsPanel() {
+  if (!S.me) return;
+  $("profileUsername").value = S.me.username || "";
+  $("profileDesignation").value = S.me.designation || "CSA";
+  renderProfileAvatarSettings();
+  setProfileFieldEditing("username", false);
+  setProfileFieldEditing("designation", false);
+  $("profileSettingsStatus").textContent = "";
+  $("profileSettingsStatus").classList.remove("err", "ok");
+  $("settingsBackdrop").classList.remove("hidden");
+  $("settingsPanel").classList.add("open");
+  $("settingsPanel").setAttribute("aria-hidden", "false");
+  document.body.classList.add("settings-open");
+  document.addEventListener("keydown", _settingsEscape);
+  setTimeout(() => $("profileUsername")?.focus(), 40);
+}
+function closeSettingsPanel() {
+  $("settingsBackdrop")?.classList.add("hidden");
+  $("settingsPanel")?.classList.remove("open");
+  $("settingsPanel")?.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("settings-open");
+  document.removeEventListener("keydown", _settingsEscape);
+  $("settingsOpenBtn")?.focus();
+}
+function _settingsEscape(ev) { if (ev.key === "Escape") closeSettingsPanel(); }
+function setProfileFieldEditing(field, editing) {
+  const input = $(field === "username" ? "profileUsername" : "profileDesignation");
+  const actions = $(field === "username" ? "usernameEditActions" : "designationEditActions");
+  const edit = $(field === "username" ? "editUsernameBtn" : "editDesignationBtn");
+  if (!input || !actions || !edit) return;
+  input.disabled = !editing; actions.hidden = !editing; edit.hidden = editing;
+  if (editing) input.focus();
+}
+function cancelProfileFieldEdit(field) {
+  $("profileUsername").value = S.me?.username || "";
+  $("profileDesignation").value = S.me?.designation || "CSA";
+  setProfileFieldEditing(field, false);
+  const status = $("profileSettingsStatus"); if (status) { status.textContent = ""; status.classList.remove("err", "ok"); }
+}
+function submitProfileField(field) {
+  const username = ($("profileUsername")?.value || "").trim();
+  const designation = $("profileDesignation")?.value || "";
+  const status = $("profileSettingsStatus"); status.classList.remove("err", "ok");
+  if (field === "username" && !/^[A-Za-z0-9][A-Za-z0-9_.-]{2,23}$/.test(username)) {
+    status.textContent = "Use 3–24 characters: letters, digits, underscore, hyphen, or dot; start with a letter or digit.";
+    status.classList.add("err"); $("profileUsername")?.focus(); return;
+  }
+  if (field === "designation" && !["AM","TL","STL","QDE","LRD","EE","CSA"].includes(designation)) {
+    status.textContent = "Choose a valid designation."; status.classList.add("err"); $("profileDesignation")?.focus(); return;
+  }
+  if (!S.ws || S.ws.readyState !== WebSocket.OPEN) { status.textContent = "Not connected. Please try again."; status.classList.add("err"); return; }
+  const save = $(field === "username" ? "saveUsernameBtn" : "saveDesignationBtn");
+  if (save) { save.disabled = true; save.textContent = "Saving…"; }
+  status.textContent = "Saving changes…";
+  sendOp(field === "username" ? { op: "profile_update", username } : { op: "profile_update", designation });
+  setTimeout(() => { if (save?.isConnected) { save.disabled = false; save.textContent = field === "username" ? "Save username" : "Save designation"; } }, 3000);
+}
 function signOut() {
   lstore.remove("username");
   // Close socket cleanly so we don't auto-reconnect.
@@ -3004,6 +3735,29 @@ function signOut() {
 
 // ── Change password ─────────────────────────────────────────────────
 let _cpwForced = false;
+function openDesignationModal() {
+  if (S.me?.designation) { closeModal("designationModal"); return; }
+  openModal("designationModal");
+  const select = $("designationSelect");
+  if (select) select.focus();
+}
+function submitDesignation(event) {
+  event.preventDefault();
+  if (S.me?.designation) { closeModal("designationModal"); return; }
+  const designation = $("designationSelect")?.value || "";
+  if (!["AM", "TL", "STL", "QDE", "LRD", "EE", "CSA"].includes(designation)) {
+    toast("Please choose your designation.");
+    return;
+  }
+  if (!S.ws || S.ws.readyState !== WebSocket.OPEN) { toast("Not connected. Please try again."); return; }
+  sendOp({ op: "designation_set", designation });
+  const button = $("designationSubmit");
+  if (button) { button.disabled = true; button.textContent = "Saving…"; }
+  setTimeout(() => {
+    if (!S.me?.designation && button) { button.disabled = false; button.textContent = "Save designation"; }
+  }, 2500);
+}
+
 function openChangePasswordModal({ forced } = {}) {
   _cpwForced = !!forced;
   const intro = $("cpwIntro");
@@ -3049,11 +3803,16 @@ function submitChangePassword(ev) {
     status.classList.add("err"); return;
   }
   status.textContent = "Saving…";
+  _pendingNewPassword = next;
   try { S.ws.send(JSON.stringify({ op: "change_password", current: cur, new: next })); }
-  catch { status.textContent = "Failed to send."; status.classList.add("err"); }
+  catch { _pendingNewPassword = ""; status.textContent = "Failed to send."; status.classList.add("err"); }
 }
 
 function onPasswordChanged() {
+  if (_pendingNewPassword) {
+    _activePassword = _pendingNewPassword; _pendingNewPassword = "";
+    E2EE.refreshKeyBackup(_activePassword).catch((error) => console.warn("Could not refresh encrypted DM key backup", error));
+  }
   const status = $("cpwStatus");
   if (status) {
     status.textContent = "Password updated.";
@@ -3061,25 +3820,81 @@ function onPasswordChanged() {
     status.classList.add("ok");
   }
   toast("Password changed.");
-  setTimeout(() => closeModal("changePwModal"), 700);
+  setTimeout(() => { closeModal("changePwModal"); if (!S.me?.designation) openDesignationModal(); }, 700);
 }
 
 // ── Lightbox ─────────────────────────────────────────────────────────
+let _lightboxPreviousFocus = null;
 function openLightbox(src, name, downloadUrl) {
   closeLightbox();
-  const lb = el("div", { class: "lightbox", id: "lightbox" }, [
-    el("button", {
-      class: "lb-close", "aria-label": "Close",
-      onclick: (e) => { e.stopPropagation(); closeLightbox(); },
-      html: `<svg viewBox="0 0 24 24" width="18" height="18"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`,
-    }),
-    el("img", { src, alt: name, onclick: (e) => e.stopPropagation() }),
-  ]);
+  _lightboxPreviousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  const lb = document.createElement("div");
+  lb.className = "lightbox";
+  lb.id = "lightbox";
+  lb.setAttribute("role", "dialog");
+  lb.setAttribute("aria-modal", "true");
+  lb.setAttribute("aria-label", name || "Image preview");
+  lb.tabIndex = -1;
+
+  const close = document.createElement("button");
+  close.type = "button";
+  close.className = "lb-close";
+  close.setAttribute("aria-label", "Close image preview");
+  close.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+  close.addEventListener("click", (event) => { event.stopPropagation(); closeLightbox(); });
+
+  const image = document.createElement("img");
+  image.src = src;
+  image.alt = name || "Shared image";
+  image.addEventListener("click", (event) => event.stopPropagation());
+  image.addEventListener("error", () => {
+    image.alt = "Image preview could not be loaded";
+    image.classList.add("lb-image-error");
+  });
+
+  lb.append(close, image);
+  if (downloadUrl) {
+    const bar = document.createElement("div");
+    bar.className = "lb-bar";
+    bar.addEventListener("click", (event) => event.stopPropagation());
+    const label = document.createElement("span");
+    label.textContent = name || "Shared image";
+    const download = document.createElement("a");
+    download.className = "lb-download";
+    download.href = downloadUrl;
+    download.download = (name && /\.[a-z0-9]{2,8}$/i.test(name)) ? name : "shared-image";
+    download.rel = "noopener noreferrer";
+    download.textContent = "Download";
+    bar.append(label, download);
+    lb.append(bar);
+  }
   lb.addEventListener("click", closeLightbox);
+  lb.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeLightbox();
+    } else if (event.key === "Tab") {
+      // Keep keyboard focus inside the modal while allowing both controls.
+      const focusable = [...lb.querySelectorAll("button:not([disabled]), a[href]")];
+      if (!focusable.length) { event.preventDefault(); lb.focus(); return; }
+      const first = focusable[0], last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault(); last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault(); first.focus();
+      }
+    }
+  });
   document.body.append(lb);
+  close.focus();
 }
 function closeLightbox() {
-  document.getElementById("lightbox")?.remove();
+  const lb = document.getElementById("lightbox");
+  if (!lb) return;
+  lb.remove();
+  const previous = _lightboxPreviousFocus;
+  _lightboxPreviousFocus = null;
+  if (previous?.isConnected) previous.focus();
 }
 
 // ── Emoji picker ─────────────────────────────────────────────────────
@@ -3625,7 +4440,7 @@ function showCallBar(status) {
   const peer = S.users.get(Call.peerId);
   const av = $("cbAvatar");
   if (av) {
-    av.textContent = peer?.avatar || (Call.peerName?.[0] || "?").toUpperCase();
+    renderAvatarContent(av, peer?.avatar, Call.peerName?.[0] || "?");
     av.style.background = peer?.color || "var(--brand)";
   }
   setCallStatus(status);
@@ -3666,7 +4481,7 @@ async function onCallSignal({ channel, kind, from, fromName, payload }) {
     const peer = S.users.get(from);
     const av = $("icAvatar");
     if (av) {
-      av.textContent = peer?.avatar || (Call.peerName?.[0] || "?").toUpperCase();
+      renderAvatarContent(av, peer?.avatar, Call.peerName?.[0] || "?");
       av.style.background = peer?.color || "var(--brand)";
     }
     $("icName").textContent = Call.peerName;
@@ -3771,3 +4586,509 @@ function stopRingtone() {
   _ringNodes = [];
   if (_ringCtx) { try { _ringCtx.close(); } catch {} _ringCtx = null; }
 }
+
+
+let _ciPendingJump = null;
+/* ── Chat info drawer + shared-item browser (initial test slice) ── */
+let _channelInfoTab = "media";
+let _channelInfoSearch = "";
+let _ciNotificationMode = "all";
+function _ciEsc(s) { return String(s ?? "").replace(/[&<>"']/g, ch => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[ch])); }
+function _ciPeer(ch) { try { return dmPeer(ch); } catch { return null; } }
+async function openChannelInfo() {
+  const ch = S.channels.get(S.active);
+  if (!ch) return;
+  $("channelInfoBackdrop")?.classList.remove("hidden");
+  $("channelInfoDrawer")?.classList.remove("hidden");
+  document.body.classList.add("channel-info-open");
+  _channelInfoTab = "media";
+  _channelInfoSearch = "";
+  await renderChannelInfo();
+  if (ch.kind !== "dm") requestChannelSharedItems(true);
+  sendOp({ op: "ch_info", channel: ch.id });
+  $("channelInfoDrawer")?.querySelector("button")?.focus();
+}
+function closeChannelInfo() {
+  $("channelInfoBackdrop")?.classList.add("hidden");
+  $("channelInfoDrawer")?.classList.add("hidden");
+  document.body.classList.remove("channel-info-open");
+  $("channelInfoBtn")?.focus();
+}
+async function renderChannelInfo() {
+  const root = $("channelInfoContent");
+  const ch = S.channels.get(S.active);
+  if (!root || !ch) return;
+  const isDm = ch.kind === "dm";
+  const peer = isDm ? _ciPeer(ch) : null;
+  const title = isDm ? (peer?.username || ch.dmUsers?.find(n => n?.toLowerCase() !== S.me?.username?.toLowerCase()) || "Direct message") : (ch.name || "Group");
+  const members = (ch.members || []).map(id => S.users.get(id) || { id, username: id === S.me?.id ? (S.me?.username || "You") : "Offline member", avatar: "?", color: "#6366f1" });
+  const profileAvatar = isDm ? (peer?.avatar || "?") : (title.slice(0,1).toUpperCase() || "#");
+  const canEditPhoto = ch.kind === "group" && (ch.createdBy === S.me?.id || ch.memberRoles?.[S.me?.id] === "moderator" || ch.memberRoles?.[S.me?.id] === "owner");
+  const description = ch.description || "";
+  const canEditDescription = ch.kind === "group" && !String(ch.id).startsWith("notes:") && ch.createdBy === S.me?.id;
+  _ciNotificationMode = ch.notificationMode || "all";
+  root.innerHTML = `
+    <section class="ci-profile">
+      <div class="ci-avatar">${ch.photoUrl && !isDm ? `<img src="${_ciEsc(ch.photoUrl)}" alt="${_ciEsc(title)} group photo" loading="lazy">` : (isDm && typeof profileAvatar === "string" && profileAvatar.startsWith("/uploads/") ? `<img src="${_ciEsc(profileAvatar)}" alt="${_ciEsc(title)} profile picture" loading="lazy">` : _ciEsc(profileAvatar))}${canEditPhoto ? '<button type="button" id="ciPhotoEditBtn" class="ci-avatar-edit" aria-label="Change group photo" title="Change group photo"><svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>' : ""}</div>
+      ${canEditPhoto ? '<input id="ciPhotoFileInput" type="file" accept="image/png,image/jpeg,image/webp" hidden aria-label="Choose group photo">' : ""}
+      <div class="ci-name-row"><div class="ci-name">${_ciEsc(title)}</div>${canEditDescription ? '<button type="button" id="ciNameEditBtn" class="ci-name-edit" aria-label="Edit channel name" title="Edit channel name" aria-expanded="false"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>' : ""}</div>
+       <div class="ci-subtitle">${isDm ? "Direct message · End-to-end encryption when available" : (ch.kind === "lobby" ? "Public channel" : (ch.isPrivate ? "Private group" : "Group conversation")) + " · " + members.length + " member" + (members.length === 1 ? "" : "s")}</div>
+       ${!isDm && ch.kind !== "lobby" ? `<div class="ci-description-row"><div class="ci-description" id="ciDescriptionText"><span class="ci-description-copy" id="ciDescriptionCopy">${_ciEsc(description || "No group description yet.")}</span>${canEditDescription ? '<button type="button" id="ciDescEditBtn" class="ci-name-edit ci-desc-edit" aria-label="Edit channel description" title="Edit channel description"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>' : ""}</div></div>` : ""}
+       ${canEditDescription ? `
+         <form id="ciEditNameForm" class="ci-edit-group" hidden>
+           <label for="ciNameInput">Channel name</label>
+           <input id="ciNameInput" type="text" maxlength="48" minlength="2" required value="${_ciEsc(title)}" placeholder="Enter channel name">
+           <div class="ci-edit-group-actions"><button class="btn btn-ghost btn-sm" type="button" id="ciCancelNameEdit">Cancel</button><button class="btn btn-primary btn-sm" type="submit">Save name</button></div>
+         </form>
+         <form id="ciEditDescriptionForm" class="ci-edit-group" hidden>
+           <label for="ciDescriptionInput">Channel description</label>
+           <textarea id="ciDescriptionInput" maxlength="500" rows="3" placeholder="Add a group description…">${_ciEsc(description)}</textarea>
+           <div class="ci-edit-group-actions"><button class="btn btn-ghost btn-sm" type="button" id="ciCancelDescEdit">Cancel</button><button class="btn btn-primary btn-sm" type="submit">Save description</button></div>
+         </form>` : ""}
+    </section>
+    <section class="ci-section">
+      <div class="ci-section-head"><span>Notifications</span><span>Only for you</span></div>
+      <select id="ciNotificationMode" class="ci-search" aria-label="Chat notification preference">
+        <option value="all" ${_ciNotificationMode === "all" ? "selected" : ""}>All messages</option>
+        <option value="mentions" ${_ciNotificationMode === "mentions" ? "selected" : ""}>Mention or reply only</option>
+        <option value="mute" ${_ciNotificationMode === "mute" ? "selected" : ""}>Muted</option>
+      </select>
+    </section>
+    <section class="ci-section">
+      <div class="ci-section-head"><span>Shared content</span><span id="ciSharedCount" aria-live="polite">Counting loaded items…</span></div>
+      <div class="ci-browser-tabs" role="tablist" aria-label="Shared content type">
+        <button type="button" class="ci-browser-tab ${_channelInfoTab === "media" ? "active" : ""}" data-ci-tab="media">Media</button>
+        <button type="button" class="ci-browser-tab ${_channelInfoTab === "links" ? "active" : ""}" data-ci-tab="links">Links</button>
+        <button type="button" class="ci-browser-tab ${_channelInfoTab === "files" ? "active" : ""}" data-ci-tab="files">Files</button>
+      </div>
+      <div id="ciSharedItems" class="ci-items"><div class="ci-empty">Preparing shared items…</div></div>
+      <div class="muted xs">Shared content is loaded in pages. Direct-message content is indexed locally only when it can be decrypted by this device.</div>
+    </section>
+    <section class="ci-section">
+      <div class="ci-section-head"><span>${isDm ? "Conversation" : "Members"}</span><span>${members.length}</span></div>
+      ${!isDm ? '<input id="ciMemberSearch" class="ci-search" type="search" placeholder="Search members…" aria-label="Search members" autocomplete="off">' : ""}
+      <div id="ciMembers" class="ci-members"></div>
+    </section>
+  `;
+  updateBrowserNotificationButton();
+  const descriptionNode = $("ciDescriptionCopy");
+  if (descriptionNode && description) { descriptionNode.replaceChildren(); appendLinkedText(descriptionNode, description); }
+  root.querySelectorAll("[data-ci-tab]").forEach(btn => btn.addEventListener("click", async () => {
+    _channelInfoTab = btn.dataset.ciTab;
+    root.querySelectorAll("[data-ci-tab]").forEach(b => b.classList.toggle("active", b === btn));
+    const activeChannel = S.channels.get(S.active);
+    if (activeChannel && activeChannel.kind !== "dm") requestChannelSharedItems(true);
+    await renderChannelInfoItems();
+  }));
+  const nameForm = $("ciEditNameForm");
+  const descriptionForm = $("ciEditDescriptionForm");
+  const nameButton = $("ciNameEditBtn");
+  const descriptionButton = $("ciDescEditBtn");
+  const descriptionInput = $("ciDescriptionInput");
+  const nameInput = $("ciNameInput");
+  nameButton?.addEventListener("click", () => { nameForm.hidden = false; nameButton.setAttribute("aria-expanded", "true"); nameInput?.focus(); });
+  descriptionButton?.addEventListener("click", () => { descriptionForm.hidden = false; descriptionInput?.focus(); });
+  $("ciCancelNameEdit")?.addEventListener("click", () => { if (nameInput) nameInput.value = ch.name || ""; nameForm.hidden = true; nameButton?.setAttribute("aria-expanded", "false"); });
+  $("ciCancelDescEdit")?.addEventListener("click", () => { if (descriptionInput) descriptionInput.value = ch.description || ""; descriptionForm.hidden = true; });
+  nameForm?.addEventListener("submit", ev => {
+    ev.preventDefault(); const name = (nameInput?.value || "").trim();
+    if (name.length < 2 || name.length > 48) { toast("Channel name must be 2–48 characters."); return; }
+    sendOp({ op: "ch_update", channel: ch.id, name, description: ch.description || "" });
+    nameForm.hidden = true; nameButton?.setAttribute("aria-expanded", "false");
+  });
+  descriptionForm?.addEventListener("submit", ev => {
+    ev.preventDefault(); const description = (descriptionInput?.value || "").trim();
+    if (description.length > 500) { toast("Description must be 500 characters or fewer."); return; }
+    sendOp({ op: "ch_update", channel: ch.id, name: ch.name || title, description });
+    descriptionForm.hidden = true;
+  });
+  const photoEditButton = $("ciPhotoEditBtn");
+  const photoInput = $("ciPhotoFileInput");
+  if (photoEditButton && photoInput) {
+    photoEditButton.addEventListener("click", () => photoInput.click());
+    photoInput.addEventListener("change", async () => {
+      const file = photoInput.files?.[0];
+      photoInput.value = "";
+      if (file) await uploadGroupPhoto(file, ch.id);
+    });
+  }
+  const notificationSelect = $("ciNotificationMode");
+  if (notificationSelect) notificationSelect.addEventListener("change", () => {
+    _ciNotificationMode = notificationSelect.value;
+    sendOp({ op: "ch_notification_set", channel: ch.id, mode: _ciNotificationMode });
+  });
+  const search = $("ciMemberSearch");
+  if (search) {
+    search.value = _channelInfoSearch;
+    search.addEventListener("input", () => { _channelInfoSearch = search.value; renderChannelInfoMembers(members); });
+  }
+  renderChannelInfoMembers(members);
+  await renderChannelInfoItems();
+}
+function renderChannelInfoMembers(members) {
+  const root = $("ciMembers");
+  if (!root) return;
+  const q = (_channelInfoSearch || "").trim().toLowerCase();
+  const activeChannel = S.channels.get(S.active);
+  const selfRole = members.find(u => u.id === S.me?.id)?.role || (activeChannel?.createdBy === S.me?.id ? "owner" : "member");
+  const isOwner = selfRole === "owner";
+  const canRemove = selfRole === "owner" || selfRole === "moderator";
+  const filtered = members.filter(u => (u.username || "").toLowerCase().includes(q));
+  root.innerHTML = "";
+  if (!filtered.length) { root.innerHTML = '<div class="ci-empty">No matching members.</div>'; return; }
+  for (const u of filtered) {
+    const row = document.createElement("div"); row.className = "ci-member";
+    const avatar = document.createElement("div"); avatar.className = "ci-member-avatar"; avatar.style.background = u.color || "#6366f1"; renderAvatarContent(avatar, u.avatar, (u.username || "?").slice(0,1));
+    const main = document.createElement("div"); main.className = "ci-member-main";
+    const name = document.createElement("div"); name.className = "ci-member-name"; name.append(userNameNode(u)); if (u.id === S.me?.id) name.append(document.createTextNode(" (you)"));
+    const role = document.createElement("div"); role.className = "ci-member-role"; role.textContent = u.role === "owner" || u.id === S.channels.get(S.active)?.createdBy ? "Group owner" : (u.role === "moderator" ? "Moderator" : (u.online ? "Online" : "Member"));
+    main.append(name, role); row.append(avatar, main);
+    const canMessage = u.id !== S.me?.id && u.id && u.username && typeof openDmWithUserId === "function";
+    const canManageMember = activeChannel?.kind === "group" && u.id !== S.me?.id && u.role !== "owner" && canRemove
+      && (isOwner || u.role !== "moderator");
+    if (canMessage || canManageMember) {
+      const actions = document.createElement("div"); actions.className = "ci-member-actions";
+      const trigger = document.createElement("button"); trigger.type = "button"; trigger.className = "ci-member-menu-trigger";
+      trigger.textContent = "⋯"; trigger.title = "Member actions"; trigger.setAttribute("aria-label", "Actions for " + (u.username || "member"));
+      trigger.setAttribute("aria-haspopup", "true"); trigger.setAttribute("aria-expanded", "false");
+      const menu = document.createElement("div"); menu.className = "ci-member-menu"; menu.hidden = true;
+      const closeMenu = () => { menu.hidden = true; trigger.setAttribute("aria-expanded", "false"); };
+      trigger.addEventListener("click", ev => {
+        ev.stopPropagation();
+        const opening = menu.hidden;
+        root.querySelectorAll(".ci-member-menu").forEach(other => { other.hidden = true; });
+        root.querySelectorAll(".ci-member-menu-trigger").forEach(other => other.setAttribute("aria-expanded", "false"));
+        menu.hidden = !opening; trigger.setAttribute("aria-expanded", String(opening));
+        menu.classList.remove("opens-up");
+        if (opening) requestAnimationFrame(() => {
+          const bounds = menu.getBoundingClientRect();
+          const rowBounds = row.getBoundingClientRect();
+          const drawerBounds = $("channelInfoDrawer").getBoundingClientRect();
+          if (bounds.bottom > drawerBounds.bottom - 8 && rowBounds.top - drawerBounds.top > bounds.height) menu.classList.add("opens-up");
+        });
+      });
+      if (canMessage) {
+        const message = document.createElement("button"); message.type = "button"; message.className = "ci-member-menu-item"; message.textContent = "Message";
+        message.addEventListener("click", () => { closeMenu(); closeChannelInfo(); openDmWithUserId(u.id, u.username); });
+        menu.append(message);
+      }
+      if (canManageMember && isOwner) {
+        const roleAction = document.createElement("button"); roleAction.type = "button"; roleAction.className = "ci-member-menu-item";
+        const isModerator = u.role === "moderator";
+        roleAction.textContent = isModerator ? "Remove as moderator" : "Assign as moderator";
+        roleAction.addEventListener("click", () => { sendOp({ op: "ch_role_set", channel: activeChannel.id, userId: u.id, role: isModerator ? "member" : "moderator" }); closeMenu(); });
+        menu.append(roleAction);
+      }
+      if (canManageMember) {
+        const remove = document.createElement("button"); remove.type = "button"; remove.className = "ci-member-menu-item danger"; remove.textContent = "Remove member";
+        remove.addEventListener("click", () => {
+          closeMenu();
+          if (confirm("Remove " + (u.username || "this member") + " from the group?")) sendOp({ op: "ch_member_remove", channel: activeChannel.id, userId: u.id });
+        });
+        menu.append(remove);
+      }
+      actions.append(trigger, menu); row.append(actions);
+    }
+    root.append(row);
+  }
+}
+function onChannelInfo(e) {
+  const ch = S.channels.get(e.channel);
+  if (!ch) return;
+  ch.name = e.name || ch.name;
+  ch.description = e.description || "";
+  ch.photoUrl = e.photoUrl || "";
+  ch.notificationMode = e.notificationMode || "all";
+  ch.createdBy = e.createdBy || ch.createdBy;
+  ch.isPrivate = e.isPrivate ?? ch.isPrivate;
+  const profiles = Array.isArray(e.members) ? e.members : [];
+  ch.members = profiles.map(m => m.id);
+  ch.memberRoles = Object.fromEntries(profiles.map(m => [m.id, m.role || "member"]));
+  for (const profile of profiles) { S.users.set(profile.id, profile); S.userProfiles.set(profile.id, profile); }
+  renderChannels();
+  if (S.active === e.channel) renderStream();
+  if (S.active === e.channel && !$("channelInfoDrawer")?.classList.contains("hidden")) {
+    _ciNotificationMode = ch.notificationMode;
+    renderChannelInfo();
+  }
+}
+function onChannelUpdated(e) {
+  const ch = S.channels.get(e.channel);
+  if (!ch) return;
+  ch.description = e.description || "";
+  ch.photoUrl = e.photoUrl || "";
+  ch.name = e.name || ch.name;
+  renderChannels();
+  if (S.active === e.channel) updateHeader();
+  if (S.active === e.channel && !$("channelInfoDrawer")?.classList.contains("hidden")) renderChannelInfo();
+  if (!e.silent && typeof toast === "function") toast("Group details saved.");
+}
+function onChannelRoleUpdated(e) {
+  const ch = S.channels.get(e.channel);
+  if (!ch) return;
+  if (S.active === e.channel && !$("channelInfoDrawer")?.classList.contains("hidden")) sendOp({ op: "ch_info", channel: e.channel });
+}
+function onChannelMemberRemoved(e) {
+  if (e.userId === S.me?.id) {
+    onChannelDeleted(e.channel);
+    if (typeof toast === "function") toast("You were removed from the group.");
+    return;
+  }
+  const ch = S.channels.get(e.channel);
+  if (ch && Array.isArray(ch.members)) ch.members = ch.members.filter(id => id !== e.userId);
+  if (S.active === e.channel && !$("channelInfoDrawer")?.classList.contains("hidden")) sendOp({ op: "ch_info", channel: e.channel });
+}
+function onChannelNotificationSet(e) {
+  const ch = S.channels.get(e.channel);
+  if (ch) ch.notificationMode = e.mode;
+  _ciNotificationMode = e.mode || "all";
+  const select = $("ciNotificationMode");
+  if (select) select.value = _ciNotificationMode;
+}
+
+const _ciSharedCache = new Map();
+let _ciSharedRequestSeq = 0;
+// Keep the open shared-content panel fresh as messages arrive or are deleted.
+// A reset is required because newly indexed items are newer than the current cursor.
+function refreshOpenSharedItems(channelId) {
+  const ch = S.channels.get(channelId);
+  if (!ch || ch.kind === "dm" || S.active !== channelId ||
+      $("channelInfoDrawer")?.classList.contains("hidden")) return;
+  const cache = _ciSharedCache.get(_ciSharedKey(channelId, _channelInfoTab));
+  if (cache) {
+    cache.items = [];
+    cache.cursor = null;
+    cache.hasMore = true;
+    cache.counts = null;
+    cache.loading = false;
+  }
+  requestChannelSharedItems(true);
+}
+async function uploadGroupPhoto(file, channelId) {
+  const ch = S.channels.get(channelId);
+  if (!ch || ch.kind !== "group") return;
+  if (!S.session) { toast("Not connected — try again in a moment", 3500); return; }
+  if (!/^image\/(png|jpeg|webp)$/i.test(file.type || "")) { toast("Choose a PNG, JPEG, or WebP image.", 3500); return; }
+  let blob;
+  try {
+    const bitmap = await createImageBitmap(file);
+    const side = Math.min(bitmap.width, bitmap.height);
+    if (!side) throw new Error("Image dimensions are invalid.");
+    const canvas = document.createElement("canvas");
+    canvas.width = 256; canvas.height = 256;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Image processing is unavailable.");
+    context.drawImage(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side, 0, 0, 256, 256);
+    bitmap.close?.();
+    blob = await new Promise(resolve => canvas.toBlob(resolve, "image/webp", 0.82));
+    if (!blob) blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.82));
+    if (!blob) throw new Error("Could not process this image.");
+  } catch (error) {
+    toast("Could not process image: " + (error.message || "unsupported image"), 4000);
+    return;
+  }
+  if (blob.size > 2 * 1024 * 1024) { toast("Processed photo is still too large. Choose a smaller image.", 4000); return; }
+  const filename = blob.type === "image/webp" ? "group-photo.webp" : "group-photo.jpg";
+  const form = new FormData();
+  form.append("purpose", "channel_photo");
+  form.append("session", S.session);
+  form.append("channel", channelId);
+  form.append("file", blob, filename);
+  try {
+    toast("Updating group photo…", 10000);
+    const response = await fetch("/api/upload", { method: "POST", body: form });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || result.message || "Upload failed.");
+    ch.photoUrl = result.photoUrl || "";
+    if (S.active === channelId) renderChannelInfo();
+    toast("Group photo updated.");
+  } catch (error) {
+    toast("Could not update group photo: " + (error.message || "upload failed"), 4500);
+  }
+}
+
+function _ciSharedKey(channel, type) { return String(channel) + "::" + String(type); }
+function requestChannelSharedItems(reset = false) {
+  const ch = S.channels.get(S.active);
+  if (!ch || ch.kind === "dm") return;
+  const key = _ciSharedKey(ch.id, _channelInfoTab);
+  let cache = _ciSharedCache.get(key);
+  if (!cache || reset) {
+    cache = { items: [], cursor: null, hasMore: true, counts: null, loading: false };
+    _ciSharedCache.set(key, cache);
+  }
+  if (cache.loading || (!cache.hasMore && !reset)) return;
+  cache.loading = true;
+  const requestId = ++_ciSharedRequestSeq;
+  cache.requestId = requestId;
+  sendOp({ op: "shared_items_list", channel: ch.id, type: _channelInfoTab, limit: 48, requestId, ...(cache.cursor ? { beforeId: cache.cursor } : {}) });
+}
+function onSharedItemsList(e) {
+  const key = _ciSharedKey(e.channel, e.type);
+  const cache = _ciSharedCache.get(key);
+  if (!cache || e.requestId !== cache.requestId) return;
+  cache.loading = false;
+  cache.hasMore = !!e.hasMore;
+  cache.cursor = e.nextCursor || cache.cursor;
+  cache.counts = e.counts || cache.counts;
+  const incoming = Array.isArray(e.items) ? e.items : [];
+  const known = new Set(cache.items.map(item => String(item.messageId) + "|" + item.itemType + "|" + item.itemKey));
+  for (const item of incoming) {
+    const itemKey = String(item.messageId) + "|" + item.itemType + "|" + item.itemKey;
+    if (!known.has(itemKey)) { cache.items.push(item); known.add(itemKey); }
+  }
+  if (S.active === e.channel && _channelInfoTab === e.type && !$("channelInfoDrawer")?.classList.contains("hidden")) renderChannelInfoItems();
+}
+let _ciVisibleItems = 12;
+let _ciExpandedOverlay = null;
+function closeSharedItemsOverlay() { _ciExpandedOverlay?.remove(); _ciExpandedOverlay = null; }
+function openSharedItemsOverlay(type, items, loadMore) {
+  closeSharedItemsOverlay();
+  const drawer = $("channelInfoDrawer"); if (!drawer) return;
+  const labels = { media: "Shared media", links: "Shared links", files: "Shared files" };
+  const overlay = document.createElement("div"); overlay.className = "ci-expanded-overlay"; overlay.setAttribute("role", "dialog"); overlay.setAttribute("aria-modal", "true"); overlay.setAttribute("aria-label", labels[type] || "Shared items");
+  const panel = document.createElement("section"); panel.className = "ci-expanded-panel";
+  const head = document.createElement("header"); head.className = "ci-expanded-head";
+  const heading = document.createElement("h3"); heading.textContent = labels[type] || "Shared items";
+  const close = document.createElement("button"); close.type = "button"; close.className = "ci-expanded-close"; close.textContent = "×"; close.setAttribute("aria-label", "Close shared items"); close.addEventListener("click", closeSharedItemsOverlay);
+  head.append(heading, close);
+  const grid = document.createElement("div"); grid.className = "ci-expanded-grid";
+  for (const item of items) {
+    const tile = document.createElement("article"); tile.className = "ci-expanded-tile";
+    if (type === "media" && item.url && (item.detail || "").startsWith("image/")) {
+      const image = document.createElement("img"); image.className = "ci-expanded-thumb"; image.src = item.url; image.alt = "Shared image"; image.loading = "lazy"; image.referrerPolicy = "no-referrer";
+      image.addEventListener("error", () => { image.removeAttribute("src"); image.alt = "Image unavailable"; tile.classList.add("is-unavailable"); });
+      image.addEventListener("click", () => openLightbox(item.url, "Shared image", item.url)); tile.append(image);
+    } else {
+      const icon = document.createElement("div"); icon.className = "ci-expanded-icon"; icon.textContent = item.icon || (type === "links" ? "🌐" : sharedFileIcon(item.detail, item.title)); tile.append(icon);
+    }
+    const label = document.createElement("div"); label.className = "ci-expanded-label"; label.textContent = type === "media" ? (item.title || "Media") : (item.title || item.detail || "Shared item"); tile.append(label);
+    const meta = document.createElement("div"); meta.className = "ci-expanded-meta"; meta.textContent = item.sender || "Unknown sender"; tile.append(meta);
+    if (type === "links" && item.url) { const link = document.createElement("a"); link.href = item.url; link.target = "_blank"; link.rel = "noopener noreferrer"; link.className = "ci-expanded-open"; link.textContent = "Open link"; tile.append(link); }
+    if (type === "files" && item.url) { const link = document.createElement("a"); link.href = item.url; link.download = item.title || "attachment"; link.rel = "noopener noreferrer"; link.className = "ci-expanded-open"; link.textContent = "Download"; tile.append(link); }
+    const view = document.createElement("button"); view.type = "button"; view.className = "ci-expanded-open"; view.textContent = "View in chat"; view.addEventListener("click", () => {
+      const channelId = S.active, messageId = item.id; closeSharedItemsOverlay(); closeChannelInfo();
+      const loaded = (S.msgs.get(channelId) || []).some(m => Number(m.id) === Number(messageId));
+      if (loaded) jumpToMessage(channelId, messageId); else { _ciPendingJump = { channelId, messageId }; sendOp({ op: "history_before", channel: channelId, beforeId: Number(messageId) + 1, limit: 100 }); }
+    }); tile.append(view); grid.append(tile);
+  }
+  panel.append(head, grid);
+  if (loadMore) { const more = document.createElement("button"); more.type = "button"; more.className = "ci-expanded-load"; more.textContent = "Load more"; more.addEventListener("click", () => { closeSharedItemsOverlay(); loadMore(); }); panel.append(more); }
+  overlay.append(panel); overlay.addEventListener("click", ev => { if (ev.target === overlay) closeSharedItemsOverlay(); });
+  drawer.append(overlay); _ciExpandedOverlay = overlay; close.focus();
+  overlay.addEventListener("keydown", ev => { if (ev.key === "Escape") { ev.stopPropagation(); closeSharedItemsOverlay(); } });
+}
+async function renderChannelInfoItems() {
+  const root = $("ciSharedItems");
+  const ch = S.channels.get(S.active);
+  if (!root || !ch) return;
+  root.replaceChildren();
+  const peer = ch.kind === "dm" ? _ciPeer(ch) : null;
+  const messages = S.msgs.get(ch.id) || [];
+  const items = [];
+  const serverCache = peer ? null : _ciSharedCache.get(_ciSharedKey(ch.id, _channelInfoTab));
+  const serverCounts = serverCache?.counts;
+  const serverCountForTab = serverCounts
+    ? (_channelInfoTab === "media" ? serverCounts.media : _channelInfoTab === "links" ? serverCounts.links : serverCounts.files)
+    : 0;
+  // If the index reports matching items but this page is empty, use the
+  // locally loaded messages as a visible fallback instead of showing an
+  // empty list beside a non-zero count. This can happen after an older
+  // client/server cache or an interrupted index refresh.
+  const useLocalFallback = !!peer || !serverCache || (!serverCache.items.length && serverCountForTab > 0);
+  if (!peer && serverCache) {
+    for (const item of serverCache.items) {
+      const mime = item.mimeType || "";
+      if (item.itemType === "link") {
+        let hostname = "";
+        try { hostname = new URL(item.itemKey).hostname; } catch (_) {}
+        items.push({ type: "link", id: item.messageId, ts: item.createdAt, sender: item.username, title: hostname || item.itemKey, detail: item.itemKey, url: item.itemKey, icon: "🌐" });
+      } else if (item.itemType === "media") {
+        items.push({ type: "media", id: item.messageId, ts: item.createdAt, sender: item.username, title: "Media", detail: mime || "Media", url: item.url || item.itemKey, icon: mime.startsWith("video/") ? "🎬" : "🖼️" });
+      } else {
+        items.push({ type: "file", id: item.messageId, ts: item.createdAt, sender: item.username, title: item.fileName || "Attachment", detail: mime || "File", url: item.url || item.itemKey, size: item.fileSize, icon: sharedFileIcon(mime, item.fileName || item.itemKey) });
+      }
+    }
+  }
+  if (useLocalFallback) for (const m of messages) {
+    if (m.deleted || m.kind === "system") continue;
+    let text = m.text || "";
+    if (peer && text.startsWith("e2e:v1:")) {
+      const plain = await E2EE.tryDecrypt(peer.id, peer.pubkey, text);
+      if (plain == null) continue;
+      text = plain;
+    }
+    if (_channelInfoTab === "files" && m.file) {
+      const mime = m.file.mimeType || "";
+      items.push({ type: "file", id: m.id, ts: m.ts, sender: m.username, title: m.file.originalName || m.file.filename || "Attachment", detail: mime || "File", url: m.file.url, size: m.file.size, icon: sharedFileIcon(mime, m.file.originalName || m.file.filename) });
+    }
+    if (_channelInfoTab === "media" && m.file && /^(image\/|video\/)/i.test(m.file.mimeType || "")) {
+      const mime = m.file.mimeType || "";
+      items.push({ type: "media", id: m.id, ts: m.ts, sender: m.username, title: "Media", detail: mime || "Media", url: m.file.url, icon: mime.startsWith("video/") ? "🎬" : "🖼️" });
+    }
+    if (_channelInfoTab === "links") {
+      for (const found of extractChatUrls(text)) {
+        let hostname = "";
+        try { hostname = new URL(found.url).hostname; } catch (_) {}
+        items.push({ type: "link", id: m.id, ts: m.ts, sender: m.username, title: hostname || found.raw, detail: found.raw, url: found.url, icon: "🔗" });
+      }
+    }
+  }
+  items.sort((a,b) => (b.ts || 0) - (a.ts || 0));
+  const countLabel = $("ciSharedCount");
+  const counts = serverCache?.counts;
+  if (countLabel) countLabel.textContent = counts
+    ? (counts.media + " media · " + counts.links + " links · " + counts.files + " files")
+    : (items.length + (items.length === 1 ? " loaded item" : " loaded items"));
+  const tabLabels = { media: "Media", links: "Links", files: "Files" };
+  if (counts) root.closest("#channelInfoContent")?.querySelectorAll("[data-ci-tab]").forEach(btn => {
+    const type = btn.dataset.ciTab;
+    const value = type === "media" ? counts.media : type === "links" ? counts.links : counts.files;
+    btn.textContent = tabLabels[type] + " (" + value + ")";
+  });
+  if (!items.length) {
+    const empty = document.createElement("div");
+    empty.className = "ci-empty";
+    empty.textContent = serverCache ? "No shared " + (_channelInfoTab === "media" ? "media" : _channelInfoTab) + " found." : "No " + (_channelInfoTab === "media" ? "media" : _channelInfoTab) + " found in the currently loaded messages.";
+    root.append(empty);
+    return;
+  }
+  const type = _channelInfoTab;
+  const limit = 4;
+  const isMedia = type === "media";
+  root.classList.add("ci-media-grid");
+  root.classList.toggle("ci-links-grid", type === "links");
+  root.classList.toggle("ci-files-grid", type === "files");
+  const needsMore = items.length > limit || !!serverCache?.hasMore;
+  const shown = items.slice(0, needsMore ? limit - 1 : limit);
+  const makeTile = (item) => {
+    const card = document.createElement("article"); card.className = "ci-item ci-preview-tile";
+    const open = document.createElement("button"); open.type = "button"; open.className = "ci-preview-open";
+    if (isMedia && item.url && (item.detail || "").startsWith("image/")) {
+      const thumb = document.createElement("img"); thumb.className = "ci-media-thumb"; thumb.src = item.url; thumb.alt = "Shared image"; thumb.loading = "lazy"; thumb.decoding = "async"; thumb.referrerPolicy = "no-referrer";
+      thumb.addEventListener("error", () => { thumb.removeAttribute("src"); thumb.alt = "Image unavailable"; card.classList.add("is-unavailable"); });
+      open.append(thumb); open.addEventListener("click", () => openLightbox(item.url, "Shared image", item.url));
+    } else {
+      const icon = document.createElement("span"); icon.className = "ci-preview-icon"; icon.textContent = item.icon || (type === "links" ? "🔗" : "📄"); open.append(icon);
+      if (type === "links" && item.url) open.addEventListener("click", () => window.open(item.url, "_blank", "noopener,noreferrer"));
+      else if (type === "files" && item.url) open.addEventListener("click", () => { const a = document.createElement("a"); a.href = item.url; a.download = item.title || "attachment"; a.rel = "noopener noreferrer"; a.click(); });
+      else open.addEventListener("click", () => openSharedItemsOverlay(type, items, serverCache?.hasMore ? () => requestChannelSharedItems(false) : null));
+    }
+    const overlay = document.createElement("span"); overlay.className = "ci-preview-caption";
+    overlay.textContent = type === "media" ? (item.title || "Photo") : (item.title || item.detail || (type === "links" ? "Link" : "File"));
+    open.append(overlay); card.append(open);
+    return card;
+  };
+  for (const item of shown) root.append(makeTile(item));
+  if (needsMore) {
+    const more = document.createElement("button"); more.type = "button"; more.className = "ci-preview-tile ci-preview-more";
+    more.setAttribute("aria-label", "View more " + type);
+    const caption = document.createElement("span"); caption.className = "ci-preview-more-caption"; caption.textContent = "View more"; more.append(caption);
+    more.addEventListener("click", () => openSharedItemsOverlay(type, items, serverCache?.hasMore ? () => requestChannelSharedItems(false) : null));
+    root.append(more);
+  }
+}
+document.addEventListener("keydown", event => {
+  if (event.key === "Escape" && !$("channelInfoDrawer")?.classList.contains("hidden")) closeChannelInfo();
+});
+Object.assign(window, { openChannelInfo, closeChannelInfo });

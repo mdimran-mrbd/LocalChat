@@ -25,7 +25,7 @@ use crate::user::{UserId, UserInfo};
 
 /// Bumped whenever the schema changes incompatibly. Stored under
 /// `schema_meta(key='version')`.
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 3;
 
 const SCHEMA_SQL: &str = r#"
 PRAGMA foreign_keys = ON;
@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS users (
     id              TEXT    PRIMARY KEY,
     username        TEXT    NOT NULL,
     username_lower  TEXT    NOT NULL UNIQUE,
+    designation     TEXT    NOT NULL DEFAULT '',
     avatar          TEXT    NOT NULL DEFAULT '',
     color           TEXT    NOT NULL DEFAULT '',
     pubkey          TEXT    NOT NULL DEFAULT '',
@@ -54,6 +55,12 @@ CREATE TABLE IF NOT EXISTS users (
 );
 CREATE INDEX IF NOT EXISTS idx_users_last_connect ON users(last_connect DESC);
 
+CREATE TABLE IF NOT EXISTS e2ee_key_backups (
+    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    payload TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS channels (
     id          TEXT    PRIMARY KEY,
     kind        TEXT    NOT NULL CHECK (kind IN ('lobby','group','dm')),
@@ -62,7 +69,9 @@ CREATE TABLE IF NOT EXISTS channels (
     created_by  TEXT    REFERENCES users(id) ON DELETE SET NULL,
     created_at  INTEGER NOT NULL,
     dm_user_a   TEXT,
-    dm_user_b   TEXT
+    dm_user_b   TEXT,
+    description TEXT NOT NULL DEFAULT '',
+    photo_url   TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_channels_kind ON channels(kind);
 
@@ -70,9 +79,31 @@ CREATE TABLE IF NOT EXISTS channel_members (
     channel_id  TEXT    NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
     user_id     TEXT    NOT NULL REFERENCES users(id)    ON DELETE CASCADE,
     joined_at   INTEGER NOT NULL,
+    role        TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('owner','moderator','member')),
     PRIMARY KEY (channel_id, user_id)
 );
 CREATE INDEX IF NOT EXISTS idx_members_user ON channel_members(user_id);
+
+CREATE TABLE IF NOT EXISTS channel_notification_settings (
+    channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    mode       TEXT NOT NULL DEFAULT 'all' CHECK (mode IN ('all','mentions','mute')),
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (channel_id, user_id)
+);
+
+-- Group shared-content metadata references existing messages/uploads only;
+-- no file bytes or decrypted DM content are duplicated here.
+CREATE TABLE IF NOT EXISTS shared_items (
+    channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+    message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+    item_type  TEXT NOT NULL CHECK (item_type IN ('media','link','file')),
+    item_key   TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (channel_id, message_id, item_type, item_key)
+);
+CREATE INDEX IF NOT EXISTS idx_shared_items_channel_type_time
+    ON shared_items(channel_id, item_type, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS messages (
     id          INTEGER PRIMARY KEY,
@@ -102,6 +133,16 @@ CREATE INDEX IF NOT EXISTS idx_messages_user       ON messages(user_id);
 -- Note: idx_messages_client_id is created in the migration block
 -- in Db::open() so it can run *after* the ALTER TABLE that adds the
 -- column on legacy installs.
+
+CREATE TABLE IF NOT EXISTS poll_votes (
+    channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+    message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    option_index INTEGER NOT NULL CHECK (option_index >= 0),
+    voted_at INTEGER NOT NULL,
+    PRIMARY KEY (message_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_poll_votes_message ON poll_votes(message_id);
 
 CREATE TABLE IF NOT EXISTS saved_messages (
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -191,6 +232,22 @@ CREATE TABLE IF NOT EXISTS admin_events (
 CREATE INDEX IF NOT EXISTS idx_admin_events_ts ON admin_events(ts DESC);
 "#;
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SharedItem {
+    pub cursor: u64,
+    pub message_id: u64,
+    pub item_type: String,
+    pub item_key: String,
+    pub created_at: u64,
+    pub username: String,
+    pub text: String,
+    pub file_name: Option<String>,
+    pub file_size: Option<u64>,
+    pub mime_type: Option<String>,
+    pub url: Option<String>,
+}
+
 #[derive(Clone)]
 pub struct Db {
     inner: Arc<Mutex<Connection>>,
@@ -226,10 +283,118 @@ impl Db {
             // older installs won't have re-run it).
             let _ = conn.execute("ALTER TABLE messages ADD COLUMN client_id TEXT", []);
             let _ = conn.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0", []);
+            let _ = conn.execute("ALTER TABLE users ADD COLUMN designation TEXT NOT NULL DEFAULT ''", []);
             let _ = conn.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_client_id ON messages(client_id) WHERE client_id IS NOT NULL",
                 [],
             );
+            // Additive, idempotent migrations for existing installations.
+            // SQLite reports a duplicate-column error on repeat boots; those
+            // are expected and intentionally ignored.
+            let _ = conn.execute("ALTER TABLE channels ADD COLUMN description TEXT NOT NULL DEFAULT ''", []);
+            let _ = conn.execute("ALTER TABLE channels ADD COLUMN photo_url TEXT NOT NULL DEFAULT ''", []);
+            let _ = conn.execute("ALTER TABLE channel_members ADD COLUMN role TEXT NOT NULL DEFAULT 'member'", []);
+            // Existing creators become owners; every other existing member remains a member.
+            conn.execute(
+                "UPDATE channel_members SET role='owner'
+                  WHERE EXISTS (SELECT 1 FROM channels c
+                                 WHERE c.id=channel_members.channel_id
+                                   AND c.created_by=channel_members.user_id
+                                   AND c.kind='group')",
+                [],
+            )?;
+            // Backfill historical shared items in bounded, resumable batches.
+            // DMs are deliberately excluded: encrypted DM text must never be
+            // inspected or persisted in the server-side shared-content index.
+            // Each batch advances a durable message-ID cursor only after its
+            // idempotent inserts complete, so a crash safely retries that batch.
+            let shared_backfill_v2_done: Option<String> = conn.query_row(
+                "SELECT value FROM schema_meta WHERE key='shared_index_backfill_v2_done'",
+                [],
+                |r| r.get(0),
+            ).optional()?;
+            if shared_backfill_v2_done.as_deref() != Some("done") {
+                let mut cursor: i64 = conn.query_row(
+                    "SELECT value FROM schema_meta WHERE key='shared_index_backfill_v2_cursor'",
+                    [],
+                    |r| r.get::<_, String>(0),
+                ).optional()?.and_then(|value| value.parse::<i64>().ok()).unwrap_or(0);
+
+                loop {
+                    let rows = {
+                        let mut stmt = conn.prepare(
+                            "SELECT m.id, m.channel_id, m.ts, m.kind, m.text,
+                                    m.file_url, m.file_mime, m.deleted
+                               FROM messages m
+                               JOIN channels ch ON ch.id=m.channel_id
+                              WHERE ch.kind <> 'dm' AND m.id > ?1
+                              ORDER BY m.id ASC
+                              LIMIT 500"
+                        )?;
+                        let mapped = stmt.query_map(params![cursor], |r| Ok((
+                            r.get::<_, i64>(0)?,
+                            r.get::<_, String>(1)?,
+                            r.get::<_, i64>(2)?,
+                            r.get::<_, String>(3)?,
+                            r.get::<_, String>(4)?,
+                            r.get::<_, Option<String>>(5)?,
+                            r.get::<_, Option<String>>(6)?,
+                            r.get::<_, i64>(7)?,
+                        )))?;
+                        let mut batch = Vec::new();
+                        for row in mapped { batch.push(row?); }
+                        batch
+                    };
+
+                    if rows.is_empty() {
+                        conn.execute(
+                            "INSERT INTO schema_meta(key,value) VALUES('shared_index_backfill_v2_done','done')
+                             ON CONFLICT(key) DO UPDATE SET value='done'",
+                            [],
+                        )?;
+                        break;
+                    }
+
+                    let next_cursor = rows.last().map(|row| row.0).unwrap_or(cursor);
+                    for (message_id, channel_id, ts, kind, body, file_url, file_mime, deleted) in rows {
+                        if deleted != 0 { continue; }
+
+                        if kind == "file" {
+                            if let Some(url) = file_url {
+                                let mime = file_mime.unwrap_or_default().to_ascii_lowercase();
+                                let item_type = if mime.starts_with("image/") || mime.starts_with("video/") {
+                                    "media"
+                                } else {
+                                    "file"
+                                };
+                                conn.execute(
+                                    "INSERT OR IGNORE INTO shared_items(channel_id,message_id,item_type,item_key,created_at)
+                                     VALUES(?1,?2,?3,?4,?5)",
+                                    params![channel_id, message_id, item_type, url, ts],
+                                )?;
+                            }
+                        } else if kind == "text" && !body.starts_with("e2e:v1:") {
+                            for token in body.split_whitespace() {
+                                if let Some(normalized) = normalize_shared_url_token(token) {
+                                    conn.execute(
+                                        "INSERT OR IGNORE INTO shared_items(channel_id,message_id,item_type,item_key,created_at)
+                                         VALUES(?1,?2,'link',?3,?4)",
+                                        params![channel_id, message_id, normalized, ts],
+                                    )?;
+                                }
+                            }
+                        }
+                    }
+
+                    // Save progress only after the whole batch has been processed.
+                    conn.execute(
+                        "INSERT INTO schema_meta(key,value) VALUES('shared_index_backfill_v2_cursor',?1)
+                         ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                        params![next_cursor.to_string()],
+                    )?;
+                    cursor = next_cursor;
+                }
+            }
             // Stamp the schema version so future migrations can branch.
             conn.execute(
                 "INSERT INTO schema_meta(key,value) VALUES('version', ?1)
@@ -295,9 +460,9 @@ impl Db {
         let lname = username.to_lowercase();
         self.with(move |c| {
             c.query_row(
-                "SELECT id, username, avatar, color, pubkey, joined_at,
+                "SELECT id, username, username_lower, avatar, color, pubkey, joined_at,
                         last_connect, last_seen, last_ip,
-                        total_sessions, msg_count, bytes_uploaded
+                        total_sessions, msg_count, bytes_uploaded, designation
                    FROM users WHERE username_lower = ?1",
                 params![lname],
                 row_to_user,
@@ -312,9 +477,9 @@ impl Db {
         let id = id.to_string();
         self.with(move |c| {
             c.query_row(
-                "SELECT id, username, avatar, color, pubkey, joined_at,
+                "SELECT id, username, username_lower, avatar, color, pubkey, joined_at,
                         last_connect, last_seen, last_ip,
-                        total_sessions, msg_count, bytes_uploaded
+                        total_sessions, msg_count, bytes_uploaded, designation
                    FROM users WHERE id = ?1",
                 params![id],
                 row_to_user,
@@ -451,9 +616,9 @@ impl Db {
     pub async fn list_users(&self) -> rusqlite::Result<Vec<UserInfo>> {
         self.with(|c| {
             let mut stmt = c.prepare(
-                "SELECT id, username, avatar, color, pubkey, joined_at,
+                "SELECT id, username, username_lower, avatar, color, pubkey, joined_at,
                         last_connect, last_seen, last_ip,
-                        total_sessions, msg_count, bytes_uploaded
+                        total_sessions, msg_count, bytes_uploaded, designation
                    FROM users ORDER BY joined_at",
             )?;
             let rows = stmt.query_map([], row_to_user)?;
@@ -462,6 +627,69 @@ impl Db {
             Ok(out)
         })
         .await
+    }
+
+    pub async fn update_user_avatar(&self, id: UserId, avatar: &str) -> rusqlite::Result<()> {
+        let uid = id.to_string();
+        let avatar = avatar.to_string();
+        self.with(move |c| { c.execute("UPDATE users SET avatar=?2 WHERE id=?1", params![uid, avatar])?; Ok(()) }).await
+    }
+
+    pub async fn set_user_designation(&self, id: UserId, designation: &str) -> rusqlite::Result<bool> {
+        let uid = id.to_string();
+        let designation = designation.to_string();
+        self.with(move |c| {
+            let changed = c.execute("UPDATE users SET designation=?2 WHERE id=?1 AND designation='' ", params![uid, designation])?;
+            Ok(changed > 0)
+        }).await
+    }
+
+    /// Update a user's editable profile atomically. Returns false when the
+    /// case-insensitive username is already owned by another account.
+    pub async fn update_user_profile(&self, id: UserId, username: &str, designation: &str) -> rusqlite::Result<bool> {
+        let uid = id.to_string();
+        let username = username.to_string();
+        let username_lower = username.to_lowercase();
+        let designation = designation.to_string();
+        self.with(move |c| {
+            let taken: bool = c.query_row(
+                "SELECT EXISTS(SELECT 1 FROM users WHERE username_lower=?1 AND id<>?2)",
+                params![username_lower, uid],
+                |r| r.get(0),
+            )?;
+            if taken { return Ok(false); }
+            c.execute(
+                "UPDATE users SET username=?2, username_lower=?3, designation=?4 WHERE id=?1",
+                params![uid, username, username_lower, designation],
+            )?;
+            Ok(true)
+        }).await
+    }
+
+    /// Store only the client's password-encrypted E2EE key backup envelope.
+    pub async fn set_e2ee_key_backup(&self, id: UserId, payload: &str, updated_at: u64) -> rusqlite::Result<()> {
+        let uid = id.to_string();
+        let payload = payload.to_string();
+        self.with(move |c| {
+            c.execute(
+                "INSERT INTO e2ee_key_backups(user_id,payload,updated_at) VALUES(?1,?2,?3)
+                 ON CONFLICT(user_id) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at",
+                params![uid, payload, updated_at as i64],
+            )?;
+            Ok(())
+        }).await
+    }
+
+    /// Fetch the opaque encrypted backup; the server never decrypts it.
+    pub async fn get_e2ee_key_backup(&self, id: &UserId) -> rusqlite::Result<Option<String>> {
+        let uid = id.to_string();
+        self.with(move |c| {
+            c.query_row(
+                "SELECT payload FROM e2ee_key_backups WHERE user_id=?1",
+                params![uid],
+                |r| r.get(0),
+            ).optional()
+        }).await
     }
 
     pub async fn delete_user(&self, id: UserId) -> rusqlite::Result<()> {
@@ -537,6 +765,7 @@ fn row_to_user(r: &rusqlite::Row<'_>) -> rusqlite::Result<UserInfo> {
         last_seen: r.get::<_, i64>(8)? as u64,
         last_connect: r.get::<_, i64>(7)? as u64,
         total_sessions: r.get::<_, i64>(10)? as u64,
+        designation: r.get::<_, String>(13)?.to_compact_string(),
     })
 }
 
@@ -630,13 +859,96 @@ impl Db {
         let uid = user_id.to_string();
         self.with(move |c| {
             c.execute(
-                "INSERT OR IGNORE INTO channel_members(channel_id, user_id, joined_at)
-                 VALUES (?1, ?2, ?3)",
+                "INSERT OR IGNORE INTO channel_members(channel_id, user_id, joined_at, role)
+                 SELECT ?1, ?2, ?3,
+                        CASE WHEN kind='group' AND created_by=?2 THEN 'owner' ELSE 'member' END
+                   FROM channels WHERE id=?1",
                 params![cid, uid, ts as i64],
             )?;
             Ok(())
         })
         .await
+    }
+
+    /// Persist editable group profile fields. Callers must authorize owners before invoking.
+    pub async fn update_channel_details(&self, channel_id: &str, name: &str, description: &str, photo_url: &str) -> rusqlite::Result<bool> {
+        let cid = channel_id.to_string();
+        let name = name.to_string();
+        let description = description.to_string();
+        let photo_url = photo_url.to_string();
+        self.with(move |c| {
+            let changed = c.execute(
+                "UPDATE channels SET name=?2, description=?3, photo_url=?4 WHERE id=?1 AND kind='group'",
+                params![cid, name, description, photo_url],
+            )?;
+            Ok(changed > 0)
+        }).await
+    }
+
+    pub async fn channel_details(&self, channel_id: &str) -> rusqlite::Result<Option<(String, String, String)>> {
+        let cid = channel_id.to_string();
+        self.with(move |c| {
+            c.query_row(
+                "SELECT name, description, photo_url FROM channels WHERE id=?1",
+                params![cid],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            ).optional()
+        }).await
+    }
+
+    pub async fn member_role(&self, channel_id: &str, user_id: &str) -> rusqlite::Result<Option<String>> {
+        let cid = channel_id.to_string();
+        let uid = user_id.to_string();
+        self.with(move |c| {
+            c.query_row(
+                "SELECT role FROM channel_members WHERE channel_id=?1 AND user_id=?2",
+                params![cid, uid],
+                |r| r.get(0),
+            ).optional()
+        }).await
+    }
+
+    pub async fn set_member_role(&self, channel_id: &str, user_id: &str, role: &str) -> rusqlite::Result<bool> {
+        let cid = channel_id.to_string();
+        let uid = user_id.to_string();
+        let role = role.to_string();
+        self.with(move |c| {
+            let changed = c.execute(
+                "UPDATE channel_members SET role=?3 WHERE channel_id=?1 AND user_id=?2 AND role <> 'owner' AND ?3 IN ('moderator','member')",
+                params![cid, uid, role],
+            )?;
+            Ok(changed > 0)
+        }).await
+    }
+
+    pub async fn set_channel_notification(&self, channel_id: &str, user_id: &str, mode: &str, ts: u64) -> rusqlite::Result<bool> {
+        let cid = channel_id.to_string();
+        let uid = user_id.to_string();
+        let mode = mode.to_string();
+        self.with(move |c| {
+            if !matches!(mode.as_str(), "all" | "mentions" | "mute") {
+                return Ok(false);
+            }
+            c.execute(
+                "INSERT INTO channel_notification_settings(channel_id,user_id,mode,updated_at)
+                 VALUES(?1,?2,?3,?4)
+                 ON CONFLICT(channel_id,user_id) DO UPDATE SET mode=excluded.mode, updated_at=excluded.updated_at",
+                params![cid, uid, mode, ts as i64],
+            )?;
+            Ok(true)
+        }).await
+    }
+
+    pub async fn channel_notification(&self, channel_id: &str, user_id: &str) -> rusqlite::Result<String> {
+        let cid = channel_id.to_string();
+        let uid = user_id.to_string();
+        self.with(move |c| {
+            c.query_row(
+                "SELECT mode FROM channel_notification_settings WHERE channel_id=?1 AND user_id=?2",
+                params![cid, uid],
+                |r| r.get(0),
+            ).optional().map(|v: Option<String>| v.unwrap_or_else(|| "all".to_string()))
+        }).await
     }
 
     pub async fn remove_member(&self, channel_id: &str, user_id: UserId) -> rusqlite::Result<()> {
@@ -768,9 +1080,98 @@ impl Db {
                     fid, fname, fsize, fmime, furl,
                 ],
             )?;
+
+            // Build the shared-content index for channels whose message text
+            // is server-visible. Never inspect/index DM bodies: E2EE payloads
+            // are private client-side content, even if a future client format
+            // changes. This index stores metadata only, never file bytes.
+            let channel_kind: Option<String> = c.query_row(
+                "SELECT kind FROM channels WHERE id=?1",
+                params![m.channel.as_str()],
+                |r| r.get(0),
+            ).optional()?;
+            if channel_kind.as_deref() != Some("dm") && !m.deleted {
+                if let Some(file) = &m.file {
+                    let item_type = if file.mime_type.starts_with("image/") || file.mime_type.starts_with("video/") {
+                        "media"
+                    } else {
+                        "file"
+                    };
+                    c.execute(
+                        "INSERT OR IGNORE INTO shared_items(channel_id,message_id,item_type,item_key,created_at)
+                         VALUES(?1,?2,?3,?4,?5)",
+                        params![m.channel.as_str(), m.id as i64, item_type, file.url.as_str(), m.ts as i64],
+                    )?;
+                }
+                if matches!(m.kind, MsgKind::Text) && !m.text.starts_with("e2e:v1:") {
+                    for token in m.text.split_whitespace() {
+                        if let Some(normalized) = normalize_shared_url_token(token) {
+                            c.execute(
+                                "INSERT OR IGNORE INTO shared_items(channel_id,message_id,item_type,item_key,created_at)
+                                 VALUES(?1,?2,'link',?3,?4)",
+                                params![m.channel.as_str(), m.id as i64, normalized, m.ts as i64],
+                            )?;
+                        }
+                    }
+                }
+            }
             Ok(())
         })
         .await
+    }
+
+    /// Record or replace a user's single vote on a group poll.
+    pub async fn cast_poll_vote(&self, channel: &str, message_id: u64, user_id: &str, option_index: usize, now: u64) -> rusqlite::Result<bool> {
+        let cid = channel.to_string();
+        let uid = user_id.to_string();
+        self.with(move |c| {
+            let is_poll: bool = c.query_row(
+                "SELECT EXISTS(SELECT 1 FROM messages WHERE id=?1 AND channel_id=?2 AND deleted=0 AND text LIKE 'poll:v1:%')",
+                params![message_id as i64, cid],
+                |r| r.get(0),
+            )?;
+            if !is_poll { return Ok(false); }
+            c.execute(
+                "INSERT INTO poll_votes(channel_id,message_id,user_id,option_index,voted_at)
+                 VALUES(?1,?2,?3,?4,?5)
+                 ON CONFLICT(message_id,user_id) DO UPDATE SET option_index=excluded.option_index,voted_at=excluded.voted_at",
+                params![cid, message_id as i64, uid, option_index as i64, now as i64],
+            )?;
+            Ok(true)
+        }).await
+    }
+
+    /// Load the stored text of a poll without scanning or loading the full chat history.
+    pub async fn poll_message_text(&self, channel: &str, message_id: u64) -> rusqlite::Result<Option<String>> {
+        let cid = channel.to_string();
+        self.with(move |c| {
+            c.query_row(
+                "SELECT text FROM messages WHERE id=?1 AND channel_id=?2 AND deleted=0",
+                params![message_id as i64, cid],
+                |r| r.get(0),
+            ).optional()
+        }).await
+    }
+
+    /// Return per-option vote counts and the requesting user's selected option.
+    pub async fn poll_results(&self, channel: &str, message_id: u64, user_id: &str, option_count: usize) -> rusqlite::Result<(Vec<u64>, Option<usize>)> {
+        let cid = channel.to_string();
+        let uid = user_id.to_string();
+        self.with(move |c| {
+            let mut counts = vec![0_u64; option_count.min(12)];
+            let mut stmt = c.prepare("SELECT option_index, COUNT(*) FROM poll_votes WHERE channel_id=?1 AND message_id=?2 GROUP BY option_index")?;
+            let rows = stmt.query_map(params![cid, message_id as i64], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, u64>(1)?)))?;
+            for row in rows {
+                let (index, count) = row?;
+                if index >= 0 && (index as usize) < counts.len() { counts[index as usize] = count; }
+            }
+            let mine: Option<i64> = c.query_row(
+                "SELECT option_index FROM poll_votes WHERE channel_id=?1 AND message_id=?2 AND user_id=?3",
+                params![cid, message_id as i64, uid],
+                |r| r.get(0),
+            ).optional()?;
+            Ok((counts, mine.map(|i| i as usize)))
+        }).await
     }
 
     /// Last `limit` messages of a channel, oldest → newest.
@@ -794,6 +1195,96 @@ impl Db {
             Ok(out)
         })
         .await
+    }
+
+    /// Older page of a channel, strictly before the supplied message ID.
+    /// Returns messages oldest → newest so the frontend can prepend safely.
+    pub async fn messages_before(&self, channel: &str, before_id: u64, limit: usize) -> rusqlite::Result<Vec<WireMsg>> {
+        let cid = channel.to_string();
+        self.with(move |c| {
+            let mut stmt = c.prepare(
+                "SELECT id, channel_id, user_id, username, avatar, color,
+                        kind, ts, text, reply_to, edited_at, deleted,
+                        file_id, file_name, file_size, file_mime, file_url
+                   FROM messages
+                  WHERE channel_id = ?1 AND id < ?2
+                  ORDER BY id DESC
+                  LIMIT ?3",
+            )?;
+            let rows = stmt.query_map(params![cid, before_id as i64, limit.min(500) as i64], row_to_message)?;
+            let mut out: Vec<WireMsg> = Vec::new();
+            for row in rows { out.push(row?); }
+            out.reverse();
+            Ok(out)
+        })
+        .await
+    }
+
+    /// Count indexed shared items by type. Callers must authorize channel membership.
+    pub async fn shared_item_counts(&self, channel: &str) -> rusqlite::Result<(u64, u64, u64)> {
+        let cid = channel.to_string();
+        self.with(move |c| {
+            let mut counts = [0_u64; 3];
+            // Soft-deleted messages retain their rows for history ordering, so
+            // counts must join messages and exclude deleted rows just like the
+            // paginated item query does.
+            let mut stmt = c.prepare(
+                "SELECT si.item_type, COUNT(*)
+                   FROM shared_items si
+                   JOIN messages m ON m.id=si.message_id AND m.channel_id=si.channel_id
+                  WHERE si.channel_id=?1 AND m.deleted=0
+                  GROUP BY si.item_type"
+            )?;
+            let rows = stmt.query_map(params![cid], |r| Ok((r.get::<_, String>(0)?, r.get::<_, u64>(1)?)))?;
+            for row in rows {
+                let (kind, count) = row?;
+                match kind.as_str() {
+                    "media" => counts[0] = count,
+                    "link" => counts[1] = count,
+                    "file" => counts[2] = count,
+                    _ => {}
+                }
+            }
+            Ok((counts[0], counts[1], counts[2]))
+        }).await
+    }
+
+    /// Cursor-paginated shared items, newest message first. Cursor is a
+    /// message ID, so paging remains stable when timestamps collide.
+    pub async fn shared_items_page(&self, channel: &str, item_type: &str, before_cursor: Option<u64>, limit: usize) -> rusqlite::Result<Vec<SharedItem>> {
+        let cid = channel.to_string();
+        let kind = item_type.to_string();
+        self.with(move |c| {
+            let mut stmt = c.prepare(
+                "SELECT si.rowid, si.message_id, si.item_type, si.item_key, si.created_at,
+                        m.username, m.text, m.file_name, m.file_size, m.file_mime, m.file_url
+                   FROM shared_items si
+                   JOIN messages m ON m.id=si.message_id AND m.channel_id=si.channel_id
+                  WHERE si.channel_id=?1 AND si.item_type=?2 AND m.deleted=0
+                    AND (?3 IS NULL OR si.rowid < ?3)
+                  ORDER BY si.rowid DESC
+                  LIMIT ?4"
+            )?;
+            let rows = stmt.query_map(
+                params![cid, kind, before_cursor.map(|id| id as i64), limit.clamp(1, 100) as i64],
+                |r| Ok(SharedItem {
+                    cursor: r.get::<_, i64>(0)? as u64,
+                    message_id: r.get::<_, i64>(1)? as u64,
+                    item_type: r.get(2)?,
+                    item_key: r.get(3)?,
+                    created_at: r.get::<_, i64>(4)? as u64,
+                    username: r.get(5)?,
+                    text: r.get(6)?,
+                    file_name: r.get(7)?,
+                    file_size: r.get::<_, Option<i64>>(8)?.map(|n| n.max(0) as u64),
+                    mime_type: r.get(9)?,
+                    url: r.get(10)?,
+                })
+            )?;
+            let mut items = Vec::new();
+            for row in rows { items.push(row?); }
+            Ok(items)
+        }).await
     }
 
     /// Search visible channel history by message text or attached file name.
@@ -885,6 +1376,38 @@ impl Db {
         .await
     }
 
+    /// Search non-DM message history across channels the user can access.
+    /// End-to-end encrypted direct messages are intentionally excluded.
+    pub async fn search_messages_across_channels(&self, user_id: &str, query: &str, limit: usize) -> rusqlite::Result<Vec<(WireMsg, String)>> {
+        let uid = user_id.to_string();
+        let needle = format!("%{}%", query);
+        self.with(move |c| {
+            let mut stmt = c.prepare(
+                "SELECT m.id, m.channel_id, m.user_id, m.username, m.avatar, m.color,
+                        m.kind, m.ts, m.text, m.reply_to, m.edited_at, m.deleted,
+                        m.file_id, m.file_name, m.file_size, m.file_mime, m.file_url,
+                        ch.name
+                   FROM messages m
+                   JOIN channels ch ON ch.id=m.channel_id
+                  WHERE m.deleted=0
+                    AND ch.kind IN ('lobby','group')
+                    AND (ch.kind='lobby' OR EXISTS (
+                        SELECT 1 FROM channel_members cm
+                         WHERE cm.channel_id=ch.id AND cm.user_id=?2
+                    ))
+                    AND (m.text LIKE ?1 COLLATE NOCASE
+                         OR COALESCE(m.file_name,'') LIKE ?1 COLLATE NOCASE)
+                  ORDER BY m.id DESC LIMIT ?3"
+            )?;
+            let rows = stmt.query_map(params![needle, uid, limit as i64], |row| {
+                Ok((row_to_message(row)?, row.get::<_, String>(17)?))
+            })?;
+            let mut out = Vec::new();
+            for row in rows { out.push(row?); }
+            Ok(out)
+        }).await
+    }
+
     /// Highest message id ever assigned. Used at boot to seed the
     /// monotonic counter.
     pub async fn max_message_id(&self) -> rusqlite::Result<u64> {
@@ -947,6 +1470,56 @@ impl Db {
         })
         .await
     }
+}
+
+// Normalize the same common URL forms used by the chat renderer for
+// persistent group shared-link indexing. Direct-message bodies never call
+// this helper; those remain end-to-end encrypted and unindexed.
+fn normalize_shared_url_token(token: &str) -> Option<String> {
+    let candidate = token.trim_matches(|ch: char| {
+        matches!(ch, '(' | '[' | '{' | '<' | ')' | ']' | '}' | '>' | ',' | '.' | '!' | '?' | ';' | ':' | '"' | '\'')
+    });
+    if candidate.is_empty() || candidate.chars().any(char::is_whitespace) {
+        return None;
+    }
+
+    let lower = candidate.to_ascii_lowercase();
+    let has_scheme = lower.starts_with("http://") || lower.starts_with("https://");
+    let authority = if has_scheme {
+        candidate.split_once("://").map(|(_, rest)| rest)?
+    } else {
+        candidate
+    };
+    let host_port = authority.split(|ch| ch == '/' || ch == '?' || ch == '#').next()?;
+    if host_port.is_empty() || host_port.contains('@') {
+        return None;
+    }
+    let hostname = host_port.split(':').next().unwrap_or("");
+    if !hostname.contains('.') {
+        return None;
+    }
+
+    if !has_scheme {
+        let labels: Vec<&str> = hostname.split('.').collect();
+        if labels.len() < 2 || labels.iter().any(|label| {
+            label.is_empty()
+                || label.starts_with('-')
+                || label.ends_with('-')
+                || !label.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '-')
+        }) {
+            return None;
+        }
+        let suffix = labels.last().copied().unwrap_or("");
+        if !(2..=24).contains(&suffix.len()) || !suffix.chars().all(|ch| ch.is_ascii_alphabetic()) {
+            return None;
+        }
+    }
+
+    Some(if has_scheme {
+        candidate.to_string()
+    } else {
+        format!("https://{candidate}")
+    })
 }
 
 fn msg_kind_str(k: MsgKind) -> &'static str {
@@ -1557,5 +2130,40 @@ impl Db {
             Ok(())
         })
         .await
+    }
+}
+
+
+#[cfg(test)]
+mod shared_url_tests {
+    use super::normalize_shared_url_token;
+
+    #[test]
+    fn normalizes_supported_shared_link_forms() {
+        assert_eq!(
+            normalize_shared_url_token("https://example.com/docs)."),
+            Some("https://example.com/docs".to_string())
+        );
+        assert_eq!(
+            normalize_shared_url_token("www.example.com"),
+            Some("https://www.example.com".to_string())
+        );
+        assert_eq!(
+            normalize_shared_url_token("support.example.org/path?q=1"),
+            Some("https://support.example.org/path?q=1".to_string())
+        );
+        assert_eq!(
+            normalize_shared_url_token("http://example.com:8080/help"),
+            Some("http://example.com:8080/help".to_string())
+        );
+    }
+
+    #[test]
+    fn rejects_non_web_and_invalid_host_tokens() {
+        assert_eq!(normalize_shared_url_token("example"), None);
+        assert_eq!(normalize_shared_url_token("javascript:alert(1)"), None);
+        assert_eq!(normalize_shared_url_token("ftp://example.com/file"), None);
+        assert_eq!(normalize_shared_url_token("https://javascript:alert(1)"), None);
+        assert_eq!(normalize_shared_url_token("https://user@example.com/path"), None);
     }
 }

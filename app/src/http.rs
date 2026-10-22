@@ -45,6 +45,7 @@ pub async fn serve(
     let app = Router::new()
         .route("/ws", get(ws_upgrade))
         .route("/api/info", get(info))
+        .route("/api/tls/ca.pem", get(download_ca_certificate))
         .route("/api/update/install", post(install_update))
         .route("/api/share", get(share))
         .route(
@@ -80,19 +81,49 @@ async fn serve_tls(
     let _ = rustls::crypto::ring::default_provider().install_default();
 
     let tls_dir = state.app_root.join("tls");
+    std::fs::create_dir_all(&tls_dir)?;
     let cert_path = tls_dir.join("cert.pem");
     let key_path = tls_dir.join("key.pem");
+    let ca_cert_path = tls_dir.join("ca-cert.pem");
+    let ca_key_path = tls_dir.join("ca-key.pem");
 
-    if !cert_path.exists() || !key_path.exists() {
-        std::fs::create_dir_all(&tls_dir)?;
-        let san = build_cert_sans();
-        let cert = rcgen::generate_simple_self_signed(san)?;
-        std::fs::write(&cert_path, cert.cert.pem())?;
-        std::fs::write(&key_path, cert.key_pair.serialize_pem())?;
+    // Create a persistent local CA once, then issue a server certificate for
+    // localhost and the current LAN addresses. Only the public CA certificate
+    // is exposed to clients; the CA private key never leaves the host.
+    if !ca_key_path.exists() || !ca_cert_path.exists() {
+        use rcgen::{BasicConstraints, CertificateParams, DnType, IsCa, KeyPair, KeyUsagePurpose};
+        let ca_key = KeyPair::generate()?;
+        let mut ca_params = CertificateParams::new(Vec::<String>::new())?;
+        ca_params.distinguished_name.push(DnType::CommonName, "LocalChat Local Network CA");
+        ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+        ca_params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
+        let ca_cert = ca_params.self_signed(&ca_key)?;
+        std::fs::write(&ca_cert_path, ca_cert.pem())?;
+        std::fs::write(&ca_key_path, ca_key.serialize_pem())?;
         crate::applog::log(format_args!(
-            "tls: generated self-signed cert at {}", tls_dir.display()
+            "tls: created local CA; public certificate at {}", ca_cert_path.display()
         ));
     }
+
+    // Rebuild the issuer object from the persistent key. The CA's subject and
+    // parameters remain stable so certificates issued on later launches chain
+    // to the same trusted root.
+    use rcgen::{BasicConstraints, CertificateParams, DnType, ExtendedKeyUsagePurpose, IsCa, KeyPair, KeyUsagePurpose};
+    let ca_key_pem = std::fs::read_to_string(&ca_key_path)?;
+    let ca_key = KeyPair::from_pem(&ca_key_pem)?;
+    let mut ca_params = CertificateParams::new(Vec::<String>::new())?;
+    ca_params.distinguished_name.push(DnType::CommonName, "LocalChat Local Network CA");
+    ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+    ca_params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
+    let ca_cert = ca_params.self_signed(&ca_key)?;
+
+    let mut server_params = CertificateParams::new(build_cert_sans())?;
+    server_params.distinguished_name.push(DnType::CommonName, "LocalChat Server");
+    server_params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ServerAuth];
+    let server_key = KeyPair::generate()?;
+    let server_cert = server_params.signed_by(&server_key, &ca_cert, &ca_key)?;
+    std::fs::write(&cert_path, server_cert.pem())?;
+    std::fs::write(&key_path, server_key.serialize_pem())?;
 
     let cfg = RustlsConfig::from_pem_file(cert_path, key_path).await?;
     let addr: std::net::SocketAddr = ([0, 0, 0, 0], port).into();
@@ -100,6 +131,25 @@ async fn serve_tls(
         .serve(app.into_make_service_with_connect_info::<std::net::SocketAddr>())
         .await?;
     Ok(())
+}
+
+/// Downloadable public trust anchor for this LocalChat host. The private CA
+/// key is never served by this endpoint.
+async fn download_ca_certificate(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let path = state.app_root.join("tls").join("ca-cert.pem");
+    match tokio::fs::read(path).await {
+        Ok(cert) => (
+            StatusCode::OK,
+            [
+                (header::CONTENT_TYPE, HeaderValue::from_static("application/x-pem-file")),
+                (header::CONTENT_DISPOSITION, HeaderValue::from_static("attachment; filename=localchat-root-ca.pem")),
+                (header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff")),
+            ],
+            cert,
+        )
+            .into_response(),
+        Err(_) => StatusCode::NOT_FOUND.into_response(),
+    }
 }
 
 /// Subject-Alternative-Names that the cert should cover. Includes
@@ -265,6 +315,7 @@ async fn upload(
     let mut channel: Option<String> = None;
     let mut text: String = String::new();
     let mut client_id: Option<String> = None;
+    let mut purpose: Option<String> = None;
 
     let mut file_info: Option<FileInfo> = None;
     let mut file_size: u64 = 0;
@@ -290,6 +341,10 @@ async fn upload(
             }
             "client_id" => {
                 client_id = Some(field.text().await
+                    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?);
+            }
+            "purpose" => {
+                purpose = Some(field.text().await
                     .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?);
             }
             "file" => {
@@ -355,6 +410,105 @@ async fn upload(
     let user_id = session
         .as_deref()
         .and_then(|t| state.sessions.get(t).map(|e| e.value().clone()));
+
+    // Authenticated profile picture upload. The client crops to a square;
+    // the server independently validates image signature and size.
+    if purpose.as_deref() == Some("profile_avatar") {
+        let Some(uid) = user_id.clone() else {
+            let _ = tokio::fs::remove_file(state.uploads_dir.join(info.filename.as_str())).await;
+            return Err((StatusCode::UNAUTHORIZED, "session expired — refresh and try again".into()));
+        };
+        if file_size > 2*1024*1024 || !matches!(info.mime_type.as_str(),"image/webp"|"image/jpeg"|"image/png") {
+            let _ = tokio::fs::remove_file(state.uploads_dir.join(info.filename.as_str())).await;
+            return Err((StatusCode::BAD_REQUEST,"profile pictures must be JPEG, PNG, or WebP under 2 MB".into()));
+        }
+        let bytes=tokio::fs::read(state.uploads_dir.join(info.filename.as_str())).await.map_err(|_|(StatusCode::INTERNAL_SERVER_ERROR,"could not verify image".into()))?;
+        let valid=(bytes.starts_with(&[0x52,0x49,0x46,0x46])&&bytes.get(8..12)==Some(&b"WEBP"[..]))||bytes.starts_with(&[0xFF,0xD8,0xFF])||bytes.starts_with(&[0x89,0x50,0x4E,0x47,0x0D,0x0A,0x1A,0x0A]);
+        if !valid { let _=tokio::fs::remove_file(state.uploads_dir.join(info.filename.as_str())).await; return Err((StatusCode::BAD_REQUEST,"uploaded content is not a supported image".into())); }
+        let avatar_url=info.url.to_string();
+        let old=state.users.get(&uid).map(|u|u.avatar.to_string()).unwrap_or_default();
+        state.db.update_user_avatar(uid.clone(),&avatar_url).await.map_err(|_|(StatusCode::INTERNAL_SERVER_ERROR,"could not save profile picture".into()))?;
+        if let Some(mut u)=state.users.get_mut(&uid){u.avatar=avatar_url.clone().into();}
+        if let Some(mut u)=state.known_users.get_mut(&uid){u.avatar=avatar_url.clone().into();}
+        let username=state.users.get(&uid).map(|u|u.username.to_string()).unwrap_or_default();
+        let _=state.db.insert_upload(&info.filename,&info.original_name,info.mime_type.as_str(),file_size,Some(uid.clone()),&username,now_secs()).await;
+        if old.starts_with("/uploads/")&&old!=avatar_url { let name=old.trim_start_matches("/uploads/"); if !name.contains('/')&&!name.contains('\\'){let _=tokio::fs::remove_file(state.uploads_dir.join(name)).await;} }
+        let users:Vec<_>=state.users.iter().map(|e|e.value().clone()).collect();
+        let payload=json!({"ev":"users","users":users}).to_string();
+        if let Some(lobby)=state.channels.get(crate::channel::LOBBY_ID){
+            let _=lobby.tx.send(Arc::new(WireMsg{id:0,channel:lobby.id.clone(),kind:MsgKind::System,user_id:uid.clone(),username:"__presence".into(),avatar:"".into(),color:"".into(),ts:now_secs(),text:payload,file:None,reply_to:None,edited_at:None,deleted:true}));
+        }
+        return Ok(Json(json!({"avatar":avatar_url})));
+    }
+
+    // Group-photo uploads are a separate authenticated operation: they
+    // update channel metadata and never create a chat message. The client
+    // resizes/crops first; the server still enforces strict size/type checks.
+    if purpose.as_deref() == Some("channel_photo") {
+        let (Some(uid), Some(ch_id)) = (user_id.clone(), channel.clone()) else {
+            let _ = tokio::fs::remove_file(state.uploads_dir.join(info.filename.as_str())).await;
+            return Err((StatusCode::UNAUTHORIZED, "session expired — refresh and try again".into()));
+        };
+        if file_size > 2 * 1024 * 1024 || !matches!(info.mime_type.as_str(), "image/webp" | "image/jpeg" | "image/png") {
+            let _ = tokio::fs::remove_file(state.uploads_dir.join(info.filename.as_str())).await;
+            return Err((StatusCode::BAD_REQUEST, "group photos must be JPEG, PNG, or WebP under 2 MB".into()));
+        }
+        let bytes = tokio::fs::read(state.uploads_dir.join(info.filename.as_str())).await
+            .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "could not verify image".into()))?;
+        let valid_signature = (bytes.starts_with(&[0x52, 0x49, 0x46, 0x46]) && bytes.get(8..12) == Some(&b"WEBP"[..]))
+            || bytes.starts_with(&[0xFF, 0xD8, 0xFF])
+            || bytes.starts_with(&[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+        if !valid_signature {
+            let _ = tokio::fs::remove_file(state.uploads_dir.join(info.filename.as_str())).await;
+            return Err((StatusCode::BAD_REQUEST, "uploaded content is not a supported image".into()));
+        }
+        let ch = state.channels.get(&ch_id)
+            .ok_or((StatusCode::BAD_REQUEST, "no such channel".into()))?;
+        if !matches!(ch.kind, crate::channel::ChannelKind::Group) {
+            let _ = tokio::fs::remove_file(state.uploads_dir.join(info.filename.as_str())).await;
+            return Err((StatusCode::BAD_REQUEST, "only groups can have a group photo".into()));
+        }
+        let role = state.db.member_role(&ch_id, uid.as_str()).await
+            .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "could not check group permissions".into()))?;
+        if ch.created_by != uid && role.as_deref() != Some("moderator") && role.as_deref() != Some("owner") {
+            let _ = tokio::fs::remove_file(state.uploads_dir.join(info.filename.as_str())).await;
+            return Err((StatusCode::FORBIDDEN, "only group owners and moderators can change the photo".into()));
+        }
+        let (name, description, old_photo) = state.db.channel_details(&ch_id).await
+            .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "could not load group details".into()))?
+            .ok_or((StatusCode::BAD_REQUEST, "group no longer exists".into()))?;
+        let photo_url = info.url.to_string();
+        state.db.update_channel_details(&ch_id, &name, &description, &photo_url).await
+            .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "could not save group photo".into()))?;
+        let uploaded_by_name = state.users.get(&uid).map(|u| u.username.to_string()).unwrap_or_default();
+        let _ = state.db.insert_upload(&info.filename, &info.original_name, info.mime_type.as_str(), file_size, Some(uid.clone()), &uploaded_by_name, now_secs()).await;
+        if old_photo.starts_with("/uploads/") && old_photo != photo_url {
+            let old_name = old_photo.trim_start_matches("/uploads/");
+            if !old_name.contains('/') && !old_name.contains('\\') {
+                let _ = tokio::fs::remove_file(state.uploads_dir.join(old_name)).await;
+            }
+        }
+        if let Some(lobby) = state.channels.get(crate::channel::LOBBY_ID) {
+            let payload = json!({"channel":ch_id,"photoUrl":photo_url});
+            let update = Arc::new(WireMsg {
+                id: 0,
+                channel: lobby.id.clone(),
+                kind: MsgKind::System,
+                user_id: uid.clone(),
+                username: "__ch_photo_updated".into(),
+                avatar: "".into(),
+                color: "".into(),
+                ts: now_secs(),
+                text: payload.to_string(),
+                file: None,
+                reply_to: None,
+                edited_at: None,
+                deleted: true,
+            });
+            let _ = lobby.tx.send(update);
+        }
+        return Ok(Json(json!({ "photoUrl": photo_url })));
+    }
 
     // Always record the upload in the durable index for the admin
     // dashboard, regardless of whether a message was created.
