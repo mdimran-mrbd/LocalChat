@@ -1585,7 +1585,7 @@ async fn handle_op(
             if username_value.is_none() && designation_value.is_none() {
                 return Err("no profile fields to update".into());
             }
-            let username = if let Some(value) = username_value { sanitize_username(value) } else { info.username.to_string() };
+            let username = if let Some(value) = username_value { sanitize_username(value).to_string() } else { info.username.to_string() };
             if username.is_empty() {
                 return Err("Username must be 3–24 characters: letters, digits, underscore, hyphen, or dot.".into());
             }
