@@ -2936,7 +2936,7 @@ html, body.admin-shell { height: 100%; overflow: hidden; }
 [data-theme="light"] .ci-description, [data-theme="light"] .ci-item-title { color: #374151; }
 [data-theme="light"] .ci-subtitle, [data-theme="light"] .ci-item-sub { color: var(--fg-2); }
 [data-theme="light"] .ci-browser-tab { color: var(--fg-2); }
-[data-theme="light"] .ci-browser-tab.active { color: #07583f; background: #e1f2e8; border-color: #087a50; }
+[data-theme="light"] .ci-browser-tab.active { color: var(--brand); background: var(--brand-soft); border-color: var(--brand); }
 
 
 /* Compact shared-media preview in Chat Info. */
@@ -3104,7 +3104,7 @@ html, body.admin-shell { height: 100%; overflow: hidden; }
 [data-theme="light"] .ci-subtitle, [data-theme="light"] .ci-item-sub,
 [data-theme="light"] .ci-member-role, [data-theme="light"] .ci-empty { color: var(--fg-2); }
 [data-theme="light"] .ci-browser-tab { color: var(--fg-1); }
-[data-theme="light"] .ci-browser-tab.active { color: #07583f; background: #e1f2e8; border-color: #087a50; }
+[data-theme="light"] .ci-browser-tab.active { color: var(--brand); background: var(--brand-soft); border-color: var(--brand); }
 [data-theme="light"] .ci-member-menu { background: #fff; border-color: var(--border); }
 [data-theme="light"] .ci-member-menu-trigger, [data-theme="light"] .ci-member-menu-item { color: var(--fg-0); }
 [data-theme="light"] .ci-member-menu-item.danger { color: #b91c1c; }
