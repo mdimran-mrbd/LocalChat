@@ -112,7 +112,7 @@ cargo run --release                          # tray + browser auto-open
 cargo build --release --features tray        # produces target/release/localchat.exe
 ```
 
-CI publishes a single `LocalChat.exe` when you push a tag (`git tag v2.0.0 && git push origin v2.0.0`). Official release build numbering is maintained in [`app/BUILD_NUMBER`](app/BUILD_NUMBER), starting at Build 1; increment it for each official release. GitHub Actions run numbers are separate and are not product build numbers.
+Official releases are built and published by GitHub Actions when a release-ready change reaches `main`. Set the intended semantic version in `app/Cargo.toml` and the product build number in [`app/BUILD_NUMBER`](app/BUILD_NUMBER); when that version is newer than the latest release tag, the workflow uses it (otherwise it increments the latest patch version). The release includes `LocalChat.exe` and `SHA256SUMS.txt`. GitHub Actions run numbers are separate and are not product build numbers.
 
 > 🛠️ **Hacking on the internals?** See [`DESIGN.md`](DESIGN.md) for the full
 > architecture — concurrency model, persistence layout, E2EE protocol, wire
