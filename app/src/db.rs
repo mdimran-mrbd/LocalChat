@@ -629,6 +629,12 @@ impl Db {
         .await
     }
 
+    pub async fn update_user_avatar(&self, id: UserId, avatar: &str) -> rusqlite::Result<()> {
+        let uid = id.to_string();
+        let avatar = avatar.to_string();
+        self.with(move |c| { c.execute("UPDATE users SET avatar=?2 WHERE id=?1", params![uid, avatar])?; Ok(()) }).await
+    }
+
     pub async fn set_user_designation(&self, id: UserId, designation: &str) -> rusqlite::Result<bool> {
         let uid = id.to_string();
         let designation = designation.to_string();

@@ -361,6 +361,36 @@ async fn upload(
         .as_deref()
         .and_then(|t| state.sessions.get(t).map(|e| e.value().clone()));
 
+    // Authenticated profile picture upload. The client crops to a square;
+    // the server independently validates image signature and size.
+    if purpose.as_deref() == Some("profile_avatar") {
+        let Some(uid) = user_id.clone() else {
+            let _ = tokio::fs::remove_file(state.uploads_dir.join(info.filename.as_str())).await;
+            return Err((StatusCode::UNAUTHORIZED, "session expired — refresh and try again".into()));
+        };
+        if file_size > 2*1024*1024 || !matches!(info.mime_type.as_str(),"image/webp"|"image/jpeg"|"image/png") {
+            let _ = tokio::fs::remove_file(state.uploads_dir.join(info.filename.as_str())).await;
+            return Err((StatusCode::BAD_REQUEST,"profile pictures must be JPEG, PNG, or WebP under 2 MB".into()));
+        }
+        let bytes=tokio::fs::read(state.uploads_dir.join(info.filename.as_str())).await.map_err(|_|(StatusCode::INTERNAL_SERVER_ERROR,"could not verify image".into()))?;
+        let valid=(bytes.starts_with(&[0x52,0x49,0x46,0x46])&&bytes.get(8..12)==Some(&b"WEBP"[..]))||bytes.starts_with(&[0xFF,0xD8,0xFF])||bytes.starts_with(&[0x89,0x50,0x4E,0x47,0x0D,0x0A,0x1A,0x0A]);
+        if !valid { let _=tokio::fs::remove_file(state.uploads_dir.join(info.filename.as_str())).await; return Err((StatusCode::BAD_REQUEST,"uploaded content is not a supported image".into())); }
+        let avatar_url=info.url.to_string();
+        let old=state.users.get(&uid).map(|u|u.avatar.to_string()).unwrap_or_default();
+        state.db.update_user_avatar(uid.clone(),&avatar_url).await.map_err(|_|(StatusCode::INTERNAL_SERVER_ERROR,"could not save profile picture".into()))?;
+        if let Some(mut u)=state.users.get_mut(&uid){u.avatar=avatar_url.clone().into();}
+        if let Some(mut u)=state.known_users.get_mut(&uid){u.avatar=avatar_url.clone().into();}
+        let username=state.users.get(&uid).map(|u|u.username.to_string()).unwrap_or_default();
+        let _=state.db.insert_upload(&info.filename,&info.original_name,info.mime_type.as_str(),file_size,Some(uid.clone()),&username,now_secs()).await;
+        if old.starts_with("/uploads/")&&old!=avatar_url { let name=old.trim_start_matches("/uploads/"); if !name.contains('/')&&!name.contains('\\'){let _=tokio::fs::remove_file(state.uploads_dir.join(name)).await;} }
+        let users:Vec<_>=state.users.iter().map(|e|e.value().clone()).collect();
+        let payload=json!({"ev":"users","users":users}).to_string();
+        if let Some(lobby)=state.channels.get(crate::channel::LOBBY_ID){
+            let _=lobby.tx.send(Arc::new(WireMsg{id:0,channel:lobby.id.clone(),kind:MsgKind::System,user_id:uid.clone(),username:"__presence".into(),avatar:"".into(),color:"".into(),ts:now_secs(),text:payload,file:None,reply_to:None,edited_at:None,deleted:true}));
+        }
+        return Ok(Json(json!({"avatar":avatar_url})));
+    }
+
     // Group-photo uploads are a separate authenticated operation: they
     // update channel metadata and never create a chat message. The client
     // resizes/crops first; the server still enforces strict size/type checks.

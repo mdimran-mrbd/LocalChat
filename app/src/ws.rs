@@ -1562,6 +1562,22 @@ async fn handle_op(
                 .map_err(|_| "could not save encrypted key backup".to_string())?;
         }
 
+        "avatar_set" => {
+            let avatar = v.get("avatar").and_then(Value::as_str).ok_or("missing avatar")?;
+            if !matches!(avatar, "😀" | "😎" | "😊" | "🐱" | "🐼" | "🦊" | "🐸" | "🐙" | "🦄" | "🐧" | "🐨" | "🐯" | "🦋" | "🌟" | "🌈" | "🚀") {
+                return Err("choose one of the predefined avatars".into());
+            }
+            let old = state.users.get(&user_id).map(|u| u.avatar.to_string()).unwrap_or_default();
+            state.db.update_user_avatar(user_id.clone(), avatar).await.map_err(|_| "could not save avatar".to_string())?;
+            if let Some(mut user) = state.users.get_mut(&user_id) { user.avatar = avatar.to_compact_string(); }
+            if let Some(mut user) = state.known_users.get_mut(&user_id) { user.avatar = avatar.to_compact_string(); }
+            if old.starts_with("/uploads/") {
+                let name = old.trim_start_matches("/uploads/");
+                if !name.contains('/') && !name.contains('\\') { let _ = tokio::fs::remove_file(state.uploads_dir.join(name)).await; }
+            }
+            broadcast_users(state).await;
+        }
+
         "profile_update" => {
             let username = v.get("username").and_then(Value::as_str).ok_or("missing username")?;
             let username = sanitize_username(username);

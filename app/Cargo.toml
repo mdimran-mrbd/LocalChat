@@ -104,4 +104,4 @@ default = ["tray"]
 tray    = ["dep:tray-icon", "dep:tao", "dep:image", "dep:arboard", "dep:winreg"]
 
 [build-dependencies]
-# Nothing yet. Reserved for Windows resource embedding (icon) later.
+winres = "0.1"

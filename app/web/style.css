@@ -3362,3 +3362,12 @@ body.poll-modal-open { overflow:hidden; }
 .chat-pin-mark{color:var(--fg-1)}
 .ci-description .ci-desc-edit{opacity:1;visibility:visible}
 .ci-description-copy{min-width:0;overflow-wrap:anywhere}
+
+
+/* Profile pictures and avatar picker. */
+.has-avatar-image{overflow:hidden}.has-avatar-image>img{display:block;width:100%;height:100%;object-fit:cover;border-radius:inherit}
+.profile-avatar-row{display:flex;align-items:flex-start;gap:14px;margin:4px 0 16px}.profile-avatar-preview{width:68px;height:68px;flex:0 0 68px;font-size:24px}
+.profile-avatar-controls{min-width:0;flex:1}.profile-avatar-controls>strong{display:block;font-size:13px}.profile-avatar-controls>p{margin:5px 0 10px}
+.profile-avatar-presets{display:flex;flex-wrap:wrap;gap:5px;margin-top:10px}.profile-avatar-preset{width:32px;height:32px;display:grid;place-items:center;border:1px solid var(--border);border-radius:8px;background:var(--bg-1);color:var(--fg-0);font-size:20px;cursor:pointer}
+.profile-avatar-preset:hover,.profile-avatar-preset.active{border-color:var(--brand);background:var(--brand-soft)}
+.ci-member-avatar.has-avatar-image>img,.mention-option-avatar.has-avatar-image>img,.admin-shell .ad-avatar.has-avatar-image>img{width:100%;height:100%;object-fit:cover}

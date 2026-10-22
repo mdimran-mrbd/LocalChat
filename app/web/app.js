@@ -24,6 +24,17 @@ function userNameNode(user) {
   return root;
 }
 
+function avatarContent(avatar, fallback = "?") {
+  if (typeof avatar === "string" && avatar.startsWith("/uploads/") && !avatar.slice(9).includes("/") && !avatar.slice(9).includes("\\")) return el("img", { src: avatar, alt: "", loading: "lazy", decoding: "async", draggable: "false" });
+  return document.createTextNode(avatar || String(fallback || "?").slice(0,1).toUpperCase());
+}
+function renderAvatarContent(node, avatar, fallback = "?") {
+  if (!node) return;
+  const presence = node.querySelector(":scope > .presence-dot");
+  node.replaceChildren(avatarContent(avatar, fallback));
+  if (presence) node.append(presence);
+  node.classList.toggle("has-avatar-image", typeof avatar === "string" && avatar.startsWith("/uploads/") && !avatar.slice(9).includes("/"));
+}
 function colorForName(name) {
   if (!name) return _AVATAR_COLORS[0];
   let h = 0x811c9dc5 >>> 0;
@@ -1077,8 +1088,10 @@ async function onWelcome(e, password) {
     adminLink.hidden = !onHost;
   }
   $("meChip").innerHTML = "";
+  const ownAvatar = el("div", { class: "avatar xs", style: `background:${e.user.color}` });
+  renderAvatarContent(ownAvatar, e.user.avatar, e.user.username?.[0] || "?");
   $("meChip").append(
-    el("div", { class: "avatar xs", style: `background:${e.user.color}` }, e.user.avatar || "?"),
+    ownAvatar,
     el("div", { class: "me-info" }, [el("div", { class: "name" }, userNameNode(e.user))]),
     el("button", {
       id: "settingsOpenBtn", class: "icon-btn settings-open-btn", title: "Settings", "aria-label": "Open settings",
@@ -1125,7 +1138,12 @@ function onUsers(list) {
   const updatedMe = list.find(u => u.id === S.me?.id);
   if (updatedMe) {
     const profileChanged = !!previousMe && (previousMe.username !== updatedMe.username || previousMe.designation !== updatedMe.designation);
+    const avatarChanged = !!previousMe && previousMe.avatar !== updatedMe.avatar;
     S.me = updatedMe;
+    const ownAvatar = $("meChip")?.querySelector(".avatar");
+    if (ownAvatar) { ownAvatar.style.background = updatedMe.color || "var(--brand)"; renderAvatarContent(ownAvatar, updatedMe.avatar, updatedMe.username?.[0] || "?"); }
+    if ($("settingsPanel")?.classList.contains("open")) renderProfileAvatarSettings();
+    if (avatarChanged && $("profileAvatarStatus")) { $("profileAvatarStatus").textContent = "Profile picture updated."; $("profileAvatarStatus").classList.remove("err"); $("profileAvatarStatus").classList.add("ok"); }
     const ownName = $("meChip")?.querySelector(".me-info .name");
     if (ownName) ownName.replaceChildren(userNameNode(updatedMe));
     if (updatedMe.designation) closeModal("designationModal");
@@ -1837,10 +1855,7 @@ function _dmItem(c) {
     onclick: () => switchChannel(c.id),
     oncontextmenu: askDelete,
   }, [
-    el("div", { class: `avatar ${online ? "avatar-online" : "avatar-offline"}`, style: `background:${u?.color || "var(--brand)"}` }, [
-      document.createTextNode(u?.avatar || (u?.username?.[0] || "?").toUpperCase()),
-      el("span", { class: "presence-dot" }),
-    ]),
+    (() => { const node = el("div", { class: `avatar ${online ? "avatar-online" : "avatar-offline"}`, style: `background:${u?.color || "var(--brand)"}` }); renderAvatarContent(node, u?.avatar, u?.username?.[0] || "?"); node.append(el("span", { class: "presence-dot" })); return node; })(),
     el("div", { class: "chat-meta" }, [
       el("div", { class: "chat-name" }, [pinned ? el("span", { class: "chat-pin-mark", title: "Pinned chat", "aria-hidden": "true", html: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 3 5 5-4 1-4 4-1 5-2-2-4 4-2-2 4-4-2-2 5-1 4-4 1-4Z"/><path d="m10 14-6 6"/></svg>' }) : null, userNameNode(u || { username: peerName })]),
       el("div", { class: "chat-sub muted xs" }, online ? "online" : "offline"),
@@ -1898,10 +1913,7 @@ function _personItem(u, online) {
       ? sendOp({ op: "dm_open", user: u.id })
       : toast(`${u.username} is offline`),
   }, [
-    el("div", { class: `avatar ${online ? "avatar-online" : "avatar-offline"}`, style: `background:${u.color || "var(--brand)"}` }, [
-      document.createTextNode(u.avatar || (u.username?.[0] || "?").toUpperCase()),
-      el("span", { class: "presence-dot" }),
-    ]),
+    (() => { const node = el("div", { class: `avatar ${online ? "avatar-online" : "avatar-offline"}`, style: `background:${u.color || "var(--brand)"}` }); renderAvatarContent(node, u.avatar, u.username?.[0] || "?"); node.append(el("span", { class: "presence-dot" })); return node; })(),
     el("div", { class: "chat-meta" }, [
       el("div", { class: "chat-name" }, userNameNode(u)),
       el("div", { class: "chat-sub muted xs" }, online ? "online" : "offline"),
@@ -2211,7 +2223,7 @@ async function renderMessage(m, { follow, peer, ch }) {
         ev.stopPropagation();
         openDmWithUserId(m.userId, m.username);
       },
-    }, m.avatar || "?");
+    }, avatarContent(m.avatar, m.username?.[0] || "?"));
   }
 
   const bubble = el("div", { class: "bubble" });
@@ -2783,7 +2795,7 @@ function updateHeader() {
     composer.placeholder = "Type a message";
     if (avSlot) {
       avSlot.style.background = p?.color || "var(--brand)";
-      avSlot.textContent = p?.avatar || (p?.username?.[0] || "?").toUpperCase();
+      renderAvatarContent(avSlot, p?.avatar, p?.username?.[0] || "?");
       avSlot.classList.remove("hidden");
     }
     if (callBtn) callBtn.classList.toggle("hidden", !p);
@@ -3268,7 +3280,7 @@ function updateMentionPicker() {
       "aria-selected": i === mentionActiveIndex ? "true" : "false",
       onmousedown: (ev) => { ev.preventDefault(); insertMention(u.username); },
     }, [
-      el("span", { class: "mention-option-avatar", style: `background:${u.color || colorForName(u.username)}` }, (u.avatar || u.username[0] || "?").toUpperCase()),
+      (() => { const node = el("span", { class: "mention-option-avatar", style: `background:${u.color || colorForName(u.username)}` }); renderAvatarContent(node, u.avatar, u.username?.[0] || "?"); return node; })(),
       el("span", { class: "mention-option-name" }, "@" + u.username),
       el("span", { class: "mention-option-status" }, u.isAll ? "everyone in group" : (u.online ? "online" : "")),
     ]);
@@ -3490,7 +3502,7 @@ function openDmPicker() {
     list.append(el("li", {
       onclick: () => { sendOp({ op: "dm_open", user: u.id }); closeModal("dmModal"); },
     }, [
-      el("div", { class: "avatar xs", style: `background:${u.color}` }, u.avatar || "?"),
+      (() => { const node = el("div", { class: "avatar xs", style: `background:${u.color}` }); renderAvatarContent(node, u.avatar, u.username?.[0] || "?"); return node; })(),
       el("span", {}, u.username),
       el("span", { class: "e2ee" + (canE2ee ? " ok" : "") }, [
         svg("M6 10V7a6 6 0 0112 0v3M5 10h14v10H5z", 12, 2),
@@ -3611,10 +3623,54 @@ document.addEventListener("visibilitychange", () => {
 });
 window.addEventListener("focus", scheduleReadReceipt);
 
+const PROFILE_AVATAR_PRESETS = ["😀","😎","😊","🐱","🐼","🦊","🐸","🐙","🦄","🐧","🐨","🐯","🦋","🌟","🌈","🚀"];
+function renderProfileAvatarSettings() {
+  const preview = $("profileAvatarPreview");
+  if (preview) { preview.style.background = S.me?.color || "var(--brand)"; renderAvatarContent(preview, S.me?.avatar, S.me?.username?.[0] || "?"); }
+  document.querySelectorAll(".profile-avatar-preset").forEach(button => {
+    const active = button.dataset.avatar === S.me?.avatar;
+    button.classList.toggle("active", active); button.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+}
+function setProfileAvatarPreset(avatar) {
+  if (!PROFILE_AVATAR_PRESETS.includes(avatar)) return;
+  if (!S.ws || S.ws.readyState !== WebSocket.OPEN) { toast("Not connected. Please try again."); return; }
+  sendOp({ op: "avatar_set", avatar });
+  const status = $("profileAvatarStatus"); if (status) { status.textContent = "Updating avatar…"; status.classList.remove("err","ok"); }
+}
+async function uploadProfileAvatar(file) {
+  if (!file || !S.session) { toast("Not connected — try again in a moment."); return; }
+  if (!["image/png","image/jpeg","image/webp"].includes(file.type || "")) { toast("Choose a PNG, JPEG, or WebP image."); return; }
+  let blob;
+  try {
+    const bitmap = await createImageBitmap(file), side = Math.min(bitmap.width, bitmap.height);
+    if (!side) throw new Error("Image dimensions are invalid.");
+    const canvas = document.createElement("canvas"); canvas.width = 256; canvas.height = 256;
+    const context = canvas.getContext("2d"); if (!context) throw new Error("Image processing is unavailable.");
+    context.drawImage(bitmap,(bitmap.width-side)/2,(bitmap.height-side)/2,side,side,0,0,256,256); bitmap.close?.();
+    blob = await new Promise(resolve => canvas.toBlob(resolve,"image/webp",0.82));
+    if (!blob) blob = await new Promise(resolve => canvas.toBlob(resolve,"image/jpeg",0.82));
+    if (!blob) throw new Error("Could not process this image.");
+  } catch(error) { toast("Could not process image: "+(error.message||"unsupported image")); return; }
+  if (blob.size > 2*1024*1024) { toast("Processed picture is too large. Choose a smaller image."); return; }
+  const form = new FormData(); form.append("purpose","profile_avatar"); form.append("session",S.session);
+  form.append("file",blob,blob.type==="image/webp"?"profile-avatar.webp":"profile-avatar.jpg");
+  const status=$("profileAvatarStatus"); if(status){status.textContent="Uploading picture…";status.classList.remove("err","ok");}
+  try {
+    const response=await fetch("/api/upload",{method:"POST",body:form}), result=await response.json().catch(()=>({}));
+    if(!response.ok) throw new Error(result.error||result.message||"Upload failed.");
+    if(status){status.textContent="Profile picture uploaded.";status.classList.remove("err");status.classList.add("ok");}
+  } catch(error) { if(status){status.textContent="Could not upload picture: "+(error.message||"upload failed");status.classList.remove("ok");status.classList.add("err");} }
+}
+$("profileAvatarUploadBtn")?.addEventListener("click",()=> $("profileAvatarFileInput")?.click());
+$("profileAvatarFileInput")?.addEventListener("change",async()=>{const file=$("profileAvatarFileInput").files?.[0];$("profileAvatarFileInput").value="";if(file)await uploadProfileAvatar(file);});
+Object.assign(window,{setProfileAvatarPreset});
+
 function openSettingsPanel() {
   if (!S.me) return;
   $("profileUsername").value = S.me.username || "";
   $("profileDesignation").value = S.me.designation || "CSA";
+  renderProfileAvatarSettings();
   setProfileFieldEditing("username", false);
   setProfileFieldEditing("designation", false);
   $("profileSettingsStatus").textContent = "";
@@ -4385,7 +4441,7 @@ function showCallBar(status) {
   const peer = S.users.get(Call.peerId);
   const av = $("cbAvatar");
   if (av) {
-    av.textContent = peer?.avatar || (Call.peerName?.[0] || "?").toUpperCase();
+    renderAvatarContent(av, peer?.avatar, Call.peerName?.[0] || "?");
     av.style.background = peer?.color || "var(--brand)";
   }
   setCallStatus(status);
@@ -4426,7 +4482,7 @@ async function onCallSignal({ channel, kind, from, fromName, payload }) {
     const peer = S.users.get(from);
     const av = $("icAvatar");
     if (av) {
-      av.textContent = peer?.avatar || (Call.peerName?.[0] || "?").toUpperCase();
+      renderAvatarContent(av, peer?.avatar, Call.peerName?.[0] || "?");
       av.style.background = peer?.color || "var(--brand)";
     }
     $("icName").textContent = Call.peerName;
@@ -4574,7 +4630,7 @@ async function renderChannelInfo() {
   _ciNotificationMode = ch.notificationMode || "all";
   root.innerHTML = `
     <section class="ci-profile">
-      <div class="ci-avatar">${ch.photoUrl && !isDm ? `<img src="${_ciEsc(ch.photoUrl)}" alt="${_ciEsc(title)} group photo" loading="lazy">` : _ciEsc(profileAvatar)}${canEditPhoto ? '<button type="button" id="ciPhotoEditBtn" class="ci-avatar-edit" aria-label="Change group photo" title="Change group photo"><svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>' : ""}</div>
+      <div class="ci-avatar">${ch.photoUrl && !isDm ? `<img src="${_ciEsc(ch.photoUrl)}" alt="${_ciEsc(title)} group photo" loading="lazy">` : (isDm && typeof profileAvatar === "string" && profileAvatar.startsWith("/uploads/") ? `<img src="${_ciEsc(profileAvatar)}" alt="${_ciEsc(title)} profile picture" loading="lazy">` : _ciEsc(profileAvatar))}${canEditPhoto ? '<button type="button" id="ciPhotoEditBtn" class="ci-avatar-edit" aria-label="Change group photo" title="Change group photo"><svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>' : ""}</div>
       ${canEditPhoto ? '<input id="ciPhotoFileInput" type="file" accept="image/png,image/jpeg,image/webp" hidden aria-label="Choose group photo">' : ""}
       <div class="ci-name-row"><div class="ci-name">${_ciEsc(title)}</div>${canEditDescription ? '<button type="button" id="ciNameEditBtn" class="ci-name-edit" aria-label="Edit channel name" title="Edit channel name" aria-expanded="false"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>' : ""}</div>
        <div class="ci-subtitle">${isDm ? "Direct message · End-to-end encryption when available" : (ch.kind === "lobby" ? "Public channel" : (ch.isPrivate ? "Private group" : "Group conversation")) + " · " + members.length + " member" + (members.length === 1 ? "" : "s")}</div>
@@ -4683,7 +4739,7 @@ function renderChannelInfoMembers(members) {
   if (!filtered.length) { root.innerHTML = '<div class="ci-empty">No matching members.</div>'; return; }
   for (const u of filtered) {
     const row = document.createElement("div"); row.className = "ci-member";
-    const avatar = document.createElement("div"); avatar.className = "ci-member-avatar"; avatar.style.background = u.color || "#6366f1"; avatar.textContent = u.avatar || (u.username || "?").slice(0,1).toUpperCase();
+    const avatar = document.createElement("div"); avatar.className = "ci-member-avatar"; avatar.style.background = u.color || "#6366f1"; renderAvatarContent(avatar, u.avatar, (u.username || "?").slice(0,1));
     const main = document.createElement("div"); main.className = "ci-member-main";
     const name = document.createElement("div"); name.className = "ci-member-name"; name.append(userNameNode(u)); if (u.id === S.me?.id) name.append(document.createTextNode(" (you)"));
     const role = document.createElement("div"); role.className = "ci-member-role"; role.textContent = u.role === "owner" || u.id === S.channels.get(S.active)?.createdBy ? "Group owner" : (u.role === "moderator" ? "Moderator" : (u.online ? "Online" : "Member"));
