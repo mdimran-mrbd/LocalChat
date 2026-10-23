@@ -5020,14 +5020,15 @@ async function renderChannelInfoItems() {
   // locally loaded messages as a visible fallback instead of showing an
   // empty list beside a non-zero count. This can happen after an older
   // client/server cache or an interrupted index refresh.
-  const useLocalFallback = !!peer || !serverCache || (!serverCache.items.length && serverCountForTab > 0);
+  const useLocalFallback = !!peer || !serverCache || (!serverCache.items.length && (!serverCache.counts || serverCountForTab > 0));
   if (!peer && serverCache) {
     for (const item of serverCache.items) {
       const mime = item.mimeType || "";
       if (item.itemType === "link") {
         let hostname = "";
         try { hostname = new URL(item.itemKey).hostname; } catch (_) {}
-        items.push({ type: "link", id: item.messageId, ts: item.createdAt, sender: item.username, title: hostname || item.itemKey, detail: item.itemKey, url: item.itemKey, icon: "🌐" });
+        const linkUrl = normalizeChatUrl(item.url || item.itemKey);
+        if (linkUrl) items.push({ type: "link", id: item.messageId, ts: item.createdAt, sender: item.username, title: hostname || linkUrl, detail: item.itemKey || linkUrl, url: linkUrl, icon: "🌐" });
       } else if (item.itemType === "media") {
         items.push({ type: "media", id: item.messageId, ts: item.createdAt, sender: item.username, title: "Media", detail: mime || "Media", url: item.url || item.itemKey, icon: mime.startsWith("video/") ? "🎬" : "🖼️" });
       } else {
