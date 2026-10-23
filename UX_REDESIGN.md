@@ -1,11 +1,11 @@
 # LocalChat UX Redesign
 
-Status: P0 — inventory and implementation guardrails  
+Status: Approved — implementation in progress (Phase 1: Emerald Studio foundation)  
 Branch: `feature/localchat-ux-redesign`
 
-## Product direction
+## Approved product direction
 
-Rebuild the complete LocalChat interface around the approved clean, white corporate visual reference. The application must use LocalChat branding only: do not include any third-party company name, logo, mark, wordmark, or brand asset in the app UI, metadata, icons, splash/join screen, settings, or generated assets.
+Rebuild the complete LocalChat interface as **Emerald Studio**: light-first, balanced information density, and smooth restrained motion. Use A. O. Smith-inspired color and typography cues only; never include its name, logo, mark, wordmark, or brand asset in LocalChat. The implementation is a complete UI replacement, not a color-only polish. The application must use LocalChat branding only: do not include any third-party company name, logo, mark, wordmark, or brand asset in the app UI, metadata, icons, splash/join screen, settings, or generated assets.
 
 - Light theme: white primary surfaces, soft neutral gray secondary surfaces, deep forest-green navigation and restrained green action/selection states.
 - Dark theme: premium deep forest-green and charcoal surfaces, muted green borders, accessible high-contrast text, and the same semantic green actions.
@@ -120,3 +120,11 @@ Typography target: system sans-serif stack led by `Inter` when locally available
 - [x] Began implementation incrementally on the dedicated redesign branch; updated shared tokens, core shell/message/composer styling, Info/settings styling, favicon, and generated avatar accents.\n- [ ] Validate in CI and a Windows test executable before asking the user to test.
 - [x] Added a first cohesive styling pass for the composer, emoji/mention pickers, menus, dialogs, and Info/settings surfaces; behavior selectors remain unchanged.
 - [ ] Review the resulting UI in both themes and fix any contrast/layout regressions found by validation.
+
+
+## Implementation log
+
+- **Phase 1 — design foundation:** Added `app/web/emerald-studio.css` and loaded it after the legacy stylesheet. This establishes the approved semantic palette, typography, desktop three-part workspace, redesigned join surface, message/composer surfaces, consistent right-side drawers, and responsive/reduced-motion behavior while retaining existing DOM IDs and JavaScript hooks.
+- **Validation:** GitHub Actions CI run #208 was queued for commit `6efca20e43540424c85aeb008d0e0f32f5b2c1b5`. A passing build is necessary but not sufficient; UI interactions and privacy-sensitive behavior still require verification.
+- **Next phases:** Continue migrating the message and composer interactions, shared-content browser, settings/profile, dialogs/pickers, call surfaces, responsive behavior, and theme contrast. Fix and test Links/Files list rendering rather than relying on counts. Keep the existing encrypted-DM privacy boundary and permission checks unchanged.
+- **Release policy:** Keep the work on the feature branch and draft PR. Do not merge or publish a final release until implementation, CI, and the consolidated manual test pass are complete and explicitly approved.
