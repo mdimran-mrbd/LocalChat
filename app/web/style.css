@@ -4518,3 +4518,124 @@ button:disabled, .btn:disabled {
 @media (prefers-reduced-motion: reduce) {
   .send-btn:hover { transform: none; }
 }
+
+
+/* UX redesign phase 3: conversation reading and composition.
+   Keep existing message/composer IDs and event hooks intact. */
+.main {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.chat-header {
+  flex: 0 0 auto;
+  position: relative;
+  z-index: 2;
+}
+.ch-avatar {
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  font-weight: 750;
+}
+.ch-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.ch-title { flex: 1 1 auto; }
+.ch-title .h5 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#chSub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ch-actions {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.ch-actions .icon-btn {
+  transition: background-color var(--transition), color var(--transition), border-color var(--transition);
+}
+.ch-actions .icon-btn:hover {
+  color: var(--brand);
+  background: var(--brand-soft);
+}
+.chat-stream {
+  flex: 1 1 auto;
+  min-height: 0;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
+}
+.msg-stack { min-width: 0; }
+.bubble {
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+.bubble a, .message-mention {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.msg .msg-actions { z-index: 4; }
+#typing {
+  flex: 0 0 auto;
+  min-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+#typing:not(:empty) { padding-top: 5px; padding-bottom: 5px; }
+.composer {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-end;
+  min-width: 0;
+  z-index: 3;
+}
+.composer textarea {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 0;
+  max-height: min(160px, 24vh);
+  overflow-y: auto;
+  transition: border-color var(--transition), box-shadow var(--transition), background-color var(--transition);
+}
+.composer textarea:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 13%, transparent);
+}
+.composer .emoji-btn,
+.composer .attach-btn,
+.composer .send-btn {
+  flex-shrink: 0;
+}
+.composer .send-btn {
+  transition: transform var(--transition), background-color var(--transition), box-shadow var(--transition);
+}
+.composer .send-btn:active { transform: translateY(0) scale(.96); }
+.reply-preview {
+  flex: 0 0 100%;
+  min-width: 0;
+}
+.reply-preview-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (max-width: 1000px) {
+  .chat-header { gap: 8px; }
+  .ch-actions { gap: 2px; }
+}
+@media (max-width: 760px) {
+  .chat-header { flex-wrap: nowrap; }
+  .ch-title { flex: 1 1 0; }
+  .ch-actions { flex: 0 1 auto; }
+  .composer textarea { max-height: 22vh; }
+}
+@media (max-width: 420px) {
+  .ch-actions { max-width: 48%; }
+  .ch-actions .icon-btn { min-width: 28px; }
+}
