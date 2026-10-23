@@ -4897,3 +4897,19 @@ button:disabled, .btn:disabled {
   .channel-info-content .ci-preview-tile,
   .channel-info-content .ci-browser-tab { transition: none; }
 }
+
+
+/* UX redesign phase 5: remove duplicate desktop navigation while preserving mobile access. */
+@media (min-width: 761px) {
+  /* Chats and Online live in the primary rail on desktop, not twice in the list panel. */
+  .sb-tabs > .sb-tab { display: none; }
+  .sb-tabs { grid-template-columns: minmax(0, 1fr) auto; }
+  /* Share / QR is a primary-rail action on desktop; retain its sidebar access on mobile
+     where the rail collapses away. */
+  .sb-tabs .sb-tabs-share { display: none; }
+}
+@media (max-width: 760px) {
+  .sb-tabs > .sb-tab { display: inline-flex; }
+  .sb-tabs { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; }
+  .sb-tabs .sb-tabs-share { display: inline-flex; }
+}
