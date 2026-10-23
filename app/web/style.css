@@ -4913,3 +4913,76 @@ button:disabled, .btn:disabled {
   .sb-tabs { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; }
   .sb-tabs .sb-tabs-share { display: inline-flex; }
 }
+
+
+/* UX redesign phase 5: settings, theme contrast, and small-screen finishing. */
+.settings-panel,
+.settings-panel * { min-width: 0; }
+.settings-panel { color: var(--fg-0); }
+.settings-head { flex: 0 0 auto; align-items: center; }
+.settings-content { overscroll-behavior: contain; }
+.settings-section h3 { color: var(--fg-0); }
+.settings-section .field > span { color: var(--fg-1); }
+.settings-section input,
+.settings-section select {
+  color: var(--fg-0);
+  caret-color: var(--brand);
+}
+.settings-section input:disabled,
+.settings-section select:disabled { opacity: .82; }
+.settings-section input:focus-visible,
+.settings-section select:focus-visible {
+  border-color: var(--brand);
+  outline: 2px solid color-mix(in srgb, var(--brand) 32%, transparent);
+  outline-offset: 1px;
+}
+.settings-action:focus-visible,
+.settings-close:focus-visible,
+.settings-open-btn:focus-visible,
+.profile-edit-icon:focus-visible,
+.profile-avatar-upload-btn:focus-visible,
+.profile-avatar-preset:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+.profile-edit-row { min-width: 0; }
+.profile-edit-row .field { min-width: 0; flex: 1 1 auto; }
+.profile-edit-icon { flex: 0 0 auto; }
+.profile-edit-actions { display: flex; justify-content: flex-end; gap: 8px; }
+#settingsNotificationsSlot .browser-notification-menu {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+#settingsNotificationsSlot .browser-notification-menu-label { flex: 0 0 100%; }
+[data-theme="light"] .settings-section input,
+[data-theme="light"] .settings-section select {
+  color: #17211c;
+  background: #fff;
+  border-color: #cbd5cf;
+}
+[data-theme="dark"] .settings-section input,
+[data-theme="dark"] .settings-section select {
+  color: var(--fg-0);
+  background: var(--bg-2);
+  border-color: var(--border-strong);
+}
+@media (max-width: 760px) {
+  .settings-panel {
+    width: min(420px, 100vw);
+    border-right: 0;
+    border-radius: 0;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .settings-head { padding: 16px; }
+  .settings-content { padding: 6px 16px 24px; }
+  .settings-section { padding: 14px 0; }
+  .profile-avatar-row { gap: 12px; }
+  .profile-avatar-preview { flex: 0 0 56px; }
+}
+@media (max-width: 380px) {
+  .settings-head h2 { font-size: 18px; }
+  .profile-avatar-row { flex-direction: column; }
+  .profile-edit-row { gap: 6px; }
+  .profile-edit-icon { width: 34px; height: 34px; }
+  .settings-action { overflow-wrap: anywhere; }
+}
