@@ -5023,16 +5023,27 @@ async function renderChannelInfoItems() {
   const useLocalFallback = !!peer || !serverCache || (!serverCache.items.length && (!serverCache.counts || serverCountForTab > 0));
   if (!peer && serverCache) {
     for (const item of serverCache.items) {
-      const mime = item.mimeType || "";
-      if (item.itemType === "link") {
+      // Accept the wire's camelCase fields and legacy snake_case payloads.
+      // The shared-content browser must not silently drop valid records if
+      // the backend/client versions are temporarily out of sync.
+      const itemType = item.itemType || item.item_type || "";
+      const itemKey = item.itemKey || item.item_key || "";
+      const messageId = item.messageId ?? item.message_id;
+      const createdAt = item.createdAt ?? item.created_at;
+      const mime = item.mimeType || item.mime_type || "";
+      const fileName = item.fileName || item.file_name || "";
+      const fileSize = item.fileSize ?? item.file_size;
+      const itemUrl = item.url || itemKey;
+      if (_channelInfoTab === "links" && (itemType === "link" || itemType === "links")) {
+        const linkUrl = normalizeChatUrl(itemUrl);
+        if (!linkUrl) continue;
         let hostname = "";
-        try { hostname = new URL(item.itemKey).hostname; } catch (_) {}
-        const linkUrl = normalizeChatUrl(item.url || item.itemKey);
-        if (linkUrl) items.push({ type: "link", id: item.messageId, ts: item.createdAt, sender: item.username, title: hostname || linkUrl, detail: item.itemKey || linkUrl, url: linkUrl, icon: "🌐" });
-      } else if (item.itemType === "media") {
-        items.push({ type: "media", id: item.messageId, ts: item.createdAt, sender: item.username, title: "Media", detail: mime || "Media", url: item.url || item.itemKey, icon: mime.startsWith("video/") ? "🎬" : "🖼️" });
-      } else {
-        items.push({ type: "file", id: item.messageId, ts: item.createdAt, sender: item.username, title: item.fileName || "Attachment", detail: mime || "File", url: item.url || item.itemKey, size: item.fileSize, icon: sharedFileIcon(mime, item.fileName || item.itemKey) });
+        try { hostname = new URL(linkUrl).hostname; } catch (_) {}
+        items.push({ type: "link", id: messageId, ts: createdAt, sender: item.username, title: hostname || linkUrl, detail: itemKey || linkUrl, url: linkUrl, icon: "🌐" });
+      } else if (_channelInfoTab === "media" && itemType === "media") {
+        items.push({ type: "media", id: messageId, ts: createdAt, sender: item.username, title: "Media", detail: mime || "Media", url: itemUrl, icon: mime.startsWith("video/") ? "🎬" : "🖼️" });
+      } else if (_channelInfoTab === "files" && (itemType === "file" || itemType === "files")) {
+        items.push({ type: "file", id: messageId, ts: createdAt, sender: item.username, title: fileName || "Attachment", detail: mime || "File", url: itemUrl, size: fileSize, icon: sharedFileIcon(mime, fileName || itemKey) });
       }
     }
   }
