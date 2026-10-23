@@ -11,7 +11,7 @@ const $ = (id) => document.getElementById(id);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Stable avatar color from a username — mirrors server's pick_color_for (FNV-1a 32, lowercased).
-const _AVATAR_COLORS = ["#6366f1","#8b5cf6","#ec4899","#ef4444","#f97316","#eab308","#22c55e","#14b8a6","#06b6d4","#3b82f6"];
+const _AVATAR_COLORS = ["#087a50","#35a875","#4f8b6a","#659a78","#317b5c","#79ad8d","#226849","#4c9b73","#6d9c81","#3a7258"];
 function userNameNode(user) {
   let profile = typeof user === "string" ? { username: user } : (user || {});
   if (!profile.designation && S.userProfiles) {
@@ -2046,6 +2046,12 @@ function setSidebarTab(tab) {
   document.querySelectorAll(".sb-tab").forEach((b) => {
     b.classList.toggle("active", b.dataset.tab === tab);
   });
+  document.querySelectorAll(".app-rail-btn[data-rail-tab]").forEach((b) => {
+    const active = b.dataset.railTab === tab;
+    b.classList.toggle("active", active);
+    if (active) b.setAttribute("aria-current", "page");
+    else b.removeAttribute("aria-current");
+  });
   renderChannels();
 }
 
@@ -2183,7 +2189,7 @@ function renderEmptyState(ch) {
     ? "Messages here are end-to-end encrypted. The server admin cannot read them."
     : "Say hi or share a file. Messages stay on this local network.";
   return el("div", { class: "stream-empty" }, [
-    el("div", { class: "brand-mark", html: `<svg viewBox="0 0 32 32" width="56" height="56"><defs><linearGradient id="lcEmpty" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#6366f1"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#lcEmpty)"/><path d="M8 10a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3h-5l-4 3v-3h-1a3 3 0 0 1-3-3z" fill="white"/><circle cx="13" cy="13.5" r="1.3" fill="#6366f1"/><circle cx="16" cy="13.5" r="1.3" fill="#6366f1"/><circle cx="19" cy="13.5" r="1.3" fill="#6366f1"/></svg>` }),
+    el("div", { class: "brand-mark", html: `<svg viewBox="0 0 32 32" width="56" height="56"><defs><linearGradient id="lcEmpty" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#087a50"/><stop offset="1" stop-color="#35a875"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#lcEmpty)"/><path d="M8 10a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3h-5l-4 3v-3h-1a3 3 0 0 1-3-3z" fill="white"/><circle cx="13" cy="13.5" r="1.3" fill="#087a50"/><circle cx="16" cy="13.5" r="1.3" fill="#087a50"/><circle cx="19" cy="13.5" r="1.3" fill="#087a50"/></svg>` }),
     el("h3", {}, title),
     el("p", {}, sub),
   ]);
@@ -2217,7 +2223,7 @@ async function renderMessage(m, { follow, peer, ch }) {
     avatar = el("button", {
       type: "button",
       class: "avatar avatar-link",
-      style: `background:${m.color || "#6366f1"}`,
+      style: `background:${m.color || "#087a50"}`,
       title: `Message ${m.username}`,
       onclick: (ev) => {
         ev.stopPropagation();
@@ -4621,7 +4627,7 @@ async function renderChannelInfo() {
   const isDm = ch.kind === "dm";
   const peer = isDm ? _ciPeer(ch) : null;
   const title = isDm ? (peer?.username || ch.dmUsers?.find(n => n?.toLowerCase() !== S.me?.username?.toLowerCase()) || "Direct message") : (ch.name || "Group");
-  const members = (ch.members || []).map(id => S.users.get(id) || { id, username: id === S.me?.id ? (S.me?.username || "You") : "Offline member", avatar: "?", color: "#6366f1" });
+  const members = (ch.members || []).map(id => S.users.get(id) || { id, username: id === S.me?.id ? (S.me?.username || "You") : "Offline member", avatar: "?", color: "#087a50" });
   const profileAvatar = isDm ? (peer?.avatar || "?") : (title.slice(0,1).toUpperCase() || "#");
   const canEditPhoto = ch.kind === "group" && (ch.createdBy === S.me?.id || ch.memberRoles?.[S.me?.id] === "moderator" || ch.memberRoles?.[S.me?.id] === "owner");
   const description = ch.description || "";
@@ -4748,7 +4754,7 @@ function renderChannelInfoMembers(members) {
   if (!filtered.length) { root.innerHTML = '<div class="ci-empty">No matching members.</div>'; return; }
   for (const u of filtered) {
     const row = document.createElement("div"); row.className = "ci-member";
-    const avatar = document.createElement("div"); avatar.className = "ci-member-avatar"; avatar.style.background = u.color || "#6366f1"; renderAvatarContent(avatar, u.avatar, (u.username || "?").slice(0,1));
+    const avatar = document.createElement("div"); avatar.className = "ci-member-avatar"; avatar.style.background = u.color || "#087a50"; renderAvatarContent(avatar, u.avatar, (u.username || "?").slice(0,1));
     const main = document.createElement("div"); main.className = "ci-member-main";
     const name = document.createElement("div"); name.className = "ci-member-name"; name.append(userNameNode(u)); if (u.id === S.me?.id) name.append(document.createTextNode(" (you)"));
     const role = document.createElement("div"); role.className = "ci-member-role"; role.textContent = u.role === "owner" || u.id === S.channels.get(S.active)?.createdBy ? "Group owner" : (u.role === "moderator" ? "Moderator" : (u.online ? "Online" : "Member"));
@@ -5014,21 +5020,39 @@ async function renderChannelInfoItems() {
   // locally loaded messages as a visible fallback instead of showing an
   // empty list beside a non-zero count. This can happen after an older
   // client/server cache or an interrupted index refresh.
-  const useLocalFallback = !!peer || !serverCache || (!serverCache.items.length && serverCountForTab > 0);
+  let useLocalFallback = !!peer || !serverCache || (!serverCache.items.length && (!serverCache.counts || serverCountForTab > 0));
   if (!peer && serverCache) {
     for (const item of serverCache.items) {
-      const mime = item.mimeType || "";
-      if (item.itemType === "link") {
+      // Accept the wire's camelCase fields and legacy snake_case payloads.
+      // The shared-content browser must not silently drop valid records if
+      // the backend/client versions are temporarily out of sync.
+      const itemType = item.itemType || item.item_type || "";
+      const itemKey = item.itemKey || item.item_key || "";
+      const messageId = item.messageId ?? item.message_id;
+      const createdAt = item.createdAt ?? item.created_at;
+      const mime = item.mimeType || item.mime_type || "";
+      const fileName = item.fileName || item.file_name || "";
+      const fileSize = item.fileSize ?? item.file_size;
+      const itemUrl = item.url || itemKey;
+      if (_channelInfoTab === "links" && (itemType === "link" || itemType === "links")) {
+        const linkUrl = normalizeChatUrl(itemUrl);
+        if (!linkUrl) continue;
         let hostname = "";
-        try { hostname = new URL(item.itemKey).hostname; } catch (_) {}
-        items.push({ type: "link", id: item.messageId, ts: item.createdAt, sender: item.username, title: hostname || item.itemKey, detail: item.itemKey, url: item.itemKey, icon: "🌐" });
-      } else if (item.itemType === "media") {
-        items.push({ type: "media", id: item.messageId, ts: item.createdAt, sender: item.username, title: "Media", detail: mime || "Media", url: item.url || item.itemKey, icon: mime.startsWith("video/") ? "🎬" : "🖼️" });
-      } else {
-        items.push({ type: "file", id: item.messageId, ts: item.createdAt, sender: item.username, title: item.fileName || "Attachment", detail: mime || "File", url: item.url || item.itemKey, size: item.fileSize, icon: sharedFileIcon(mime, item.fileName || item.itemKey) });
+        try { hostname = new URL(linkUrl).hostname; } catch (_) {}
+        items.push({ type: "link", id: messageId, ts: createdAt, sender: item.username, title: hostname || linkUrl, detail: itemKey || linkUrl, url: linkUrl, icon: "🌐" });
+      } else if (_channelInfoTab === "media" && itemType === "media") {
+        items.push({ type: "media", id: messageId, ts: createdAt, sender: item.username, title: "Media", detail: mime || "Media", url: itemUrl, icon: mime.startsWith("video/") ? "🎬" : "🖼️" });
+      } else if (_channelInfoTab === "files" && (itemType === "file" || itemType === "files")) {
+        items.push({ type: "file", id: messageId, ts: createdAt, sender: item.username, title: fileName || "Attachment", detail: mime || "File", url: itemUrl, size: fileSize, icon: sharedFileIcon(mime, fileName || itemKey) });
       }
     }
   }
+  // A non-empty server page can still contain records from an older or mismatched
+  // index schema. If none of those records could be rendered for this tab while
+  // the server count is non-zero, fall back to messages already loaded on this
+  // client. This fallback is intentionally never used to index or expose DM data
+  // on the server; encrypted DMs are decrypted locally below.
+  if (!peer && serverCache && items.length === 0 && serverCountForTab > 0) useLocalFallback = true;
   if (useLocalFallback) for (const m of messages) {
     if (m.deleted || m.kind === "system") continue;
     let text = m.text || "";
