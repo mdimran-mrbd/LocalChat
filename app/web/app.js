@@ -5020,7 +5020,7 @@ async function renderChannelInfoItems() {
   // locally loaded messages as a visible fallback instead of showing an
   // empty list beside a non-zero count. This can happen after an older
   // client/server cache or an interrupted index refresh.
-  const useLocalFallback = !!peer || !serverCache || (!serverCache.items.length && (!serverCache.counts || serverCountForTab > 0));
+  let useLocalFallback = !!peer || !serverCache || (!serverCache.items.length && (!serverCache.counts || serverCountForTab > 0));
   if (!peer && serverCache) {
     for (const item of serverCache.items) {
       // Accept the wire's camelCase fields and legacy snake_case payloads.
@@ -5047,6 +5047,12 @@ async function renderChannelInfoItems() {
       }
     }
   }
+  // A non-empty server page can still contain records from an older or mismatched
+  // index schema. If none of those records could be rendered for this tab while
+  // the server count is non-zero, fall back to messages already loaded on this
+  // client. This fallback is intentionally never used to index or expose DM data
+  // on the server; encrypted DMs are decrypted locally below.
+  if (!peer && serverCache && items.length === 0 && serverCountForTab > 0) useLocalFallback = true;
   if (useLocalFallback) for (const m of messages) {
     if (m.deleted || m.kind === "system") continue;
     let text = m.text || "";
