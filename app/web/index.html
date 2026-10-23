@@ -25,7 +25,7 @@
   <meta name="twitter:description" content="Self-contained LAN instant messenger with channels, DMs, and file sharing." />
   <title>LocalChat</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='32' y2='32' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='0' stop-color='%23087a50'/%3E%3Cstop offset='1' stop-color='%2335a875'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='8' fill='url(%23g)'/%3E%3Cpath d='M8 10a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3h-5l-4 3v-3h-1a3 3 0 0 1-3-3z' fill='white'/%3E%3Ccircle cx='13' cy='13.5' r='1.3' fill='%23087a50'/%3E%3Ccircle cx='16' cy='13.5' r='1.3' fill='%23087a50'/%3E%3Ccircle cx='19' cy='13.5' r='1.3' fill='%23087a50'/%3E%3Ccircle cx='24' cy='8' r='3' fill='%2335a875' stroke='white' stroke-width='1.5'/%3E%3C/svg%3E"/>
-  <link rel="stylesheet" href="/style.css?v=ux-redesign-7"/>
+  <link rel="stylesheet" href="/style.css?v=ux-redesign-8"/>
   <script>
     // Migrate old LanChat keys -> LocalChat (one-shot).
     (function () {
@@ -126,10 +126,6 @@
       <button type="button" class="app-rail-btn" title="Share / pair with QR" aria-label="Share or pair with QR" onclick="openShareModal()">
         <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="3" width="6" height="6" rx="1"/><rect x="3" y="15" width="6" height="6" rx="1"/><path d="M15 15h2v2h-2zM19 15h2M15 19v2M19 19h2v2h-2z"/></svg>
         <span>Share</span>
-      </button>
-      <button type="button" class="app-rail-btn" title="Settings and profile" aria-label="Settings and profile" onclick="openSettingsPanel()">
-        <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="m19.4 15 .1.1 1.4 1.1-1.4 2.4-1.7-.6a8 8 0 0 1-1.6.9l-.3 1.8h-2.8l-.3-1.8a8 8 0 0 1-1.6-.9l-1.7.6-1.4-2.4 1.4-1.1a7 7 0 0 1 0-1.9l-1.4-1.1 1.4-2.4 1.7.6a8 8 0 0 1 1.6-.9l.3-1.8h2.8l.3 1.8a8 8 0 0 1 1.6.9l1.7-.6 1.4 2.4-1.4 1.1a7 7 0 0 1-.1 1.9z"/></svg>
-        <span>Settings</span>
       </button>
     </nav>
     <!-- ───────── Chat discovery sidebar ───────── -->
