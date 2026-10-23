@@ -4070,3 +4070,326 @@ input:focus, textarea:focus, select:focus {
   .mention-picker { max-width: calc(100vw - 20px); }
 }
 
+
+
+/* ── UX implementation pass 1: structural hierarchy, not just palette ──
+   This pass changes the actual layout rhythm and component geometry while
+   preserving existing DOM IDs and interaction hooks. */
+:root {
+  --sidebar-w: 304px;
+  --control-height: 40px;
+  --content-gutter: clamp(18px, 3.4vw, 48px);
+}
+
+/* Sign-in is a deliberate, editorial two-column experience on desktop. */
+.screen-join {
+  position: relative;
+  overflow: auto;
+  padding: clamp(18px, 4vh, 48px) 18px;
+  background:
+    radial-gradient(900px 540px at 12% 18%, color-mix(in srgb, var(--brand) 10%, transparent), transparent 68%),
+    var(--bg-0);
+}
+.join-panel {
+  position: relative;
+  width: min(920px, 96vw);
+  min-height: 540px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(300px, .95fr);
+  grid-template-rows: auto 1fr auto;
+  align-items: center;
+  gap: 0 clamp(28px, 5vw, 64px);
+  padding: clamp(30px, 5vw, 58px);
+  border-radius: 22px;
+  box-shadow: 0 24px 70px color-mix(in srgb, var(--fg-0) 9%, transparent);
+}
+.join-brand {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  text-align: left;
+  align-self: center;
+  margin: 0;
+  padding: 0 0 24px;
+}
+.join-brand .brand-mark {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  margin: 0 0 26px;
+  border-radius: 18px;
+  background: var(--brand-soft);
+}
+.join-brand .brand-mark svg { width: 44px; height: 44px; }
+.join-brand h1 {
+  font-size: clamp(30px, 3.2vw, 42px);
+  line-height: 1.08;
+  letter-spacing: -.045em;
+  margin-bottom: 12px;
+}
+.join-brand p { max-width: 300px; font-size: 15px; line-height: 1.7; }
+.join-brand::after {
+  content: "Private by design  ·  Built for your local network";
+  display: block;
+  margin-top: 32px;
+  max-width: 270px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+  color: var(--fg-2);
+  font-size: 12px;
+  letter-spacing: .01em;
+}
+.join-form {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  gap: 16px;
+  padding: 26px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--bg-2);
+}
+.join-form::before {
+  content: "Welcome back";
+  display: block;
+  color: var(--fg-0);
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -.03em;
+  margin-bottom: 1px;
+}
+.join-form .field { gap: 8px; }
+.join-form .field > span { font-size: 12px; font-weight: 650; }
+.join-form input { min-height: 44px; background: var(--bg-1); }
+.join-form .btn { min-height: 44px; margin-top: 2px; }
+.join-foot {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  margin-top: 28px;
+  padding-top: 18px;
+  font-size: 12px;
+}
+
+/* App shell: distinct navigation and conversation workspaces. */
+.app {
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+  gap: 0;
+  padding: 0;
+  background: var(--bg-0);
+}
+.sidebar {
+  position: relative;
+  z-index: 2;
+  padding: 10px;
+  border-right: 1px solid var(--border);
+  background: var(--bg-1);
+}
+.sb-header {
+  min-height: 58px;
+  padding: 8px 8px 16px;
+  border-bottom: 0;
+  gap: 8px;
+}
+.sb-brand { gap: 11px; }
+.sb-title .h6 { font-size: 15px; font-weight: 750; letter-spacing: -.025em; }
+.status-pill { padding: 5px 8px; font-size: 10px; }
+.sb-info-btn { flex: 0 0 30px; }
+.sb-scroll {
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+.sb-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 2px 12px;
+}
+.sb-tab {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 36px;
+  padding: 7px 10px;
+  border-radius: 9px;
+  font-size: 12px;
+  font-weight: 650;
+  border: 1px solid transparent;
+}
+.sb-tab.active, [data-theme="light"] .sb-tab.active {
+  border-color: color-mix(in srgb, var(--brand) 18%, var(--border));
+}
+.sb-tabs-actions { gap: 4px; }
+.sb-tabs-add, .sb-tabs-share { width: 32px; height: 32px; border-radius: 9px; }
+.sb-search {
+  position: relative;
+  margin: 0 2px 14px;
+}
+.sb-search input {
+  min-height: 40px;
+  padding: 9px 32px 9px 34px;
+  border-radius: 10px;
+  font-size: 12px;
+}
+.sb-search-icon { left: 12px; }
+.chat-list { gap: 3px; padding: 0 1px; }
+.chat-item {
+  min-height: 66px;
+  gap: 11px;
+  padding: 10px;
+  border: 1px solid transparent;
+  border-radius: 11px;
+}
+.chat-item .avatar { width: 42px; height: 42px; flex-basis: 42px; }
+.chat-item .chat-name { font-size: 13px; font-weight: 650; }
+.chat-item .chat-sub { margin-top: 3px; font-size: 11.5px; color: var(--fg-2); }
+.chat-item.active, [data-theme="light"] .chat-item.active {
+  border-color: color-mix(in srgb, var(--brand) 17%, var(--border));
+  box-shadow: inset 3px 0 0 var(--brand);
+  background: var(--brand-soft);
+}
+.sb-foot {
+  padding: 12px 2px 2px;
+  border-top: 1px solid var(--border);
+}
+.sb-foot-row { gap: 8px; }
+.me-chip { min-height: 48px; border-radius: 10px; padding: 6px; }
+
+/* Conversation header has a clear identity block and compact action cluster. */
+.main {
+  min-width: 0;
+  margin: 10px 10px 10px 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow-sm);
+}
+.chat-header {
+  min-height: 76px;
+  padding: 14px 22px;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.ch-avatar { width: 42px; height: 42px; flex: 0 0 42px; border-radius: 13px; }
+.ch-title { min-width: 0; }
+.ch-title .h5 { font-size: 16px; font-weight: 750; letter-spacing: -.025em; }
+#chSub { display: block; margin-top: 3px; font-size: 12px; }
+.ch-actions { gap: 5px; padding-left: 10px; }
+.ch-actions .icon-btn { width: 36px; height: 36px; border-radius: 10px; }
+
+/* Timeline becomes a calm reading surface with consistent content gutters. */
+.chat-stream {
+  padding: 24px var(--content-gutter);
+  gap: 5px;
+  align-content: start;
+}
+.date-divider { margin: 14px 0 18px; }
+.date-divider span { font-size: 11px; font-weight: 650; }
+.msg { padding: 2px 0; }
+.msg-stack { max-width: min(78%, 760px); }
+.bubble {
+  border-radius: 12px;
+  padding: 10px 13px;
+  font-size: 14px;
+  line-height: 1.55;
+}
+.msg.has-tail .bubble { border-top-left-radius: 4px; }
+.msg.own.has-tail .bubble { border-top-left-radius: 12px; border-top-right-radius: 4px; }
+.msg-header { margin-bottom: 4px; padding: 0 3px; }
+.msg-header .author { font-size: 11.5px; }
+.bubble .file { border-radius: 10px; padding: 10px; }
+.bubble .file .file-icon { border-radius: 9px; }
+
+/* Composer is a grouped input dock with a clear primary send action. */
+.composer {
+  position: relative;
+  padding: 14px 18px 16px;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+}
+.composer textarea {
+  min-height: 46px;
+  max-height: 160px;
+  padding: 12px 15px;
+  border-radius: 13px;
+  line-height: 1.45;
+  resize: none;
+}
+.attach-btn, .emoji-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.attach-btn:hover, .emoji-btn:hover { border-color: var(--border); }
+.send-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  border-radius: 12px;
+  box-shadow: 0 3px 8px color-mix(in srgb, var(--brand) 20%, transparent);
+}
+.send-btn:hover { transform: translateY(-1px); }
+#typing { padding-left: var(--content-gutter); padding-right: var(--content-gutter); }
+
+/* Dialogs and settings use consistent spacing and stronger form hierarchy. */
+.modal-panel, .settings-panel, .channel-info-drawer { border-radius: 16px; }
+.modal-head { padding: 20px 22px; }
+.modal-body { padding: 20px 22px; }
+.modal-foot { padding: 14px 22px 18px; }
+.modal-head h3 { font-size: 17px; font-weight: 750; }
+.settings-panel { padding: 0; }
+.settings-section { padding: 16px 18px; }
+.settings-action { min-height: 42px; }
+
+/* Responsive behavior: preserve hierarchy without squeezing the conversation. */
+@media (max-width: 1000px) {
+  :root { --sidebar-w: 276px; --content-gutter: 22px; }
+  .main { margin: 6px 6px 6px 0; border-radius: 13px; }
+  .chat-header { padding: 12px 16px; }
+  .ch-actions .icon-btn { width: 32px; height: 32px; }
+}
+@media (max-width: 760px) {
+  .screen-join { padding: 12px; }
+  .join-panel {
+    width: min(480px, 100%);
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    padding: 26px 20px 18px;
+    border-radius: 18px;
+  }
+  .join-brand { text-align: center; padding-bottom: 20px; }
+  .join-brand .brand-mark { margin: 0 auto 16px; }
+  .join-brand h1 { font-size: 29px; }
+  .join-brand p { margin: 0 auto; }
+  .join-brand::after { display: none; }
+  .join-form { width: 100%; padding: 18px; }
+  .join-foot { margin-top: 20px; padding-top: 15px; }
+  .sidebar { padding: 8px; }
+  .main { margin: 0; border: 0; border-radius: 0; }
+  .chat-header { min-height: 62px; padding: 9px 10px; }
+  .ch-actions { padding-left: 0; gap: 1px; }
+  .ch-actions .icon-btn { width: 30px; height: 30px; }
+  .chat-stream { padding: 16px 12px; }
+  .msg-stack { max-width: 88%; }
+  .composer { padding: 9px 10px; }
+  .attach-btn, .emoji-btn { width: 32px; height: 34px; flex-basis: 32px; }
+  .send-btn { width: 36px; height: 36px; flex-basis: 36px; }
+}
+@media (max-width: 420px) {
+  .join-panel { padding: 22px 16px 16px; }
+  .join-form { padding: 15px; }
+  .ch-title .h5 { font-size: 14px; }
+  .ch-actions .icon-btn { width: 28px; }
+  .chat-stream { padding-inline: 8px; }
+  .composer { gap: 4px; }
+}
