@@ -2046,6 +2046,12 @@ function setSidebarTab(tab) {
   document.querySelectorAll(".sb-tab").forEach((b) => {
     b.classList.toggle("active", b.dataset.tab === tab);
   });
+  document.querySelectorAll(".app-rail-btn[data-rail-tab]").forEach((b) => {
+    const active = b.dataset.railTab === tab;
+    b.classList.toggle("active", active);
+    if (active) b.setAttribute("aria-current", "page");
+    else b.removeAttribute("aria-current");
+  });
   renderChannels();
 }
 
