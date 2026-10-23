@@ -4393,3 +4393,76 @@ input:focus, textarea:focus, select:focus {
   .chat-stream { padding-inline: 8px; }
   .composer { gap: 4px; }
 }
+
+
+/* UX implementation pass 2: responsive stability and consistent interaction states.
+   Keep these rules scoped to existing components; no JS hooks or behavior changed. */
+:where(button, a, input, textarea, select, [tabindex]):focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--brand) 78%, white);
+  outline-offset: 2px;
+}
+button:disabled, .btn:disabled {
+  cursor: not-allowed;
+  opacity: .55;
+}
+.chat-item:focus-within {
+  outline: 2px solid color-mix(in srgb, var(--brand) 55%, transparent);
+  outline-offset: -2px;
+}
+.chat-item.active:focus-within { outline-offset: -3px; }
+.ch-title, .ch-actions, .sb-brand, .sb-foot-row { min-width: 0; }
+.ch-title .h5, #chSub, .sb-title .h6 { overflow-wrap: anywhere; }
+.chat-stream { min-width: 0; overscroll-behavior: contain; }
+.bubble { overflow-wrap: anywhere; }
+.channel-info-drawer, .settings-panel { overscroll-behavior: contain; }
+.channel-info-head, .settings-head { min-height: 60px; }
+.channel-info-content .ci-profile {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg-2);
+}
+.channel-info-content .ci-section {
+  min-width: 0;
+  padding: 15px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-1);
+}
+.channel-info-content .ci-browser-tabs {
+  position: sticky;
+  top: -1px;
+  z-index: 3;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-2);
+}
+.channel-info-content .ci-browser-tab { min-height: 34px; }
+.settings-content { scrollbar-gutter: stable; }
+.settings-section h3 { color: var(--fg-0); }
+.profile-avatar-row { align-items: flex-start; }
+.profile-avatar-controls { min-width: 0; }
+.profile-avatar-presets { display: flex; flex-wrap: wrap; gap: 5px; }
+.profile-avatar-preset { border-radius: 8px; }
+@media (max-width: 1000px) {
+  .channel-info-content .ci-profile { padding: 13px; }
+  .channel-info-content .ci-section { padding: 12px; }
+}
+@media (max-width: 760px) {
+  .app { grid-template-columns: minmax(0, 1fr); }
+  .sidebar { max-width: min(88vw, 340px); }
+  .channel-info-content { padding: 12px; gap: 12px; }
+  .channel-info-content .ci-profile { padding: 12px; }
+  .channel-info-content .ci-section { padding: 11px; }
+  .settings-panel { width: min(420px, 100vw); }
+}
+@media (max-width: 420px) {
+  .ch-actions .icon-btn { flex: 0 0 28px; padding: 0; }
+  .ch-actions { max-width: 46%; overflow-x: auto; }
+  .channel-info-content .ci-browser-tabs { gap: 2px; }
+  .channel-info-content .ci-browser-tab { padding-inline: 7px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .send-btn:hover { transform: none; }
+}
