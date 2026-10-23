@@ -4726,3 +4726,174 @@ button:disabled, .btn:disabled {
   .composer .reply-preview { margin-bottom: 4px; }
   .composer textarea { min-height: 42px; }
 }
+
+
+/* UX redesign phase 4: compact chat-info panels and shared-content navigation. */
+.channel-info-content {
+  min-width: 0;
+  gap: 12px;
+  scrollbar-gutter: stable;
+}
+.channel-info-content .ci-profile {
+  padding: 14px;
+  border-radius: 14px;
+}
+.channel-info-content .ci-profile-top {
+  align-items: center;
+  gap: 12px;
+}
+.channel-info-content .ci-avatar {
+  flex: 0 0 54px;
+  width: 54px;
+  height: 54px;
+  border-radius: 15px;
+}
+.channel-info-content .ci-profile-identity { min-width: 0; }
+.channel-info-content .ci-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.channel-info-content .ci-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.25;
+}
+.channel-info-content .ci-subtitle,
+.channel-info-content .ci-designation {
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+.channel-info-content .ci-description-row { margin-top: 11px; }
+.channel-info-content .ci-description {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.55;
+}
+.channel-info-content .ci-section {
+  padding: 13px;
+  border-radius: 13px;
+}
+.channel-info-content .ci-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  margin-bottom: 10px;
+}
+.channel-info-content .ci-section-head > :last-child {
+  min-width: 0;
+  color: var(--fg-2);
+  font-size: 11px;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+.channel-info-content .ci-browser-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  margin-bottom: 10px;
+  padding: 4px;
+}
+.channel-info-content .ci-browser-tab {
+  min-width: 0;
+  min-height: 36px;
+  padding: 7px 5px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--fg-2);
+  background: transparent;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.25;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.channel-info-content .ci-browser-tab:hover {
+  color: var(--fg-0);
+  background: var(--bg-hover);
+}
+.channel-info-content .ci-browser-tab.active,
+.channel-info-content .ci-browser-tab[aria-selected="true"] {
+  color: var(--brand);
+  border-color: color-mix(in srgb, var(--brand) 22%, var(--border));
+  background: var(--brand-soft);
+}
+.channel-info-content .ci-items { min-width: 0; }
+.channel-info-content .ci-preview-tile {
+  aspect-ratio: 1 / .88;
+  border-color: var(--border);
+  background: var(--bg-2);
+}
+.channel-info-content .ci-preview-open {
+  color: var(--fg-0);
+  cursor: pointer;
+}
+.channel-info-content .ci-preview-open:focus-visible,
+.channel-info-content .ci-preview-more:focus-visible {
+  outline-offset: -3px;
+}
+.channel-info-content .ci-preview-icon {
+  color: var(--fg-1);
+  font-size: 24px;
+}
+.channel-info-content .ci-preview-caption {
+  min-height: 31px;
+  color: var(--fg-1);
+  background: var(--bg-2);
+  font-size: 11px;
+  line-height: 1.35;
+}
+.channel-info-content .ci-preview-more {
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+  border-color: var(--border);
+  background: var(--bg-2);
+}
+.channel-info-content .ci-preview-more-caption {
+  color: var(--brand);
+  font-size: 12px;
+}
+.channel-info-content .ci-empty {
+  color: var(--fg-2);
+  border-color: var(--border);
+  background: var(--bg-2);
+}
+.channel-info-content .ci-search {
+  width: 100%;
+  min-width: 0;
+  color: var(--fg-0);
+  background: var(--bg-2);
+}
+.channel-info-content .ci-member-menu,
+.channel-info-content .ci-member-menu-item {
+  color: var(--fg-0);
+}
+.channel-info-content .ci-member-menu-item:hover {
+  color: var(--fg-0);
+  background: var(--bg-hover);
+}
+[data-theme="light"] .channel-info-content .ci-browser-tab { color: var(--fg-2); }
+[data-theme="light"] .channel-info-content .ci-browser-tab.active,
+[data-theme="light"] .channel-info-content .ci-browser-tab[aria-selected="true"] {
+  color: var(--brand);
+}
+@media (max-width: 520px) {
+  .channel-info-content { padding: 12px; gap: 10px; }
+  .channel-info-content .ci-profile { padding: 12px; }
+  .channel-info-content .ci-avatar {
+    flex-basis: 48px;
+    width: 48px;
+    height: 48px;
+    border-radius: 13px;
+  }
+  .channel-info-content .ci-section { padding: 11px; }
+  .channel-info-content .ci-browser-tab { font-size: 10px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .channel-info-content .ci-preview-tile,
+  .channel-info-content .ci-browser-tab { transition: none; }
+}
