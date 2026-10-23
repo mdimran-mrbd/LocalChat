@@ -523,3 +523,11 @@ a:hover { color: var(--brand-hover); }
   #ciSharedItems .ci-preview-caption { padding: 8px; font-size: 11px; }
   .ci-expanded-panel { padding: 12px; }
 }
+
+.ci-expanded-tile { min-width: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-2); }
+.ci-expanded-thumb { display: block; width: 100%; aspect-ratio: 1 / 1; object-fit: cover; background: var(--bg-3); cursor: zoom-in; }
+.ci-expanded-icon { display: grid; place-items: center; min-height: 92px; color: var(--brand); background: var(--bg-3); font-size: 30px; }
+.ci-expanded-label { padding: 10px 10px 3px; overflow-wrap: anywhere; color: var(--fg-0); font-size: 12px; font-weight: 650; line-height: 1.45; }
+.ci-expanded-meta { padding: 0 10px 8px; color: var(--fg-1); font-size: 11px; }
+.ci-expanded-open { display: inline-flex; align-items: center; justify-content: center; min-height: 32px; margin: 0 8px 8px 0; padding: 6px 9px; border: 1px solid var(--border); border-radius: 8px; color: var(--brand); background: var(--bg-1); font-size: 11px; text-decoration: none; cursor: pointer; }
+.ci-expanded-open:hover { border-color: var(--brand); background: var(--brand-soft); }
