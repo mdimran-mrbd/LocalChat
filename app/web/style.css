@@ -4172,10 +4172,61 @@ input:focus, textarea:focus, select:focus {
 
 /* App shell: distinct navigation and conversation workspaces. */
 .app {
-  grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+  grid-template-columns: 64px var(--sidebar-w) minmax(0, 1fr);
   gap: 0;
   padding: 0;
   background: var(--bg-0);
+}
+.app-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 14px 7px 12px;
+  background: var(--bg-rail, var(--bg-2));
+  border-right: 1px solid var(--border);
+  z-index: 3;
+}
+.app-rail-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 48px;
+  min-height: 54px;
+  padding: 7px 3px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--fg-2);
+  cursor: pointer;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.1;
+  transition: background-color 180ms ease, color 180ms ease, border-color 180ms ease;
+}
+.app-rail-btn:hover { background: var(--bg-hover); color: var(--fg-0); }
+.app-rail-btn.active {
+  color: var(--brand);
+  background: var(--brand-soft, color-mix(in srgb, var(--brand) 12%, transparent));
+  border-color: color-mix(in srgb, var(--brand) 16%, transparent);
+}
+.app-rail-btn:focus-visible { outline-offset: 1px; }
+.app-rail-spacer { flex: 1 1 auto; min-height: 18px; }
+[data-theme="light"] .app-rail { --bg-rail: #f6f8f6; --bg-hover: #e9efeb; --brand-soft: #e1eee6; background: var(--bg-rail); }
+[data-theme="dark"] .app-rail { --bg-rail: #17231d; --bg-hover: #26382e; --brand-soft: #263f31; background: var(--bg-rail); }
+.sidebar { border-right-color: var(--border); }
+.sb-header { padding: 12px 12px 14px; }
+.sb-tabs { min-height: 42px; }
+.sb-search { min-height: 42px; }
+.chat-item { min-height: 72px; }
+@media (max-width: 1000px) {
+  .app { grid-template-columns: 58px minmax(248px, 276px) minmax(0, 1fr); }
+  .app-rail { padding-inline: 5px; }
+  .app-rail-btn { width: 46px; }
 }
 .sidebar {
   position: relative;
@@ -4450,6 +4501,7 @@ button:disabled, .btn:disabled {
   .channel-info-content .ci-section { padding: 12px; }
 }
 @media (max-width: 760px) {
+  .app-rail { display: none; }
   .app { grid-template-columns: minmax(0, 1fr); }
   .sidebar { max-width: min(88vw, 340px); }
   .channel-info-content { padding: 12px; gap: 12px; }
