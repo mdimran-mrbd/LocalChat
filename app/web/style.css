@@ -4639,3 +4639,90 @@ button:disabled, .btn:disabled {
   .ch-actions { max-width: 48%; }
   .ch-actions .icon-btn { min-width: 28px; }
 }
+
+
+/* UX redesign phase 3 finalization: stable message rhythm and a two-row reply composer. */
+.chat-stream {
+  display: flex;
+  flex-direction: column;
+  scroll-padding-block: 18px;
+}
+.date-divider {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin: 18px 0 20px;
+  color: var(--fg-2);
+}
+.date-divider::before,
+.date-divider::after {
+  content: "";
+  height: 1px;
+  flex: 1 1 0;
+  max-width: 180px;
+  background: var(--border);
+}
+.date-divider span {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg-1);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.msg { min-width: 0; }
+.msg-stack { min-width: 0; }
+.msg .bubble .text { min-width: 0; }
+.bubble .message-link {
+  color: var(--brand);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--brand) 45%, transparent);
+  text-underline-offset: 2px;
+}
+.bubble .message-link:hover { text-decoration-color: currentColor; }
+.stream-empty {
+  width: min(420px, 100%);
+  margin: auto;
+  padding: 30px 20px;
+  text-align: center;
+}
+.stream-empty h3 { margin: 14px 0 6px; font-size: 17px; font-weight: 650; }
+.stream-empty p { margin: 0; color: var(--fg-2); line-height: 1.6; }
+.composer {
+  flex-wrap: wrap;
+  align-content: flex-end;
+}
+.composer .reply-preview {
+  order: -1;
+  flex: 0 0 100%;
+  width: 100%;
+  margin: 0 0 2px;
+}
+.reply-preview-body { min-width: 0; }
+.reply-preview-head,
+.reply-preview-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.reply-preview-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  white-space: normal;
+}
+.composer #msgInput { align-self: flex-end; }
+.composer .send-btn:focus-visible,
+.composer .attach-btn:focus-visible,
+.composer .emoji-btn:focus-visible {
+  outline-offset: 3px;
+}
+@media (max-width: 560px) {
+  .date-divider { margin: 13px 0 16px; }
+  .date-divider::before,
+  .date-divider::after { max-width: 56px; }
+  .composer .reply-preview { margin-bottom: 4px; }
+  .composer textarea { min-height: 42px; }
+}
