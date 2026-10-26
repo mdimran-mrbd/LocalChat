@@ -963,6 +963,7 @@ function handleEvent(e, password = _activePassword) {
     case "welcome":      return onWelcome(e, password);
     case "msg":          return onWireMsg(e.m);
     case "users":        return onUsers(e.users);
+    case "mention_lookup": return onMentionLookup(e);
     case "history":      return onHistory(e);
     case "history_before": return onHistoryBefore(e);
     case "shared_items_list": return onSharedItemsList(e);
@@ -3697,36 +3698,47 @@ function closeSettingsPanel() {
 }
 function _settingsEscape(ev) { if (ev.key === "Escape") closeSettingsPanel(); }
 function setProfileFieldEditing(field, editing) {
-  const input = $(field === "username" ? "profileUsername" : "profileDesignation");
-  const actions = $(field === "username" ? "usernameEditActions" : "designationEditActions");
-  const edit = $(field === "username" ? "editUsernameBtn" : "editDesignationBtn");
+  const ids = field === "username" ? ["profileUsername", "usernameEditActions", "editUsernameBtn"]
+    : field === "displayName" ? ["profileDisplayName", "displayNameEditActions", "editDisplayNameBtn"]
+    : ["profileDesignation", "designationEditActions", "editDesignationBtn"];
+  const [inputId, actionsId, editId] = ids;
+  const input = $(inputId), actions = $(actionsId), edit = $(editId);
   if (!input || !actions || !edit) return;
   input.disabled = !editing; actions.hidden = !editing; edit.hidden = editing;
   if (editing) input.focus();
 }
 function cancelProfileFieldEdit(field) {
   $("profileUsername").value = S.me?.username || "";
+  $("profileDisplayName").value = S.me?.display_name || S.me?.displayName || S.me?.username || "";
   $("profileDesignation").value = S.me?.designation || "CSA";
   setProfileFieldEditing(field, false);
   const status = $("profileSettingsStatus"); if (status) { status.textContent = ""; status.classList.remove("err", "ok"); }
 }
 function submitProfileField(field) {
   const username = ($("profileUsername")?.value || "").trim();
+  const displayName = ($("profileDisplayName")?.value || "").trim();
   const designation = $("profileDesignation")?.value || "";
   const status = $("profileSettingsStatus"); status.classList.remove("err", "ok");
   if (field === "username" && !/^[A-Za-z0-9][A-Za-z0-9_.-]{2,23}$/.test(username)) {
     status.textContent = "Use 3–24 characters: letters, digits, underscore, hyphen, or dot; start with a letter or digit.";
     status.classList.add("err"); $("profileUsername")?.focus(); return;
   }
+  if (field === "displayName" && (!displayName || [...displayName].length > 60 || /[\\u0000-\\u001f\\u007f]/.test(displayName))) {
+    status.textContent = "Display name must be 1–60 characters."; status.classList.add("err"); $("profileDisplayName")?.focus(); return;
+  }
   if (field === "designation" && !["AM","TL","STL","QDE","LRD","EE","CSA"].includes(designation)) {
     status.textContent = "Choose a valid designation."; status.classList.add("err"); $("profileDesignation")?.focus(); return;
   }
   if (!S.ws || S.ws.readyState !== WebSocket.OPEN) { status.textContent = "Not connected. Please try again."; status.classList.add("err"); return; }
-  const save = $(field === "username" ? "saveUsernameBtn" : "saveDesignationBtn");
+  const saveId = field === "username" ? "saveUsernameBtn" : field === "displayName" ? "saveDisplayNameBtn" : "saveDesignationBtn";
+  const save = $(saveId);
   if (save) { save.disabled = true; save.textContent = "Saving…"; }
   status.textContent = "Saving changes…";
-  sendOp(field === "username" ? { op: "profile_update", username } : { op: "profile_update", designation });
-  setTimeout(() => { if (save?.isConnected) { save.disabled = false; save.textContent = field === "username" ? "Save username" : "Save designation"; } }, 3000);
+  const payload = field === "username" ? { op: "profile_update", username }
+    : field === "displayName" ? { op: "display_name_set", displayName }
+    : { op: "profile_update", designation };
+  sendOp(payload);
+  setTimeout(() => { if (save?.isConnected) { save.disabled = false; save.textContent = field === "username" ? "Save username" : field === "displayName" ? "Save display name" : "Save designation"; } }, 3000);
 }
 function signOut() {
   lstore.remove("username");
