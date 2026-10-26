@@ -26,6 +26,7 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/ban/:user_id", post(ban))
         .route("/unban/:username", post(unban))
         .route("/reset-password/:user_id", post(reset_password))
+        .route("/email/:user_id", post(change_user_email))
         .route("/broadcast", post(broadcast))
         .route("/channel/:id", axum::routing::delete(delete_channel))
         .route("/uploads", get(list_uploads))
@@ -277,6 +278,47 @@ async fn kick(
     let _ = state.db.delete_user(user_id.clone()).await;
     let _ = state.db.log_admin("kick", &addr.ip().to_string(), &user_id, "").await;
     Ok(Json(json!({"ok": existed})))
+}
+
+#[derive(Deserialize)]
+struct ChangeEmailRequest { email: String }
+
+/// Email changes are available only through the existing host-only admin
+/// API; ordinary clients have no route or permission to mutate account email.
+async fn change_user_email(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
+    headers: HeaderMap,
+    Path(user_id): Path<String>,
+    Json(req): Json<ChangeEmailRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    auth!(state, headers, addr);
+    let email = req.email.trim();
+    let valid = email.len() <= 254 && email.split_once('@').map_or(false, |(local, domain)| {
+        !local.is_empty() && !domain.is_empty() && domain.contains('.')
+            && !email.chars().any(|ch| ch.is_whitespace() || ch.is_control())
+    });
+    if !valid { return Err((StatusCode::BAD_REQUEST, "Enter a valid email address".into())); }
+    let id = user_id.to_compact_string();
+    let exists = state.db.user_by_id(id.clone()).await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .is_some();
+    if !exists { return Err((StatusCode::NOT_FOUND, "No such account".into())); }
+    match state.db.update_account_email(id.clone(), email).await {
+        Ok(true) => {}
+        Ok(false) => return Err((StatusCode::NOT_FOUND, "No such account".into())),
+        Err(e) => {
+            let message = e.to_string();
+            if message.to_lowercase().contains("unique") || message.to_lowercase().contains("constraint") {
+                return Err((StatusCode::CONFLICT, "Another account already uses that email".into()));
+            }
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, message));
+        }
+    }
+    if let Some(mut user) = state.users.get_mut(&id) { user.email = email.to_compact_string(); }
+    if let Some(mut user) = state.known_users.get_mut(&id) { user.email = email.to_compact_string(); }
+    let _ = state.db.log_admin("change_email", &addr.ip().to_string(), &id, email).await;
+    Ok(Json(json!({"ok": true, "userId": id, "email": email})))
 }
 
 /// Generate a temporary password for the target user, replace their
