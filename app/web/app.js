@@ -722,7 +722,7 @@ function setAuthMode(mode) {
   $("authRegisterTab").setAttribute("aria-pressed", registering ? "true" : "false");
   $("authIdentifierLabel").textContent = registering ? "Choose a password to create your account" : "Email or @handle";
   $("username").placeholder = registering ? "Email is used for sign-in" : "Email address or @yourhandle";
-  $("username").hidden = registering;
+  $("authIdentifierField").hidden = registering;
   $("username").required = !registering;
   $("authSubmitBtn").textContent = registering ? "Create account" : "Sign in";
   $("password").autocomplete = registering ? "new-password" : "current-password";
