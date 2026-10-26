@@ -2,7 +2,7 @@ name: LocalChat CI
 
 on:
   pull_request:
-    branches: [main, feature/chat-info-ux-3.2.0]
+    branches: [main, feature/chat-info-ux-3.2.0, feature/login-user-profiling]
     paths:
       - 'app/**'
       - '.github/workflows/**'
