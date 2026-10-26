@@ -298,7 +298,8 @@
           </button>
         </div>
         <button type="button" id="mentionJumpBtn" class="mention-jump hidden" title="Jump to latest @mention" aria-label="Jump to latest @mention" aria-hidden="true">@</button>
-        <textarea id="msgInput" rows="1" placeholder="Type a message" maxlength="4000"></textarea>
+        <textarea id="msgInput" rows="1" placeholder="Type a message" maxlength="4000" aria-autocomplete="list" aria-controls="mentionSuggestions"></textarea>
+        <div id="mentionSuggestions" class="mention-suggestions" role="listbox" hidden></div>
         <button type="button" class="emoji-btn poll-create-btn" id="createPollBtn" title="Create group poll" aria-label="Create poll" onclick="createPollPrompt()">▤</button>
         <button type="button" class="emoji-btn" id="emojiBtn" title="Emoji" aria-label="Emoji">
           <span aria-hidden="true">😊</span>
