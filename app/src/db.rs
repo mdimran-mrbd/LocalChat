@@ -738,6 +738,77 @@ impl Db {
         .await
     }
 
+    /// Resolve a sign-in identifier against the normalized legacy username,
+    /// new handle, or email. Stable UserId remains the account/crypto identity.
+    pub async fn find_account_credentials(
+        &self,
+        identifier: &str,
+    ) -> rusqlite::Result<Option<(UserId, String, bool, String, String, String, String)>> {
+        let key = identifier.trim().to_lowercase();
+        self.with(move |c| {
+            c.query_row(
+                "SELECT id, password_hash, must_change_password, username, email, display_name, handle
+                   FROM users
+                  WHERE username_lower=?1 OR handle_lower=?1 OR email_lower=?1
+                  LIMIT 1",
+                params![key],
+                |r| Ok((
+                    r.get::<_, String>(0)?.to_compact_string(),
+                    r.get(1)?,
+                    r.get::<_, i64>(2)? != 0,
+                    r.get(3)?,
+                    r.get(4)?,
+                    r.get(5)?,
+                    r.get(6)?,
+                )),
+            ).optional()
+        }).await
+    }
+
+    /// Assign registration identity to an already-created stable user row.
+    /// The unique indexes make concurrent duplicate email/handle claims fail safely.
+    pub async fn set_account_identity(
+        &self, id: UserId, email: &str, display_name: &str, handle: &str,
+    ) -> rusqlite::Result<bool> {
+        let uid = id.to_string();
+        let email = email.trim().to_string();
+        let email_lower = email.to_lowercase();
+        let display_name = display_name.trim().to_string();
+        let handle = handle.trim().trim_start_matches('@').to_string();
+        let handle_lower = handle.to_lowercase();
+        self.with(move |c| {
+            let changed = c.execute(
+                "UPDATE users SET email=?2,email_lower=?3,display_name=?4,handle=?5,handle_lower=?6 WHERE id=?1",
+                params![uid,email,email_lower,display_name,handle,handle_lower],
+            )?;
+            Ok(changed > 0)
+        }).await
+    }
+
+    /// Update a display name without changing the stable account ID or handle.
+    pub async fn update_display_name(&self, id: UserId, display_name: &str) -> rusqlite::Result<bool> {
+        let uid = id.to_string();
+        let display_name = display_name.trim().to_string();
+        self.with(move |c| {
+            let changed = c.execute("UPDATE users SET display_name=?2 WHERE id=?1", params![uid,display_name])?;
+            Ok(changed > 0)
+        }).await
+    }
+
+    /// Change an account email. Callers must enforce administrator authorization.
+    pub async fn update_account_email(&self, id: UserId, email: &str) -> rusqlite::Result<bool> {
+        let uid = id.to_string();
+        let email = email.trim().to_string();
+        let email_lower = email.to_lowercase();
+        self.with(move |c| {
+            let changed = c.execute(
+                "UPDATE users SET email=?2,email_lower=?3 WHERE id=?1",
+                params![uid,email,email_lower],
+            )?;
+            Ok(changed > 0)
+        }).await
+    }
+
     /// Persist a freshly computed password hash for `user_id`.
     /// `must_change` flags the user to be forced into a change-password
     /// flow on their next successful login (used by admin resets).
