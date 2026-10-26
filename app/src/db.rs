@@ -826,6 +826,51 @@ impl Db {
         .await
     }
 
+    /// Save an office email after the caller has validated the configured
+    /// domain policy. A unique index enforces case-insensitive uniqueness.
+    pub async fn set_office_email(
+        &self,
+        user_id: UserId,
+        office_email: &str,
+    ) -> rusqlite::Result<()> {
+        let id = user_id.to_string();
+        let email = office_email.trim().to_string();
+        let lower = email.to_lowercase();
+        self.with(move |c| {
+            c.execute(
+                "UPDATE users SET office_email = ?1, office_email_lower = ?2 WHERE id = ?3",
+                params![email, lower, id],
+            )?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// Read profile-completion fields without returning passwords or key
+    /// material. Recovery answer hashes are stored in account_recovery, not
+    /// returned by this method.
+    pub async fn get_profile_fields(
+        &self,
+        user_id: UserId,
+    ) -> rusqlite::Result<Option<(String, String, bool)>> {
+        let id = user_id.to_string();
+        self.with(move |c| {
+            c.query_row(
+                "SELECT office_email, designation,
+                    EXISTS(SELECT 1 FROM account_recovery ar WHERE ar.user_id = users.id)
+                 FROM users WHERE id = ?1",
+                params![id],
+                |r| Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, i64>(2)? != 0,
+                )),
+            )
+            .optional()
+        })
+        .await
+    }
+
     /// Persist a freshly computed password hash for `user_id`.
     /// `must_change` flags the user to be forced into a change-password
     /// flow on their next successful login (used by admin resets).
