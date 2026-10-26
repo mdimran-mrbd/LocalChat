@@ -707,40 +707,62 @@ const S = {
   }
 })();
 
-// ── Join flow ────────────────────────────────────────────────────────
+// ── Sign-in / registration flow ─────────────────────────────────────
+let _authMode = "login";
+function setAuthMode(mode) {
+  _authMode = mode === "register" ? "register" : "login";
+  const registering = _authMode === "register";
+  $("registerDisplayNameField").hidden = !registering;
+  $("registerEmailField").hidden = !registering;
+  $("registerDisplayName").required = registering;
+  $("registerEmail").required = registering;
+  $("authLoginTab").className = registering ? "btn btn-ghost btn-sm" : "btn btn-primary btn-sm";
+  $("authRegisterTab").className = registering ? "btn btn-primary btn-sm" : "btn btn-ghost btn-sm";
+  $("authLoginTab").setAttribute("aria-pressed", registering ? "false" : "true");
+  $("authRegisterTab").setAttribute("aria-pressed", registering ? "true" : "false");
+  $("authIdentifierLabel").textContent = registering ? "Choose a password to create your account" : "Email or @handle";
+  $("username").placeholder = registering ? "Email is used for sign-in" : "Email address or @yourhandle";
+  $("username").hidden = registering;
+  $("username").required = !registering;
+  $("authSubmitBtn").textContent = registering ? "Create account" : "Sign in";
+  $("password").autocomplete = registering ? "new-password" : "current-password";
+  const status = $("joinStatus"); if (status) { status.textContent = ""; status.classList.remove("err", "ok"); }
+}
+$("authLoginTab")?.addEventListener("click", () => setAuthMode("login"));
+$("authRegisterTab")?.addEventListener("click", () => setAuthMode("register"));
 $("joinForm").addEventListener("submit", (e) => {
   e.preventDefault();
-  const username = $("username").value.trim();
+  const registering = _authMode === "register";
+  const identifier = registering ? ($("registerEmail").value || "").trim() : ($("username").value || "").trim();
   const password = $("password").value;
-  if (!username) return;
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{2,23}$/.test(username)) {
-    const status = $("joinStatus");
-    if (status) {
-      status.textContent = "Username must be 3-24 chars: letters, digits, underscore, hyphen, or dot. No spaces.";
-      status.classList.add("err");
-    }
-    const input = $("username");
-    if (input) { input.classList.add("err"); input.focus(); }
-    return;
+  const displayName = ($("registerDisplayName").value || "").trim();
+  const email = ($("registerEmail").value || "").trim();
+  const status = $("joinStatus");
+  if (status) { status.textContent = ""; status.classList.remove("err", "ok"); }
+  if (!registering && (!identifier || identifier.length > 254 || /[\\s\\u0000-\\u001f\\u007f]/.test(identifier))) {
+    if (status) { status.textContent = "Enter your registered email address or @handle."; status.classList.add("err"); }
+    $("username").focus(); return;
   }
-  if (!password || password.length < 4) {
-    const status = $("joinStatus");
-    if (status) {
-      status.textContent = "Password must be at least 4 characters.";
-      status.classList.add("err");
-    }
-    const pw = $("password");
-    if (pw) { pw.classList.add("err"); pw.focus(); }
-    return;
+  if (registering && (!displayName || [...displayName].length > 60)) {
+    if (status) { status.textContent = "Enter a display name (up to 60 characters)."; status.classList.add("err"); }
+    $("registerDisplayName").focus(); return;
   }
-  lstore.set("username", username);
-  connect(username, password);
+  if (registering && (!email || !$("registerEmail").checkValidity())) {
+    if (status) { status.textContent = "Enter a valid email address."; status.classList.add("err"); }
+    $("registerEmail").focus(); return;
+  }
+  if (!password || password.length < 4 || password.length > 256) {
+    if (status) { status.textContent = "Password must be at least 4 characters."; status.classList.add("err"); }
+    $("password").focus(); return;
+  }
+  if (!registering) lstore.set("username", identifier);
+  connect(identifier, password, registering ? { register: true, email, displayName } : {});
 });
 
 let _activePassword = "";
 let _pendingNewPassword = "";
 
-function connect(username, password) {
+function connect(username, password, registration = {}) {
   _activePassword = password || "";
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   const ws = new WebSocket(`${proto}//${location.host}/ws`);
@@ -754,6 +776,9 @@ function connect(username, password) {
       password: password || "",
       userId: lstore.get("userId") || "",
       pubkey: E2EE.myPubStr(),
+      register: registration.register === true,
+      email: registration.email || "",
+      displayName: registration.displayName || "",
     }));
     // Drain anything that was queued while the socket was down.
     flushOutbox();
