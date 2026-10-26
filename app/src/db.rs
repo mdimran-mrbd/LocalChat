@@ -517,8 +517,9 @@ impl Db {
                 "INSERT INTO users(
                     id, username, username_lower, avatar, color, pubkey,
                     joined_at, last_connect, last_seen, last_ip,
-                    total_sessions, msg_count, bytes_uploaded
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+                    total_sessions, msg_count, bytes_uploaded,
+                    email, email_lower, display_name, handle, handle_lower, is_admin
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)
                  ON CONFLICT(id) DO UPDATE SET
                     username       = excluded.username,
                     username_lower = excluded.username_lower,
@@ -526,7 +527,10 @@ impl Db {
                     color          = excluded.color,
                     pubkey         = CASE WHEN excluded.pubkey <> '' THEN excluded.pubkey ELSE users.pubkey END,
                     last_connect   = excluded.last_connect,
-                    last_ip        = excluded.last_ip",
+                    last_ip        = excluded.last_ip,
+                    display_name   = CASE WHEN excluded.display_name <> '' THEN excluded.display_name ELSE users.display_name END,
+                    handle         = CASE WHEN excluded.handle <> '' THEN excluded.handle ELSE users.handle END,
+                    handle_lower   = CASE WHEN excluded.handle_lower <> '' THEN excluded.handle_lower ELSE users.handle_lower END",
                 params![
                     i.id.as_str(),
                     i.username.as_str(),
@@ -541,6 +545,12 @@ impl Db {
                     i.total_sessions as i64,
                     i.msg_count as i64,
                     i.bytes_uploaded as i64,
+                    i.email.as_str(),
+                    i.email.to_lowercase().to_string(),
+                    i.display_name.as_str(),
+                    i.handle.as_str(),
+                    i.handle.to_lowercase().to_string(),
+                    i.is_admin as i64,
                 ],
             )?;
             Ok(())
