@@ -289,6 +289,10 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
         last_connect: now_secs(),
         total_sessions: prior.as_ref().map(|p| p.total_sessions).unwrap_or(0) + 1,
         designation: prior.as_ref().map(|p| p.designation.clone()).unwrap_or_default(),
+        display_name: prior.as_ref().map(|p| p.display_name.clone()).unwrap_or_else(|| username.to_compact_string()),
+        handle: prior.as_ref().map(|p| p.handle.clone()).unwrap_or_else(|| username.to_compact_string()),
+        email: prior.as_ref().map(|p| p.email.clone()).unwrap_or_default(),
+        is_admin: prior.as_ref().map(|p| p.is_admin).unwrap_or(false),
     };
     state.users.insert(user_id.clone(), info.clone());
     state.known_users.insert(user_id.clone(), info.clone());
