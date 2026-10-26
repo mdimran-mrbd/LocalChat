@@ -36,6 +36,11 @@ pub struct Config {
     #[serde(default)]
     pub office_email_domains: Vec<String>,
 
+    /// Allowed email domains for new account registration. Empty means
+    /// registration is closed until the host configures at least one domain.
+    #[serde(default)]
+    pub office_email_domains: Vec<String>,
+
     /// If true, server tries to start on Windows boot (HKCU Run key).
     #[serde(default)]
     pub autostart: bool,
