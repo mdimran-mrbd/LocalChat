@@ -53,3 +53,44 @@ pub struct UserInfo {
     #[serde(default)]
     pub designation: CompactString,
 }
+
+
+/// Validate usernames for new registrations and profile completion.
+/// Legacy usernames must not be run through this validator before login:
+/// an authenticated legacy account may need to choose a replacement while
+/// retaining its stable UserId and existing encrypted history.
+pub fn validate_new_username(username: &str) -> Result<(), &'static str> {
+    let name = username.trim();
+    if !(3..=24).contains(&name.chars().count()) {
+        return Err("Username must be 3-24 characters.");
+    }
+    if name.chars().any(char::is_whitespace) {
+        return Err("Username cannot contain spaces.");
+    }
+    if !name.chars().all(|c| c.is_ascii_alphanumeric() || "!@#$%&_-".contains(c)) {
+        return Err("Username contains an unsupported character.");
+    }
+    if !name.chars().any(|c| c.is_ascii_digit()) {
+        return Err("Username must include at least one number.");
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod username_validation_tests {
+    use super::validate_new_username;
+
+    #[test]
+    fn accepts_new_username_policy() {
+        for name in ["imran7", "Team_42", "user-1", "a!b2", "abc#9", "name_2026"] {
+            assert!(validate_new_username(name).is_ok(), "{name}");
+        }
+    }
+
+    #[test]
+    fn rejects_invalid_new_usernames() {
+        for name in ["", "ab", "no-number", "has space7", "bad.name7", "slash/7", "user\\7"] {
+            assert!(validate_new_username(name).is_err(), "{name}");
+        }
+    }
+}
