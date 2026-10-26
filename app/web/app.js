@@ -990,11 +990,48 @@ Object.assign(window, { toggleBrowserNotifications });
 
 function onMentionLookup(e) {
   const users = Array.isArray(e.users) ? e.users : [];
-  // Keep results available to the mention-composer UI; account IDs are the
-  // stable selection value even when display names are duplicated.
   S.mentionResults = users;
-  document.dispatchEvent(new CustomEvent("localchat:mention-results", { detail: { query: e.query || "", users } }));
+  const input = $("msgInput"), panel = $("mentionSuggestions");
+  if (!input || !panel || document.activeElement !== input) return;
+  const cursor = input.selectionStart || 0;
+  const before = input.value.slice(0, cursor);
+  const at = before.lastIndexOf("@");
+  if (at < 0 || /\\s/.test(before.slice(at + 1)) || before.slice(at + 1).trim().toLowerCase() !== String(e.query || "").toLowerCase()) return;
+  panel.replaceChildren();
+  for (const user of users.slice(0, 8)) {
+    const handle = String(user.handle || user.username || "").replace(/^@/, "");
+    const display = String(user.display_name || user.displayName || user.username || handle);
+    const button = document.createElement("button");
+    button.type = "button"; button.className = "mention-suggestion"; button.setAttribute("role", "option");
+    const name = document.createElement("span"); name.className = "mention-suggestion-name"; name.textContent = display;
+    const tag = document.createElement("span"); tag.className = "mention-suggestion-handle"; tag.textContent = "@" + handle;
+    button.append(name, tag);
+    button.addEventListener("mousedown", ev => ev.preventDefault());
+    button.addEventListener("click", () => {
+      const start = input.selectionStart || 0, end = input.selectionEnd || start;
+      const textBefore = input.value.slice(0, start), mentionAt = textBefore.lastIndexOf("@");
+      if (mentionAt < 0) return;
+      input.value = input.value.slice(0, mentionAt) + "@" + handle + " " + input.value.slice(end);
+      const next = mentionAt + handle.length + 2; input.focus(); input.setSelectionRange(next, next);
+      panel.hidden = true; input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    panel.append(button);
+  }
+  panel.hidden = users.length === 0;
 }
+function requestMentionLookup() {
+  const input = $("msgInput");
+  if (!input || !S.ws || S.ws.readyState !== WebSocket.OPEN) return;
+  const cursor = input.selectionStart || 0, before = input.value.slice(0, cursor), at = before.lastIndexOf("@");
+  if (at < 0 || /[\\n\\r]/.test(before.slice(at + 1))) { $("mentionSuggestions").hidden = true; return; }
+  const query = before.slice(at + 1).trim();
+  if (query.length > 64) { $("mentionSuggestions").hidden = true; return; }
+  sendOp({ op: "mention_lookup", query });
+}
+$("msgInput")?.addEventListener("input", requestMentionLookup);
+$("msgInput")?.addEventListener("keydown", ev => {
+  if (ev.key === "Escape") $("mentionSuggestions").hidden = true;
+});
 
 // ── Event dispatch ───────────────────────────────────────────────────
 function handleEvent(e, password = _activePassword) {
