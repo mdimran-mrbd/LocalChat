@@ -531,3 +531,13 @@ a:hover { color: var(--brand-hover); }
 .ci-expanded-meta { padding: 0 10px 8px; color: var(--fg-1); font-size: 11px; }
 .ci-expanded-open { display: inline-flex; align-items: center; justify-content: center; min-height: 32px; margin: 0 8px 8px 0; padding: 6px 9px; border: 1px solid var(--border); border-radius: 8px; color: var(--brand); background: var(--bg-1); font-size: 11px; text-decoration: none; cursor: pointer; }
 .ci-expanded-open:hover { border-color: var(--brand); background: var(--brand-soft); }
+
+
+/* Account mention picker */
+.composer { position: relative; }
+.mention-suggestions { position: absolute; z-index: 80; left: 8px; right: 8px; bottom: calc(100% - 2px); max-height: 240px; overflow: auto; padding: 5px; border: 1px solid var(--border, #d7e3dc); border-radius: 12px; background: var(--surface, #fff); box-shadow: 0 12px 30px rgba(15, 40, 28, .16); }
+.mention-suggestions[hidden] { display: none !important; }
+.mention-suggestion { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 0; border-radius: 8px; padding: 9px 10px; text-align: left; color: var(--text, #17251d); background: transparent; cursor: pointer; }
+.mention-suggestion:hover, .mention-suggestion:focus-visible { background: var(--surface-hover, #edf5ef); outline: none; }
+.mention-suggestion-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mention-suggestion-handle { color: var(--muted, #607168); font-size: 12px; flex: 0 0 auto; }
