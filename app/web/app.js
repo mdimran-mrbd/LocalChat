@@ -143,7 +143,13 @@ function appendLinkedText(container, text, channelId = null) {
   if (channelId) {
     const users = new Map(S.users);
     if (S.me?.id) users.set(S.me.id, S.me);
-    const byName = new Map([...users.values()].filter(u => u?.username && u?.id).map(u => [u.username.toLowerCase(), u]));
+    const byName = new Map();
+    for (const user of users.values()) {
+      if (!user?.id) continue;
+      for (const key of [user.handle, user.username]) {
+        if (key) byName.set(String(key).replace(/^@/, "").toLowerCase(), user);
+      }
+    }
     for (const match of source.matchAll(/@([A-Za-z0-9._-]+)/g)) {
       const user = byName.get(match[1].toLowerCase());
       if (user) tokens.push({ raw: match[0], index: match.index, kind: "mention", user });
@@ -956,6 +962,14 @@ function notifyIncomingMessage(m) {
 }
 
 Object.assign(window, { toggleBrowserNotifications });
+
+function onMentionLookup(e) {
+  const users = Array.isArray(e.users) ? e.users : [];
+  // Keep results available to the mention-composer UI; account IDs are the
+  // stable selection value even when display names are duplicated.
+  S.mentionResults = users;
+  document.dispatchEvent(new CustomEvent("localchat:mention-results", { detail: { query: e.query || "", users } }));
+}
 
 // ── Event dispatch ───────────────────────────────────────────────────
 function handleEvent(e, password = _activePassword) {
@@ -3631,6 +3645,9 @@ window.addEventListener("focus", scheduleReadReceipt);
 
 const PROFILE_AVATAR_PRESETS = ["😀","😎","😊","🐱","🐼","🦊","🐸","🐙","🦄","🐧","🐨","🐯","🦋","🌟","🌈","🚀"];
 function renderProfileAvatarSettings() {
+  if ($("profileUsername")) $("profileUsername").value = S.me?.username || "";
+  if ($("profileDisplayName")) $("profileDisplayName").value = S.me?.display_name || S.me?.displayName || S.me?.username || "";
+  if ($("profileDesignation")) $("profileDesignation").value = S.me?.designation || "CSA";
   const preview = $("profileAvatarPreview");
   if (preview) { preview.style.background = S.me?.color || "var(--brand)"; renderAvatarContent(preview, S.me?.avatar, S.me?.username?.[0] || "?"); }
   document.querySelectorAll(".profile-avatar-preset").forEach(button => {
