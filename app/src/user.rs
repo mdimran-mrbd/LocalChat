@@ -52,4 +52,16 @@ pub struct UserInfo {
     /// Optional job designation selected once by each account.
     #[serde(default)]
     pub designation: CompactString,
+    /// Public profile label; not an authentication or cryptographic identity.
+    #[serde(default)]
+    pub display_name: CompactString,
+    /// Unique public handle stored without the leading @.
+    #[serde(default)]
+    pub handle: CompactString,
+    /// Account email. Exposed to the authenticated account/admin surfaces only.
+    #[serde(default, skip_serializing_if = "CompactString::is_empty")]
+    pub email: CompactString,
+    /// Whether this account has server-side administrator privileges.
+    #[serde(default)]
+    pub is_admin: bool,
 }
