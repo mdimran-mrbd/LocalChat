@@ -1647,8 +1647,10 @@ async fn handle_op(
         "mention_lookup" => {
             let query = v.get("query").and_then(Value::as_str).unwrap_or("").trim().trim_start_matches('@').to_lowercase();
             if query.len() > 64 { return Err("mention query is too long".into()); }
-            let mut matches: Vec<_> = state.users.iter()
-                .map(|entry| entry.value().clone())
+            // Search persisted accounts, not only currently-online users.
+            // Return stable IDs so duplicate display names remain disambiguatable.
+            let accounts = state.db.list_users().await.map_err(|_| "could not search accounts".to_string())?;
+            let mut matches: Vec<_> = accounts.into_iter()
                 .filter(|u| !query.is_empty() && (
                     u.handle.to_lowercase().contains(&query)
                     || u.display_name.to_lowercase().contains(&query)
