@@ -109,7 +109,7 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
     let mut new_email = String::new();
     let mut new_display_name = String::new();
     let mut new_handle = String::new();
-    let mut username: String;
+    let mut username: CompactString;
 
     if join.register {
         let email = join.email.trim();
@@ -140,7 +140,7 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
         // the final concurrency guard. Stable UUID/E2EE identity is untouched.
         let suffix = uuid::Uuid::new_v4().simple().to_string()[..6].to_string();
         let handle = format!("{}{}", base, suffix);
-        username = handle.clone();
+        username = handle.to_compact_string();
         new_email = email.to_string();
         new_display_name = display_name;
         new_handle = handle;
@@ -154,7 +154,7 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
             let _ = sink.send(Message::Text(json!({"ev":"error","text":"No account found for that email or handle. Register to create an account.","code":"account_not_found"}).to_string())).await;
             state.metrics.dec_connect(); return;
         };
-        username = canonical_username.clone();
+        username = canonical_username.to_compact_string();
     }
 
     // ---- Ban check.
