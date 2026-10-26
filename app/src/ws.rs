@@ -1582,6 +1582,43 @@ async fn handle_op(
             broadcast_users(state).await;
         }
 
+        "display_name_set" => {
+            let value = v.get("displayName").and_then(Value::as_str).ok_or("missing display name")?.trim();
+            if value.is_empty() || value.chars().count() > 60 || value.chars().any(|c| c.is_control()) {
+                return Err("Display name must be 1–60 characters.".into());
+            }
+            let mut chars = value.chars();
+            let normalized = match chars.next() {
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                None => return Err("Display name is required.".into()),
+            };
+            let changed = state.db.update_display_name(user_id.clone(), &normalized).await
+                .map_err(|_| "could not save display name".to_string())?;
+            if !changed { return Err("user not found".into()); }
+            let mut info = state.users.get(&user_id).map(|entry| entry.value().clone()).ok_or("user not found")?;
+            info.display_name = normalized.to_compact_string();
+            state.users.insert(user_id.clone(), info.clone());
+            state.known_users.insert(user_id.clone(), info);
+            broadcast_users(&state).await;
+        }
+
+        "mention_lookup" => {
+            let query = v.get("query").and_then(Value::as_str).unwrap_or("").trim().trim_start_matches('@').to_lowercase();
+            if query.len() > 64 { return Err("mention query is too long".into()); }
+            let mut matches: Vec<_> = state.users.iter()
+                .map(|entry| entry.value().clone())
+                .filter(|u| !query.is_empty() && (
+                    u.handle.to_lowercase().contains(&query)
+                    || u.display_name.to_lowercase().contains(&query)
+                    || u.username.to_lowercase().contains(&query)
+                ))
+                .take(20)
+                .collect();
+            matches.sort_by_key(|u| (u.handle.to_lowercase(), u.id.to_string()));
+            let out = json!({"ev":"mention_lookup","query":query,"users":matches});
+            sink.send(Message::Text(out.to_string())).await.map_err(|_| "connection closed".to_string())?;
+        }
+
         "profile_update" => {
             let mut info = state.users.get(&user_id).map(|entry| entry.value().clone()).ok_or("user not found")?;
             let username_value = v.get("username").and_then(Value::as_str);
