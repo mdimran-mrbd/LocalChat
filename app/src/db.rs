@@ -63,6 +63,20 @@ CREATE TABLE IF NOT EXISTS users (
 );
 CREATE INDEX IF NOT EXISTS idx_users_last_connect ON users(last_connect DESC);
 
+-- Recovery answers are stored only as salted password hashes. This table
+-- is separate from E2EE key backups: account recovery must never rewrite
+-- or replace the user's established encryption key.
+CREATE TABLE IF NOT EXISTS account_recovery (
+    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    question_1 INTEGER NOT NULL,
+    answer_hash_1 TEXT NOT NULL,
+    question_2 INTEGER NOT NULL,
+    answer_hash_2 TEXT NOT NULL,
+    question_3 INTEGER NOT NULL,
+    answer_hash_3 TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS e2ee_key_backups (
     user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
     payload TEXT NOT NULL,
