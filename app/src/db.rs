@@ -759,6 +759,73 @@ impl Db {
         .await
     }
 
+    /// Look up credentials by a normalized office email. This is deliberately
+    /// separate from username lookup so callers never accidentally use an
+    /// email address as the canonical username or user identity.
+    pub async fn find_user_credentials_by_office_email(
+        &self,
+        office_email: &str,
+    ) -> rusqlite::Result<Option<(UserId, String, bool)>> {
+        let key = office_email.trim().to_lowercase();
+        self.with(move |c| {
+            let row = c
+                .query_row(
+                    "SELECT id, password_hash, must_change_password
+                     FROM users WHERE office_email_lower = ?1 AND office_email_lower <> ''",
+                    params![key],
+                    |r| Ok((
+                        r.get::<_, String>(0)?.to_compact_string(),
+                        r.get::<_, String>(1)?,
+                        r.get::<_, i64>(2)? != 0,
+                    )),
+                )
+                .optional()?;
+            Ok(row)
+        })
+        .await
+    }
+
+    /// Check whether a username is owned by a different stable account ID.
+    /// Case folding matches the unique username_lower database constraint.
+    pub async fn username_taken_by_other(
+        &self,
+        username: &str,
+        user_id: &UserId,
+    ) -> rusqlite::Result<bool> {
+        let key = username.trim().to_lowercase();
+        let id = user_id.to_string();
+        self.with(move |c| {
+            let found = c.query_row(
+                "SELECT EXISTS(SELECT 1 FROM users WHERE username_lower = ?1 AND id <> ?2)",
+                params![key, id],
+                |r| r.get::<_, i64>(0),
+            )?;
+            Ok(found != 0)
+        })
+        .await
+    }
+
+    /// Change only the account's login/display username. The stable user ID,
+    /// E2EE public key and key backup, messages, memberships and channel IDs
+    /// are untouched. The unique index rejects case-insensitive collisions.
+    pub async fn update_username_for_user(
+        &self,
+        user_id: UserId,
+        username: &str,
+    ) -> rusqlite::Result<bool> {
+        let id = user_id.to_string();
+        let name = username.trim().to_string();
+        let lower = name.to_lowercase();
+        self.with(move |c| {
+            let changed = c.execute(
+                "UPDATE users SET username = ?1, username_lower = ?2 WHERE id = ?3",
+                params![name, lower, id],
+            )?;
+            Ok(changed != 0)
+        })
+        .await
+    }
+
     /// Persist a freshly computed password hash for `user_id`.
     /// `must_change` flags the user to be forced into a change-password
     /// flow on their next successful login (used by admin resets).
