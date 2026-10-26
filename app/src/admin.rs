@@ -205,6 +205,7 @@ async fn get_settings(
         "bannedUsers": cfg.banned_users,
         "bannedIps": cfg.banned_ips,
         "autostart": cfg.autostart,
+        "officeEmailDomains": cfg.office_email_domains,
     })))
 }
 
@@ -217,6 +218,8 @@ struct SettingsPatch {
     history_ram: Option<usize>,
     #[serde(rename = "rotateMb")]
     rotate_mb: Option<u64>,
+    #[serde(rename = "officeEmailDomains")]
+    office_email_domains: Option<Vec<String>>,
     autostart: Option<bool>,
 }
 
@@ -239,6 +242,27 @@ async fn post_settings(
     }
     if let Some(v) = patch.rotate_mb {
         cfg.rotate_mb = v.clamp(1, 1000);
+    }
+    if let Some(domains) = patch.office_email_domains {
+        let mut normalized = Vec::new();
+        for domain in domains {
+            let domain = domain.trim().trim_start_matches('@').to_ascii_lowercase();
+            if domain.is_empty() { continue; }
+            if domain.len() > 253
+                || !domain.contains('.')
+                || domain.starts_with('.')
+                || domain.ends_with('.')
+                || domain.split('.').any(|label| label.is_empty()
+                    || label.len() > 63
+                    || !label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+                    || label.starts_with('-')
+                    || label.ends_with('-'))
+            {
+                return Err((StatusCode::BAD_REQUEST, format!("invalid office email domain: {domain}")));
+            }
+            if !normalized.contains(&domain) { normalized.push(domain); }
+        }
+        cfg.office_email_domains = normalized;
     }
     if let Some(v) = patch.autostart {
         cfg.autostart = v;
