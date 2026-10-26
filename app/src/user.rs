@@ -59,7 +59,9 @@ pub struct UserInfo {
     #[serde(default)]
     pub handle: CompactString,
     /// Account email. Exposed to the authenticated account/admin surfaces only.
-    #[serde(default, skip_serializing_if = "CompactString::is_empty")]
+    // Never broadcast account email through public presence/user-list events.
+    // Admin API reads this field explicitly after host-only authorization.
+    #[serde(default, skip)]
     pub email: CompactString,
     /// Whether this account has server-side administrator privileges.
     #[serde(default)]
