@@ -120,6 +120,9 @@ async fn users(
             json!({
                 "id": u.id,
                 "username": u.username,
+                "email": u.email,
+                "displayName": u.display_name,
+                "handle": u.handle,
                 "avatar": u.avatar,
                 "color": u.color,
                 "online": online,
