@@ -79,11 +79,16 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
         /// stored on the server, otherwise discarded.
         #[serde(default, rename = "userId")]
         user_id: String,
-        /// Plain-text password supplied by the browser. Hashed
-        /// server-side and compared with the stored Argon2id hash.
-        /// First-time users (no row yet) get this hashed and stored.
+        /// Plain-text password supplied by the browser. Hashed server-side.
         #[serde(default)]
         password: String,
+        /// Explicit registration flow; ordinary login never creates an account.
+        #[serde(default)]
+        register: bool,
+        #[serde(default, rename = "displayName")]
+        display_name: String,
+        #[serde(default)]
+        email: String,
     }
     let Ok(join) = serde_json::from_str::<Value>(&init).and_then(|v| {
         if v.get("op").and_then(Value::as_str) != Some("join") {
@@ -100,31 +105,67 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
         return;
     };
 
-    let username = sanitize_username(&join.username);
-    if username.is_empty() {
-        let _ = sink
-            .send(Message::Text(
-                r#"{"ev":"error","text":"Username must be 3-24 chars: letters, digits, underscore, hyphen, or dot. No spaces.","code":"invalid_username"}"#.into(),
-            ))
-            .await;
-        state.metrics.dec_connect();
-        return;
+    let identifier = join.username.trim().to_string();
+    let mut new_email = String::new();
+    let mut new_display_name = String::new();
+    let mut new_handle = String::new();
+    let mut username: String;
+
+    if join.register {
+        let email = join.email.trim();
+        let display = join.display_name.trim();
+        let email_ok = email.len() <= 254
+            && email.split_once('@').map_or(false, |(local, domain)| {
+                !local.is_empty() && !domain.is_empty()
+                    && !email.chars().any(|ch| ch.is_whitespace() || ch.is_control())
+                    && domain.contains('.')
+            });
+        if !email_ok {
+            let _ = sink.send(Message::Text(json!({"ev":"error","text":"Enter a valid email address.","code":"invalid_email"}).to_string())).await;
+            state.metrics.dec_connect(); return;
+        }
+        if display.is_empty() || display.chars().count() > 60 || display.chars().any(|ch| ch.is_control()) {
+            let _ = sink.send(Message::Text(json!({"ev":"error","text":"Display name must be 1–60 characters.","code":"invalid_display_name"}).to_string())).await;
+            state.metrics.dec_connect(); return;
+        }
+        if state.db.find_account_credentials(email).await.ok().flatten().is_some() {
+            let _ = sink.send(Message::Text(json!({"ev":"error","text":"An account already uses this email address. Sign in instead.","code":"email_exists"}).to_string())).await;
+            state.metrics.dec_connect(); return;
+        }
+        let mut chars = display.chars();
+        let display_name = chars.next().map(|first| first.to_uppercase().collect::<String>() + chars.as_str()).unwrap_or_default();
+        let base: String = display_name.chars().filter(|ch| ch.is_ascii_alphanumeric()).take(12).collect();
+        let base = if base.is_empty() { "user".to_string() } else { base.to_lowercase() };
+        // Random suffix makes handles hard to collide; the unique DB index is
+        // the final concurrency guard. Stable UUID/E2EE identity is untouched.
+        let suffix = uuid::Uuid::new_v4().simple().to_string()[..6].to_string();
+        let handle = format!("{}{}", base, suffix);
+        username = handle.clone();
+        new_email = email.to_string();
+        new_display_name = display_name;
+        new_handle = handle;
+    } else {
+        if identifier.is_empty() || identifier.len() > 254 || identifier.chars().any(|ch| ch.is_control() || ch.is_whitespace()) {
+            let _ = sink.send(Message::Text(json!({"ev":"error","text":"Enter your registered email address or @handle.","code":"invalid_identifier"}).to_string())).await;
+            state.metrics.dec_connect(); return;
+        }
+        let account = state.db.find_account_credentials(&identifier).await.ok().flatten();
+        let Some((_, _, _, canonical_username, _, _, _)) = account.as_ref() else {
+            let _ = sink.send(Message::Text(json!({"ev":"error","text":"No account found for that email or handle. Register to create an account.","code":"account_not_found"}).to_string())).await;
+            state.metrics.dec_connect(); return;
+        };
+        username = canonical_username.clone();
     }
 
     // ---- Ban check.
     let banned = {
         let cfg = state.config.read().unwrap();
-        cfg.banned_users.iter().any(|b| b == &username)
+        cfg.banned_users.iter().any(|b| b.eq_ignore_ascii_case(&username))
             || cfg.banned_ips.iter().any(|b| b == &peer_ip)
     };
     if banned {
-        let _ = sink
-            .send(Message::Text(
-                r#"{"ev":"error","text":"you are banned from this server"}"#.into(),
-            ))
-            .await;
-        state.metrics.dec_connect();
-        return;
+        let _ = sink.send(Message::Text(r#"{"ev":"error","text":"you are banned from this server"}"#.into())).await;
+        state.metrics.dec_connect(); return;
     }
 
     // ── Password-based identity check ─────────────────────────────────
@@ -146,13 +187,14 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
         return;
     }
 
-    // Look up any prior credentials row for this username.
-    let stored = state
-        .db
-        .find_user_credentials(&username)
-        .await
-        .ok()
-        .flatten();
+    // Registration creates a new row only after the explicit registration
+    // fields have been validated. Login resolves email or handle to the same
+    // stable account ID, including legacy username aliases.
+    let stored = if join.register {
+        None
+    } else {
+        state.db.find_account_credentials(&identifier).await.ok().flatten()
+    };
 
     // Decide whether this is a signup or a login, and on login verify
     // the password before letting the join proceed. We do this BEFORE
@@ -162,7 +204,7 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
     let mut forced_user_id: Option<UserId> = None;
     let mut must_change_password = false;
     match stored.as_ref() {
-        Some((existing_id, hash, must_change)) if !hash.is_empty() => {
+        Some((existing_id, hash, must_change, _, _, _, _)) if !hash.is_empty() => {
             if !verify_password(&join.password, hash) {
                 let _ = sink
                     .send(Message::Text(
@@ -182,7 +224,7 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
             forced_user_id = Some(existing_id.clone());
             must_change_password = *must_change;
         }
-        Some((existing_id, _, _)) => {
+        Some((existing_id, _, _, _, _, _, _)) => {
             // Row exists but never had a password \u2014 first password is
             // accepted as the new credential.
             if join.password.len() < 4 {
