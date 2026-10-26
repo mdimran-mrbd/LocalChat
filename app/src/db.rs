@@ -39,6 +39,14 @@ CREATE TABLE IF NOT EXISTS users (
     id              TEXT    PRIMARY KEY,
     username        TEXT    NOT NULL,
     username_lower  TEXT    NOT NULL UNIQUE,
+    -- New profile/auth fields are nullable/defaulted so published accounts retain
+    -- their stable IDs and credentials during the additive migration.
+    office_email    TEXT    NOT NULL DEFAULT '',
+    office_email_lower TEXT NOT NULL DEFAULT '',
+    recovery_questions TEXT NOT NULL DEFAULT '[]',
+    recovery_answer_hashes TEXT NOT NULL DEFAULT '[]',
+    recovery_failed_attempts INTEGER NOT NULL DEFAULT 0,
+    recovery_locked_until INTEGER NOT NULL DEFAULT 0,
     designation     TEXT    NOT NULL DEFAULT '',
     avatar          TEXT    NOT NULL DEFAULT '',
     color           TEXT    NOT NULL DEFAULT '',
@@ -284,6 +292,16 @@ impl Db {
             let _ = conn.execute("ALTER TABLE messages ADD COLUMN client_id TEXT", []);
             let _ = conn.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0", []);
             let _ = conn.execute("ALTER TABLE users ADD COLUMN designation TEXT NOT NULL DEFAULT ''", []);
+            // Login/profile migration is additive. Existing account IDs, password
+            // hashes, public keys, encrypted messages, and E2EE backup envelopes
+            // are intentionally left untouched.
+            let _ = conn.execute("ALTER TABLE users ADD COLUMN office_email TEXT NOT NULL DEFAULT ''", []);
+            let _ = conn.execute("ALTER TABLE users ADD COLUMN office_email_lower TEXT NOT NULL DEFAULT ''", []);
+            let _ = conn.execute("ALTER TABLE users ADD COLUMN recovery_questions TEXT NOT NULL DEFAULT '[]'", []);
+            let _ = conn.execute("ALTER TABLE users ADD COLUMN recovery_answer_hashes TEXT NOT NULL DEFAULT '[]'", []);
+            let _ = conn.execute("ALTER TABLE users ADD COLUMN recovery_failed_attempts INTEGER NOT NULL DEFAULT 0", []);
+            let _ = conn.execute("ALTER TABLE users ADD COLUMN recovery_locked_until INTEGER NOT NULL DEFAULT 0", []);
+            let _ = conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_office_email_lower ON users(office_email_lower) WHERE office_email_lower <> ''", []);
             let _ = conn.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_client_id ON messages(client_id) WHERE client_id IS NOT NULL",
                 [],
