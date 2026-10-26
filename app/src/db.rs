@@ -25,7 +25,7 @@ use crate::user::{UserId, UserInfo};
 
 /// Bumped whenever the schema changes incompatibly. Stored under
 /// `schema_meta(key='version')`.
-const SCHEMA_VERSION: i64 = 3;
+const SCHEMA_VERSION: i64 = 4;
 
 const SCHEMA_SQL: &str = r#"
 PRAGMA foreign_keys = ON;
@@ -39,6 +39,12 @@ CREATE TABLE IF NOT EXISTS users (
     id              TEXT    PRIMARY KEY,
     username        TEXT    NOT NULL,
     username_lower  TEXT    NOT NULL UNIQUE,
+    email           TEXT    NOT NULL DEFAULT '',
+    email_lower     TEXT    NOT NULL DEFAULT '',
+    display_name    TEXT    NOT NULL DEFAULT '',
+    handle          TEXT    NOT NULL DEFAULT '',
+    handle_lower    TEXT    NOT NULL DEFAULT '',
+    is_admin        INTEGER NOT NULL DEFAULT 0,
     designation     TEXT    NOT NULL DEFAULT '',
     avatar          TEXT    NOT NULL DEFAULT '',
     color           TEXT    NOT NULL DEFAULT '',
