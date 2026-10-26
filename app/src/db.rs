@@ -284,6 +284,17 @@ impl Db {
             let _ = conn.execute("ALTER TABLE messages ADD COLUMN client_id TEXT", []);
             let _ = conn.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0", []);
             let _ = conn.execute("ALTER TABLE users ADD COLUMN designation TEXT NOT NULL DEFAULT ''", []);
+            // Account identity migration: preserve every existing user ID and E2EE key.
+            let _ = conn.execute("ALTER TABLE users ADD COLUMN email TEXT NOT NULL DEFAULT ''", []);
+            let _ = conn.execute("ALTER TABLE users ADD COLUMN email_lower TEXT NOT NULL DEFAULT ''", []);
+            let _ = conn.execute("ALTER TABLE users ADD COLUMN display_name TEXT NOT NULL DEFAULT ''", []);
+            let _ = conn.execute("ALTER TABLE users ADD COLUMN handle TEXT NOT NULL DEFAULT ''", []);
+            let _ = conn.execute("ALTER TABLE users ADD COLUMN handle_lower TEXT NOT NULL DEFAULT ''", []);
+            let _ = conn.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0", []);
+            let _ = conn.execute("UPDATE users SET display_name=username WHERE display_name=''", []);
+            let _ = conn.execute("UPDATE users SET handle=username, handle_lower=lower(username) WHERE handle=''", []);
+            let _ = conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_lower ON users(email_lower) WHERE email_lower <> ''", []);
+            let _ = conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_handle_lower ON users(handle_lower) WHERE handle_lower <> ''", []);
             let _ = conn.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_client_id ON messages(client_id) WHERE client_id IS NOT NULL",
                 [],
