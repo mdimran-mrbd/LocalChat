@@ -479,7 +479,8 @@ impl Db {
             c.query_row(
                 "SELECT id, username, username_lower, avatar, color, pubkey, joined_at,
                         last_connect, last_seen, last_ip,
-                        total_sessions, msg_count, bytes_uploaded, designation
+                        total_sessions, msg_count, bytes_uploaded, designation,
+                        display_name, handle, email, is_admin
                    FROM users WHERE username_lower = ?1",
                 params![lname],
                 row_to_user,
@@ -496,7 +497,8 @@ impl Db {
             c.query_row(
                 "SELECT id, username, username_lower, avatar, color, pubkey, joined_at,
                         last_connect, last_seen, last_ip,
-                        total_sessions, msg_count, bytes_uploaded, designation
+                        total_sessions, msg_count, bytes_uploaded, designation,
+                        display_name, handle, email, is_admin
                    FROM users WHERE id = ?1",
                 params![id],
                 row_to_user,
@@ -635,7 +637,8 @@ impl Db {
             let mut stmt = c.prepare(
                 "SELECT id, username, username_lower, avatar, color, pubkey, joined_at,
                         last_connect, last_seen, last_ip,
-                        total_sessions, msg_count, bytes_uploaded, designation
+                        total_sessions, msg_count, bytes_uploaded, designation,
+                        display_name, handle, email, is_admin
                    FROM users ORDER BY joined_at",
             )?;
             let rows = stmt.query_map([], row_to_user)?;
@@ -856,6 +859,10 @@ fn row_to_user(r: &rusqlite::Row<'_>) -> rusqlite::Result<UserInfo> {
         last_connect: r.get::<_, i64>(7)? as u64,
         total_sessions: r.get::<_, i64>(10)? as u64,
         designation: r.get::<_, String>(13)?.to_compact_string(),
+        display_name: r.get::<_, String>(14)?.to_compact_string(),
+        handle: r.get::<_, String>(15)?.to_compact_string(),
+        email: r.get::<_, String>(16)?.to_compact_string(),
+        is_admin: r.get::<_, i64>(17)? != 0,
     })
 }
 
