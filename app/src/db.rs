@@ -750,7 +750,9 @@ impl Db {
         &self,
         identifier: &str,
     ) -> rusqlite::Result<Option<(UserId, String, bool, String, String, String, String)>> {
-        let key = identifier.trim().to_lowercase();
+        // Handles are shown with an @ prefix in the UI, but stored without
+        // it. Accept either spelling for case-insensitive sign-in.
+        let key = identifier.trim().trim_start_matches('@').to_lowercase();
         self.with(move |c| {
             c.query_row(
                 "SELECT id, password_hash, must_change_password, username, email, display_name, handle
