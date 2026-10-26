@@ -996,7 +996,7 @@ function onMentionLookup(e) {
   const cursor = input.selectionStart || 0;
   const before = input.value.slice(0, cursor);
   const at = before.lastIndexOf("@");
-  if (at < 0 || /\\s/.test(before.slice(at + 1)) || before.slice(at + 1).trim().toLowerCase() !== String(e.query || "").toLowerCase()) return;
+  if (at < 0 || /[\\n\\r]/.test(before.slice(at + 1)) || before.slice(at + 1).trim().toLowerCase() !== String(e.query || "").toLowerCase()) return;
   panel.replaceChildren();
   for (const user of users.slice(0, 8)) {
     const handle = String(user.handle || user.username || "").replace(/^@/, "");
