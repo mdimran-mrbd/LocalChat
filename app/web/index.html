@@ -77,13 +77,23 @@
       </div>
 
       <form id="joinForm" class="join-form">
+        <div class="auth-mode-switch" style="display:flex;gap:8px;margin-bottom:8px;">
+          <button type="button" id="authLoginTab" class="btn btn-primary btn-sm" aria-pressed="true">Sign in</button>
+          <button type="button" id="authRegisterTab" class="btn btn-ghost btn-sm" aria-pressed="false">Create account</button>
+        </div>
+        <label class="field" id="registerDisplayNameField" hidden>
+          <span>Display name</span>
+          <input id="registerDisplayName" type="text" maxlength="60" autocomplete="name" placeholder="Your name"/>
+        </label>
+        <label class="field" id="registerEmailField" hidden>
+          <span>Email address</span>
+          <input id="registerEmail" type="email" maxlength="254" autocomplete="email" placeholder="you@company.com"/>
+        </label>
         <label class="field">
-          <span>Username</span>
-          <input id="username" type="text" minlength="3" maxlength="24" required
+          <span id="authIdentifierLabel">Email or @handle</span>
+          <input id="username" type="text" minlength="1" maxlength="254" required
                  autocomplete="username" spellcheck="false"
-                 pattern="[A-Za-z0-9][A-Za-z0-9._-]{2,23}"
-                 title="3-24 characters: letters, digits, underscore, hyphen, or dot. No spaces. Must start with a letter or digit."
-                 placeholder="e.g. alice_42"/>
+                 placeholder="Email address or @yourhandle"/>
         </label>
         <label class="field">
           <span>Password</span>
@@ -94,8 +104,8 @@
           First time? The password you choose now is what you'll use
           to log back in (including from a different browser).
         </p>
-        <button class="btn btn-primary btn-lg" type="submit">
-          Enter chat
+        <button class="btn btn-primary btn-lg" id="authSubmitBtn" type="submit">
+          Sign in
           <svg viewBox="0 0 24 24" width="16" height="16"><path d="M5 12h14M13 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
         <div id="joinStatus" class="join-status"></div>
