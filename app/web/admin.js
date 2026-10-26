@@ -443,6 +443,15 @@ function userRow(u) {
       el("div", { class: "ad-row-sub muted xs" }, sub),
     ]),
     el("div", { class: "ad-row-actions" }, [
+      el("button", { class: "btn btn-ghost btn-sm", type: "button", onclick: async () => {
+        const current = u.email || "";
+        const email = prompt("Set account email (administrator action):", current);
+        if (email === null || email.trim() === current) return;
+        try {
+          await api(`/email/${u.id}`, { method: "POST", body: JSON.stringify({ email: email.trim() }) });
+          toast("Account email updated"); refreshAll();
+        } catch (err) { toast("Error: " + err.message); }
+      } }, "Change email"),
       el("button", { class: "btn btn-ghost btn-sm", type: "button",
         onclick: () => { S.sessions.userFilter = u.id; setRoute("sessions"); } }, "History"),
       online ? el("button", { class: "btn btn-ghost btn-sm", type: "button", onclick: async () => {
