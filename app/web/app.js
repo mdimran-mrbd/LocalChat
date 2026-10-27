@@ -19,7 +19,8 @@ function userNameNode(user) {
     if (cached) profile = { ...cached, ...profile, designation: cached.designation || profile.designation };
   }
   const root = el("span", { class: "user-name-display" });
-  root.append(document.createTextNode(profile.username || "Unknown"));
+  root.append(document.createTextNode(profile.display_name || profile.username || "Unknown"));
+  if (profile.username) root.append(el("span", { class: "user-handle" }, " @" + profile.username.replace(/^@/, "")));
   if (profile.designation) root.append(el("span", { class: "user-designation" }, " • " + profile.designation));
   return root;
 }
@@ -786,8 +787,8 @@ $("toggleRegistration")?.addEventListener("click", (event) => {
   _joinMode = _joinMode === "login" ? "register" : "login";
   const registering = _joinMode === "register";
   $("registrationFields")?.classList.toggle("hidden", !registering);
-  $("loginIdentifierLabel").textContent = registering ? "Choose a unique username" : "Office email or unique username";
-  $("username").placeholder = registering ? "e.g. imran07" : "Office email or username";
+  $("loginIdentifierLabel").textContent = registering ? "Choose your display name" : "Office email or @handle";
+  $("username").placeholder = registering ? "e.g. Imran Islam" : "Office email or @handle";
   $("password").autocomplete = registering ? "new-password" : "current-password";
   $("joinButtonLabel").textContent = registering ? "Create account" : "Sign in";
   $("toggleRegistration").textContent = registering ? "Back to sign in" : "Create an account";
@@ -834,11 +835,9 @@ $("joinForm").addEventListener("submit", (e) => {
   if (!identifier) return;
   let registration = {};
   if (_joinMode === "register") {
-    if (!/^(?=.*[0-9])[A-Za-z0-9!@#$%&_-]{3,24}$/.test(identifier)) {
-      status.textContent = "Username must be 3-24 characters, include a number, contain no spaces, and use only letters, numbers, or !@#$%&_- .";
-      status.classList.add("err");
-      $("username").focus();
-      return;
+    if (!identifier || identifier.length > 48 || /[\u0000-\u001f\u007f]/.test(identifier)) {
+      status.textContent = "Display name must be 1–48 characters and cannot contain control characters.";
+      status.classList.add("err"); $("username").focus(); return;
     }
     const officeEmail = $("officeEmail").value.trim();
     const designation = $("registrationDesignation").value;
@@ -850,7 +849,7 @@ $("joinForm").addEventListener("submit", (e) => {
       status.classList.add("err");
       return;
     }
-    registration = { officeEmail, designation, recoveryQuestions, recoveryAnswers };
+    registration = { displayName: identifier, officeEmail, designation, recoveryQuestions, recoveryAnswers };
   }
   if (!password || password.length < 4) {
     status.textContent = "Password must be at least 4 characters.";
@@ -876,6 +875,7 @@ function connect(username, password, mode = "login", registration = {}) {
     ws.send(JSON.stringify({
       op: "join",
       username,
+      displayName: registration.displayName || "",
       password: password || "",
       mode,
       officeEmail: registration.officeEmail || "",
@@ -1294,7 +1294,7 @@ function onUsers(list) {
   for (const u of list) { S.users.set(u.id, u); S.userProfiles.set(u.id, u); }
   const updatedMe = list.find(u => u.id === S.me?.id);
   if (updatedMe) {
-    const profileChanged = !!previousMe && (previousMe.username !== updatedMe.username || previousMe.designation !== updatedMe.designation);
+    const profileChanged = !!previousMe && (previousMe.display_name !== updatedMe.display_name || previousMe.designation !== updatedMe.designation);
     const avatarChanged = !!previousMe && previousMe.avatar !== updatedMe.avatar;
     S.me = updatedMe;
     const ownAvatar = $("meChip")?.querySelector(".avatar");
@@ -1305,7 +1305,7 @@ function onUsers(list) {
     if (ownName) ownName.replaceChildren(userNameNode(updatedMe));
     if (updatedMe.designation) closeModal("designationModal");
     if (profileChanged && $("settingsPanel")?.classList.contains("open")) {
-      $("profileUsername").value = updatedMe.username || "";
+      $("profileUsername").value = updatedMe.display_name || updatedMe.username || "";
       $("profileDesignation").value = updatedMe.designation || "CSA";
       const status = $("profileSettingsStatus");
       status.textContent = "Profile saved.";
@@ -3871,11 +3871,11 @@ function cancelProfileFieldEdit(field) {
   const status = $("profileSettingsStatus"); if (status) { status.textContent = ""; status.classList.remove("err", "ok"); }
 }
 function submitProfileField(field) {
-  const username = ($("profileUsername")?.value || "").trim();
+  const displayName = ($("profileUsername")?.value || "").trim();
   const designation = $("profileDesignation")?.value || "";
   const status = $("profileSettingsStatus"); status.classList.remove("err", "ok");
-  if (field === "username" && !/^[A-Za-z0-9][A-Za-z0-9_.-]{2,23}$/.test(username)) {
-    status.textContent = "Use 3–24 characters: letters, digits, underscore, hyphen, or dot; start with a letter or digit.";
+  if (field === "username" && (!displayName || displayName.length > 48 || /[\u0000-\u001f\u007f]/.test(displayName))) {
+    status.textContent = "Display name must be 1–48 characters and cannot contain control characters.";
     status.classList.add("err"); $("profileUsername")?.focus(); return;
   }
   if (field === "designation" && !["AM","TL","STL","QDE","LRD","EE","CSA"].includes(designation)) {
@@ -3885,8 +3885,8 @@ function submitProfileField(field) {
   const save = $(field === "username" ? "saveUsernameBtn" : "saveDesignationBtn");
   if (save) { save.disabled = true; save.textContent = "Saving…"; }
   status.textContent = "Saving changes…";
-  sendOp(field === "username" ? { op: "profile_update", username } : { op: "profile_update", designation });
-  setTimeout(() => { if (save?.isConnected) { save.disabled = false; save.textContent = field === "username" ? "Save username" : "Save designation"; } }, 3000);
+  sendOp(field === "username" ? { op: "profile_update", displayName } : { op: "profile_update", designation });
+  setTimeout(() => { if (save?.isConnected) { save.disabled = false; save.textContent = field === "username" ? "Save display name" : "Save designation"; } }, 3000);
 }
 function signOut() {
   lstore.remove("username");
@@ -3920,7 +3920,7 @@ function openRequiredProfileModal() {
   $("requiredEmailField").classList.toggle("hidden", !flags.officeEmail);
   $("requiredDesignationField").classList.toggle("hidden", !flags.designation);
   $("requiredRecoveryFields").classList.toggle("hidden", !flags.recoveryQuestions);
-  $("requiredUsername").value = S.me?.username || "";
+  $("requiredUsername").value = S.me?.display_name || S.me?.username || "";
   $("requiredOfficeEmail").value = "";
   $("requiredDesignation").value = S.me?.designation || "";
   for (let n = 1; n <= 3; n++) {
@@ -3944,8 +3944,8 @@ async function submitRequiredProfile(event) {
   const status = $("requiredProfileStatus");
   status.textContent = "";
   status.classList.remove("err", "ok");
-  if (flags.username && !/^(?=.*[0-9])[A-Za-z0-9!@#$%&_-]{3,24}$/.test(username)) {
-    status.textContent = "Username must be 3-24 characters, include a number, contain no spaces, and use only letters, numbers, or !@#$%&_- .";
+  if (flags.username && (!username || username.length > 48 || /[\u0000-\u001f\u007f]/.test(username))) {
+    status.textContent = "Display name must be 1–48 characters and cannot contain control characters.";
     status.classList.add("err"); return;
   }
   if (flags.officeEmail && !officeEmail) {
@@ -3955,8 +3955,7 @@ async function submitRequiredProfile(event) {
     status.textContent = "Choose your designation."; status.classList.add("err"); return;
   }
   const payload = { op: "profile_update" };
-  if (flags.username) payload.username = username;
-  else payload.username = S.me.username;
+  if (flags.username) payload.displayName = username;
   if (flags.designation) payload.designation = designation;
   else payload.designation = S.me.designation || "CSA";
   if (flags.officeEmail) payload.officeEmail = officeEmail;
