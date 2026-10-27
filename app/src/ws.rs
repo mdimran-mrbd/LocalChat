@@ -200,10 +200,23 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
     // Login resolves either the unique @handle or office email through one
     // case-insensitive query, including legacy rows whose normalized email
     // column was not populated by an earlier build.
-    let stored = if is_registration {
-        state.db.find_user_credentials(&username).await.ok().flatten()
+    let lookup_result = if is_registration {
+        state.db.find_user_credentials(&username).await
     } else {
-        state.db.find_user_credentials_by_login_identifier(identifier).await.ok().flatten()
+        state.db.find_user_credentials_by_login_identifier(identifier).await
+    };
+    let stored = match lookup_result {
+        Ok(account) => account,
+        Err(error) => {
+            crate::applog::log(format_args!("account credential lookup failed: {}", error));
+            let _ = sink.send(Message::Text(json!({
+                "ev": "error",
+                "text": "Could not check your login details because of a server database error. Please contact the administrator.",
+                "code": "login_lookup_failed"
+            }).to_string())).await;
+            state.metrics.dec_connect();
+            return;
+        }
     };
 
     if !is_registration {
