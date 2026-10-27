@@ -180,9 +180,11 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
         state.db.find_user_credentials(&username).await.ok().flatten()
     };
 
-    if is_email_login {
+    if !is_registration {
         if let Some((account_id, _, _)) = stored.as_ref() {
             if let Some(canonical) = state.db.username_for_user_id(account_id.clone()).await.ok().flatten() {
+                // Always use the DB's canonical spelling after case-insensitive
+                // lookup; never let "imran" and "Imran" become separate runtime identities.
                 username = canonical.to_compact_string();
             }
         }
@@ -390,6 +392,10 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
         ).await;
     } else {
         let _ = state.db.create_user(&info).await;
+    }
+
+    if is_registration {
+        let _ = state.db.set_office_email(user_id.clone(), join.office_email.trim()).await;
     }
 
     // Persist the password hash for new signups (and back-fill rows
