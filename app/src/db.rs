@@ -759,6 +759,31 @@ impl Db {
         .await
     }
 
+    /// Resolve the canonical username for a stable account ID.
+    pub async fn username_for_user_id(
+        &self,
+        user_id: UserId,
+    ) -> rusqlite::Result<Option<String>> {
+        let id = user_id.to_string();
+        self.with(move |c| {
+            c.query_row("SELECT username FROM users WHERE id=?1", params![id], |r| r.get(0))
+                .optional()
+        }).await
+    }
+
+    /// Return true if the normalized office email is already assigned.
+    pub async fn office_email_exists(&self, office_email: &str) -> rusqlite::Result<bool> {
+        let key = office_email.trim().to_lowercase();
+        self.with(move |c| {
+            let found = c.query_row(
+                "SELECT EXISTS(SELECT 1 FROM users WHERE office_email_lower=?1)",
+                params![key],
+                |r| r.get::<_, i64>(0),
+            )?;
+            Ok(found != 0)
+        }).await
+    }
+
     /// Look up credentials by a normalized office email. This is deliberately
     /// separate from username lookup so callers never accidentally use an
     /// email address as the canonical username or user identity.
