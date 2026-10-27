@@ -399,7 +399,7 @@ function paintUsers(host) {
   const q = S.user.filter;
   let list = S.data.users;
   if (S.user.onlineOnly) list = list.filter((u) => u.online);
-  if (q) list = list.filter((u) => (u.username || "").toLowerCase().includes(q) || (u.ip || u.lastIp || "").toLowerCase().includes(q));
+  if (q) list = list.filter((u) => (u.username || "").toLowerCase().includes(q) || (u.displayName || "").toLowerCase().includes(q) || (u.ip || u.lastIp || "").toLowerCase().includes(q));
   if (!list.length) {
     host.replaceChildren(emptyState("No users", q ? "Nothing matches your filter." : "Nobody is connected right now."));
     return;
@@ -436,7 +436,8 @@ function userRow(u) {
     (() => { const isImage = typeof u.avatar === "string" && u.avatar.startsWith("/uploads/") && !u.avatar.slice(9).includes("/"); const node = el("div", { class: "ad-avatar" + (isImage ? " has-avatar-image" : ""), style: `background:${u.color || colorForName(u.username || "")}`, title: u.username }); node.append(avatarContentAdmin(u.avatar, initial)); node.append(el("span", { class: "ad-presence-dot " + (online ? "on" : "off"), title: online ? "Online" : "Offline" })); return node; })(),
     el("div", { class: "ad-row-meta" }, [
       el("div", { class: "ad-row-title" }, [
-        document.createTextNode(u.username || "—"),
+        document.createTextNode(u.displayName || u.username || "—"),
+        el("span", { class: "ad-tag", title: "Unique login handle" }, "@" + (u.username || "—")),
         el("span", { class: "ad-tag", title: "User ID" }, "#" + u.id),
         el("span", { class: "ad-tag ad-tag-" + (online ? "ok" : "info") }, online ? "online" : "offline"),
       ]),
@@ -449,6 +450,16 @@ function userRow(u) {
         try { await api(`/kick/${u.id}`, { method: "POST" }); toast("Kicked " + u.username); refreshAll(); }
         catch (err) { toast("Error: " + err.message); }
       } }, "Kick") : null,
+      el("button", { class: "btn btn-ghost btn-sm", type: "button", onclick: async () => {
+        try {
+          const current = await api(`/user-email/${u.id}`);
+          const officeEmail = window.prompt(`Office email for ${u.displayName || u.username}`, current.officeEmail || "");
+          if (officeEmail === null) return;
+          const result = await api(`/user-email/${u.id}`, { method: "POST", body: JSON.stringify({ officeEmail }) });
+          toast("Office email updated for " + (u.displayName || u.username));
+          u.officeEmail = result.officeEmail;
+        } catch (err) { toast("Could not update email: " + err.message); }
+      } }, "Change email"),
       el("button", { class: "btn btn-ghost btn-sm", type: "button", onclick: async () => {
         const ok = await confirmDialog({
           title: "Reset password?",
