@@ -109,7 +109,7 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
     let identifier = join.username.trim();
     let is_email_login = !is_registration && identifier.contains('@');
     let mut username = if is_registration {
-        let candidate = sanitize_username(identifier);
+        let candidate = identifier.to_compact_string();
         if candidate.is_empty() || validate_new_username(identifier).is_err() {
             let _ = sink.send(Message::Text(json!({
                 "ev":"error",
@@ -188,10 +188,40 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
         }
     }
 
-    // Decide whether this is a signup or a login, and on login verify
-    // the password before letting the join proceed. We do this BEFORE
-    // touching any in-memory state so a wrong password leaves nothing
-    // behind.
+    // Registration is explicit. A typo in a login identifier must never
+    // silently create a new account with a different identity.
+    if is_registration {
+        let email = join.office_email.trim();
+        let valid_email = email.len() <= 254
+            && email.split_once('@').map_or(false, |(local, domain)| {
+                !local.is_empty() && !domain.is_empty() && domain.contains('.')
+                    && !email.chars().any(char::is_whitespace)
+            });
+        let domains = state.config.read().unwrap().office_email_domains.clone();
+        let domain_allowed = email.rsplit_once('@').map_or(false, |(_, domain)| {
+            domains.iter().any(|allowed| allowed.trim().trim_start_matches('@').eq_ignore_ascii_case(domain))
+        });
+        if !valid_email || !domain_allowed || domains.is_empty() {
+            let _ = sink.send(Message::Text(json!({
+                "ev":"error",
+                "text":"Registration requires an office email from a domain allowed by the server administrator.",
+                "code":"office_email_not_allowed"
+            }).to_string())).await;
+            state.metrics.dec_connect();
+            return;
+        }
+        if stored.is_some() || state.db.office_email_exists(email).await.unwrap_or(true) {
+            let _ = sink.send(Message::Text(r#"{"ev":"error","text":"That username or office email is already registered.","code":"account_exists"}"#.into())).await;
+            state.metrics.dec_connect();
+            return;
+        }
+    } else if stored.is_none() {
+        let _ = sink.send(Message::Text(r#"{"ev":"error","text":"No account found. Choose Register to create an account.","code":"registration_required"}"#.into())).await;
+        state.metrics.dec_connect();
+        return;
+    }
+
+    // Verify credentials before mutating any runtime state.
     let mut password_action: PasswordAction = PasswordAction::None;
     let mut forced_user_id: Option<UserId> = None;
     let mut must_change_password = false;
