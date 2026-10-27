@@ -73,6 +73,10 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
         mode: String,
         #[serde(default, rename = "officeEmail")]
         office_email: String,
+        #[serde(default, rename = "recoveryQuestions")]
+        recovery_questions: Vec<i64>,
+        #[serde(default, rename = "recoveryAnswers")]
+        recovery_answers: Vec<String>,
         #[serde(default)]
         avatar: String,
         #[serde(default)]
@@ -203,6 +207,16 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
         let domain_allowed = email.rsplit_once('@').map_or(false, |(_, domain)| {
             domains.iter().any(|allowed| allowed.trim().trim_start_matches('@').eq_ignore_ascii_case(domain))
         });
+        let recovery_valid = join.recovery_questions.len() == 3
+            && join.recovery_answers.len() == 3
+            && join.recovery_questions.iter().all(|q| (1..=10).contains(q))
+            && join.recovery_questions.iter().collect::<std::collections::HashSet<_>>().len() == 3
+            && join.recovery_answers.iter().all(|a| !a.trim().is_empty() && a.trim().len() <= 200);
+        if !recovery_valid {
+            let _ = sink.send(Message::Text(r#"{"ev":"error","text":"Choose three different recovery questions and provide all three answers.","code":"recovery_setup_required"}"#.into())).await;
+            state.metrics.dec_connect();
+            return;
+        }
         if !valid_email || !domain_allowed || domains.is_empty() {
             let _ = sink.send(Message::Text(json!({
                 "ev":"error",
@@ -396,6 +410,23 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
 
     if is_registration {
         let _ = state.db.set_office_email(user_id.clone(), join.office_email.trim()).await;
+        let questions = [
+            join.recovery_questions[0],
+            join.recovery_questions[1],
+            join.recovery_questions[2],
+        ];
+        let answers = [
+            join.recovery_answers[0].trim().to_lowercase(),
+            join.recovery_answers[1].trim().to_lowercase(),
+            join.recovery_answers[2].trim().to_lowercase(),
+        ];
+        if let (Some(h1), Some(h2), Some(h3)) = (
+            hash_password(&answers[0]), hash_password(&answers[1]), hash_password(&answers[2])
+        ) {
+            let _ = state.db.set_recovery_answers(
+                user_id.clone(), questions, [h1, h2, h3], now_secs() as i64
+            ).await;
+        }
     }
 
     // Persist the password hash for new signups (and back-fill rows
