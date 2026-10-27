@@ -1065,7 +1065,7 @@ fn row_to_user(r: &rusqlite::Row<'_>) -> rusqlite::Result<UserInfo> {
         last_connect: r.get::<_, i64>(7)? as u64,
         total_sessions: r.get::<_, i64>(10)? as u64,
         designation: r.get::<_, String>(13)?.to_compact_string(),
-        display_name: r.get::<_, String>(14).unwrap_or_else(|_| r.get::<_, String>(1)).unwrap_or_default().to_compact_string(),
+        display_name: r.get::<_, String>(14).or_else(|_| r.get::<_, String>(1)).unwrap_or_default().to_compact_string(),
     })
 }
 
