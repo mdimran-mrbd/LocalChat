@@ -3834,7 +3834,7 @@ Object.assign(window,{setProfileAvatarPreset});
 
 function openSettingsPanel() {
   if (!S.me) return;
-  $("profileUsername").value = S.me.username || "";
+  $("profileUsername").value = S.me.display_name || S.me.username || "";
   $("profileDesignation").value = S.me.designation || "CSA";
   renderProfileAvatarSettings();
   setProfileFieldEditing("username", false);
@@ -3866,7 +3866,7 @@ function setProfileFieldEditing(field, editing) {
   if (editing) input.focus();
 }
 function cancelProfileFieldEdit(field) {
-  $("profileUsername").value = S.me?.username || "";
+  $("profileUsername").value = S.me?.display_name || S.me?.username || "";
   $("profileDesignation").value = S.me?.designation || "CSA";
   setProfileFieldEditing(field, false);
   const status = $("profileSettingsStatus"); if (status) { status.textContent = ""; status.classList.remove("err", "ok"); }
