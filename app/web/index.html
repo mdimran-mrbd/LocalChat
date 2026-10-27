@@ -432,6 +432,25 @@
     </form>
   </div>
 
+  <!-- Password recovery is separate from sign-in -->
+  <div id="recoveryModal" class="modal hidden" role="dialog" aria-labelledby="recoveryTitle" aria-modal="true">
+    <form class="modal-panel" onsubmit="submitRecovery(event)">
+      <header class="modal-head"><h3 id="recoveryTitle">Recover account</h3><button type="button" class="icon-btn" aria-label="Close" onclick="closeModal('recoveryModal')">×</button></header>
+      <div class="modal-body">
+        <p class="muted sm">Enter your username or office email, then answer one of your saved recovery questions. Repeated failures trigger a temporary lockout.</p>
+        <label class="field"><span>Username or office email</span><input id="recoveryLogin" required maxlength="254" autocomplete="username"/></label>
+        <button type="button" id="recoveryLoadBtn" class="btn btn-secondary" onclick="loadRecoveryChallenge()">Continue</button>
+        <div id="recoveryAnswerFields" class="hidden">
+          <label class="field"><span>Recovery question</span><select id="recoveryQuestionSlot" required></select></label>
+          <label class="field"><span>Your answer</span><input id="recoveryAnswer" type="password" maxlength="200" required autocomplete="off"/></label>
+          <label class="field"><span>New password</span><input id="recoveryNewPassword" type="password" minlength="8" maxlength="128" required autocomplete="new-password" placeholder="At least 8 characters"/></label>
+          <button type="submit" id="recoverySubmitBtn" class="btn btn-primary">Reset password</button>
+        </div>
+        <div id="recoveryStatus" class="join-status"></div>
+      </div>
+    </form>
+  </div>
+
   <!-- Required profile completion for existing accounts -->
   <div id="profileCompletionModal" class="modal hidden" role="dialog" aria-labelledby="profileCompletionTitle" aria-modal="true">
     <form class="modal-panel" onsubmit="submitRequiredProfile(event)">
