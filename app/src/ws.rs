@@ -69,6 +69,8 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
     struct Join {
         /// Username for registration, or username/office-email login identifier.
         username: String,
+        #[serde(default, rename = "displayName")]
+        display_name: String,
         #[serde(default)]
         mode: String,
         #[serde(default, rename = "officeEmail")]
@@ -112,20 +114,40 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
     };
 
     let is_registration = join.mode.eq_ignore_ascii_case("register");
-    let identifier = join.username.trim();
+    let raw_identifier = join.username.trim();
+    let identifier = if !is_registration { raw_identifier.strip_prefix('@').unwrap_or(raw_identifier) } else { raw_identifier };
     let is_email_login = !is_registration && identifier.contains('@');
+    let display_name_input = if join.display_name.trim().is_empty() { raw_identifier } else { join.display_name.trim() };
     let mut username = if is_registration {
-        let candidate = identifier.to_compact_string();
-        if candidate.is_empty() || validate_new_username(identifier).is_err() {
+        if display_name_input.is_empty() || display_name_input.chars().count() > 48
+            || display_name_input.chars().any(|ch| ch.is_control())
+            || display_name_input.trim().is_empty() {
             let _ = sink.send(Message::Text(json!({
-                "ev":"error",
-                "text":"Username does not meet the new registration rules.",
-                "code":"invalid_username"
+                "ev":"error", "text":"Display name must be 1–48 characters and cannot contain control characters.",
+                "code":"invalid_display_name"
             }).to_string())).await;
             state.metrics.dec_connect();
             return;
         }
-        candidate
+        // Generate a unique, stable handle from the display name. The suffix
+        // keeps handles unique without making display names globally unique.
+        let mut base: String = display_name_input.chars()
+            .filter(|ch| ch.is_ascii_alphanumeric())
+            .take(18).collect::<String>().to_ascii_lowercase();
+        if base.len() < 2 { base = "user".to_string(); }
+        let mut suffix = 1_u32;
+        loop {
+            let candidate = format!("{}{:02}", base, suffix);
+            if state.db.find_user_credentials(&candidate).await.ok().flatten().is_none() {
+                break candidate.to_compact_string();
+            }
+            suffix = suffix.saturating_add(1);
+            if suffix == u32::MAX {
+                let _ = sink.send(Message::Text(r#"{"ev":"error","text":"Could not generate a unique handle. Contact the server administrator.","code":"handle_generation_failed"}"#.into())).await;
+                state.metrics.dec_connect();
+                return;
+            }
+        }
     } else if is_email_login {
         if identifier.len() > 254 || identifier.chars().any(char::is_whitespace) {
             let _ = sink.send(Message::Text(r#"{"ev":"error","text":"Invalid login details.","code":"invalid_login"}"#.into())).await;
@@ -380,6 +402,13 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
         last_connect: now_secs(),
         total_sessions: prior.as_ref().map(|p| p.total_sessions).unwrap_or(0) + 1,
         designation: prior.as_ref().map(|p| p.designation.clone()).unwrap_or_else(|| if is_registration { join.designation.to_compact_string() } else { CompactString::default() }),
+        display_name: if is_registration {
+            let trimmed = display_name_input.trim();
+            let mut chars = trimmed.chars();
+            chars.next().map(|first| first.to_uppercase().collect::<String>() + chars.as_str()).unwrap_or_default().to_compact_string()
+        } else {
+            prior.as_ref().map(|p| p.display_name.clone()).filter(|name| !name.is_empty()).unwrap_or_else(|| username.to_compact_string())
+        },
     };
     state.users.insert(user_id.clone(), info.clone());
     state.known_users.insert(user_id.clone(), info.clone());
@@ -522,7 +551,7 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
 
     let profile_fields = state.db.get_profile_fields(user_id.clone()).await.ok().flatten();
     let profile_completion = profile_fields.as_ref().map(|(email, designation, has_recovery)| json!({
-        "username": validate_new_username(&info.username).is_err(),
+        "username": info.display_name.trim().is_empty(),
         "officeEmail": email.is_empty(),
         "designation": designation.is_empty(),
         "recoveryQuestions": !has_recovery,
@@ -1705,24 +1734,28 @@ async fn handle_op(
         "profile_update" => {
             let mut info = state.users.get(&user_id).map(|entry| entry.value().clone()).ok_or("user not found")?;
             let username_value = v.get("username").and_then(Value::as_str);
+            let display_name_value = v.get("displayName").and_then(Value::as_str);
             let designation_value = v.get("designation").and_then(Value::as_str);
             let email_value = v.get("officeEmail").and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty());
             let questions_value = v.get("recoveryQuestions").and_then(Value::as_array);
             let answers_value = v.get("recoveryAnswers").and_then(Value::as_array);
-            if username_value.is_none() && designation_value.is_none() && email_value.is_none()
+            if username_value.is_none() && display_name_value.is_none() && designation_value.is_none() && email_value.is_none()
                 && questions_value.is_none() && answers_value.is_none() {
                 return Err("no profile fields to update".into());
             }
 
-            let username = if let Some(value) = username_value {
-                validate_new_username(value).map_err(|e| e.to_string())?;
-                value.trim().to_string()
-            } else {
-                if validate_new_username(&info.username).is_err() {
-                    return Err("Choose a new username that follows the current username rules.".into());
+            if username_value.is_some() {
+                return Err("The @handle cannot be changed by users. Update your display name instead.".into());
+            }
+            let display_name = if let Some(value) = display_name_value {
+                let value = value.trim();
+                if value.is_empty() || value.chars().count() > 48 || value.chars().any(|ch| ch.is_control()) {
+                    return Err("Display name must be 1–48 characters and cannot contain control characters.".into());
                 }
-                info.username.to_string()
-            };
+                let mut chars = value.chars();
+                chars.next().map(|first| first.to_uppercase().collect::<String>() + chars.as_str()).unwrap_or_default()
+            } else { info.display_name.to_string() };
+            let username = info.username.to_string();
             let designation = if let Some(value) = designation_value {
                 if !matches!(value, "AM" | "TL" | "STL" | "QDE" | "LRD" | "EE" | "CSA") {
                     return Err("choose a valid designation".into());
@@ -1781,21 +1814,9 @@ async fn handle_op(
                     .map_err(|_| "could not save recovery questions".to_string())?;
             }
 
-            let old_key = info.username.to_lowercase().to_compact_string();
-            let new_key = username.to_lowercase().to_compact_string();
-            let changed = state.db.update_user_profile(user_id.clone(), &username, &designation).await
+            state.db.update_user_display_profile(user_id.clone(), &display_name, &designation).await
                 .map_err(|_| "could not save profile".to_string())?;
-            if !changed { return Err("That username is already in use. Choose another one.".into()); }
-            if old_key != new_key {
-                state.username_to_id.remove(&old_key);
-                state.username_to_id.insert(new_key, user_id.clone());
-                // Preserve old DM channel IDs and message history by updating
-                // their participant-name bindings before the next reconnect.
-                for channel in state.channels.rename_dm_username(&info.username, &username) {
-                    let _ = state.db.upsert_channel(&channel.meta()).await;
-                }
-            }
-            info.username = username.to_compact_string();
+            info.display_name = display_name.to_compact_string();
             info.designation = designation.to_compact_string();
             state.users.insert(user_id.clone(), info.clone());
             state.known_users.insert(user_id.clone(), info);
