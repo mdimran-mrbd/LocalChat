@@ -801,12 +801,18 @@ async function submitRecovery(event) {
 
 // ── Login / registration flow ────────────────────────────────────────
 let _joinMode = "login";
+// Hidden registration controls must not block login form submission through
+// native HTML constraint validation. Only require designation in register mode.
+if ($("registrationDesignation")) $("registrationDesignation").required = false;
 
 $("toggleRegistration")?.addEventListener("click", (event) => {
   event.preventDefault();
   _joinMode = _joinMode === "login" ? "register" : "login";
   const registering = _joinMode === "register";
   $("registrationFields")?.classList.toggle("hidden", !registering);
+  // A required control inside a visually hidden section still prevents the
+  // browser from dispatching the form submit event. Toggle it with the mode.
+  if ($("registrationDesignation")) $("registrationDesignation").required = registering;
   $("loginIdentifierLabel").textContent = registering ? "Choose your display name" : "Office email or @handle";
   $("username").placeholder = registering ? "e.g. Imran Islam" : "Office email or @handle";
   $("username").maxLength = registering ? 48 : 254;
