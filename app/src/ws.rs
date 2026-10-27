@@ -46,7 +46,7 @@ pub(crate) fn hash_password(plain: &str) -> Option<String> {
         .map(|h| h.to_string())
 }
 
-fn verify_password(plain: &str, stored_hash: &str) -> bool {
+pub(crate) fn verify_password(plain: &str, stored_hash: &str) -> bool {
     use argon2::{Argon2, PasswordVerifier};
     use password_hash::PasswordHash;
     let Ok(parsed) = PasswordHash::new(stored_hash) else { return false };
