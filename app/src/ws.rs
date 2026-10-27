@@ -510,11 +510,12 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
 
     let profile_fields = state.db.get_profile_fields(user_id.clone()).await.ok().flatten();
     let profile_completion = profile_fields.as_ref().map(|(email, designation, has_recovery)| json!({
+        "username": validate_new_username(&info.username).is_err(),
         "officeEmail": email.is_empty(),
         "designation": designation.is_empty(),
         "recoveryQuestions": !has_recovery,
     })).unwrap_or_else(|| json!({
-        "officeEmail": true, "designation": true, "recoveryQuestions": true
+        "username": true, "officeEmail": true, "designation": true, "recoveryQuestions": true
     }));
 
     let welcome = json!({
