@@ -1150,8 +1150,11 @@ async function onWelcome(e, password) {
   switchChannel(e.lobby || "pub:general");
   sendOp({ op: "saved_list" });
   S.lobby = e.lobby || "pub:general";
+  _requiredProfileFlags = e.profileCompletion || null;
   if (e.mustChangePassword) {
     setTimeout(() => openChangePasswordModal({ forced: true }), 200);
+  } else if (_requiredProfileFlags && Object.values(_requiredProfileFlags).some(Boolean)) {
+    setTimeout(openRequiredProfileModal, 250);
   } else if (!e.user.designation) {
     setTimeout(openDesignationModal, 250);
   }
@@ -3765,6 +3768,86 @@ function signOut() {
   S.ws = null;
   location.reload();
 }
+
+let _requiredProfileFlags = null;
+const _recoveryQuestionLabels = [
+  "What was the name of your first school?",
+  "What was the name of the first street you lived on?",
+  "What nickname did you have as a child?",
+  "What was the name of your first teacher?",
+  "What was the name of your first pet?",
+  "What was the first concert or live music event you attended?",
+  "What was your first job or workplace?",
+  "What was the model of your first car or motorcycle?",
+  "What was the name of a childhood friend?",
+  "What was the first city you lived in?"
+];
+
+function openRequiredProfileModal() {
+  if (!_requiredProfileFlags || !Object.values(_requiredProfileFlags).some(Boolean)) return;
+  const flags = _requiredProfileFlags;
+  $("requiredUsernameField").classList.toggle("hidden", !flags.username);
+  $("requiredEmailField").classList.toggle("hidden", !flags.officeEmail);
+  $("requiredDesignationField").classList.toggle("hidden", !flags.designation);
+  $("requiredRecoveryFields").classList.toggle("hidden", !flags.recoveryQuestions);
+  $("requiredUsername").value = S.me?.username || "";
+  $("requiredOfficeEmail").value = "";
+  $("requiredDesignation").value = S.me?.designation || "";
+  for (let n = 1; n <= 3; n++) {
+    const select = $("requiredQuestion" + n);
+    if (select && !select.options.length) {
+      select.add(new Option("Choose a question", ""));
+      _recoveryQuestionLabels.forEach((label, index) => select.add(new Option(label, String(index + 1))));
+    }
+    if ($("requiredAnswer" + n)) $("requiredAnswer" + n).value = "";
+  }
+  openModal("profileCompletionModal");
+  if (flags.username) $("requiredUsername").focus();
+}
+
+async function submitRequiredProfile(event) {
+  event.preventDefault();
+  const flags = _requiredProfileFlags || {};
+  const username = $("requiredUsername").value.trim();
+  const designation = $("requiredDesignation").value;
+  const officeEmail = $("requiredOfficeEmail").value.trim();
+  const status = $("requiredProfileStatus");
+  status.textContent = "";
+  status.classList.remove("err", "ok");
+  if (flags.username && !/^(?=.*[0-9])[A-Za-z0-9!@#$%&_-]{3,24}$/.test(username)) {
+    status.textContent = "Username must be 3-24 characters, include a number, contain no spaces, and use only letters, numbers, or !@#$%&_- .";
+    status.classList.add("err"); return;
+  }
+  if (flags.officeEmail && !officeEmail) {
+    status.textContent = "Enter your office email."; status.classList.add("err"); return;
+  }
+  if (flags.designation && !designation) {
+    status.textContent = "Choose your designation."; status.classList.add("err"); return;
+  }
+  const payload = { op: "profile_update" };
+  if (flags.username) payload.username = username;
+  else payload.username = S.me.username;
+  if (flags.designation) payload.designation = designation;
+  else payload.designation = S.me.designation || "CSA";
+  if (flags.officeEmail) payload.officeEmail = officeEmail;
+  if (flags.recoveryQuestions) {
+    payload.recoveryQuestions = [1, 2, 3].map(n => Number($("requiredQuestion" + n).value));
+    payload.recoveryAnswers = [1, 2, 3].map(n => $("requiredAnswer" + n).value.trim());
+    if (payload.recoveryQuestions.some(q => !q) || new Set(payload.recoveryQuestions).size !== 3 ||
+        payload.recoveryAnswers.some(a => !a)) {
+      status.textContent = "Choose three different questions and enter all answers."; status.classList.add("err"); return;
+    }
+  }
+  if (!S.ws || S.ws.readyState !== WebSocket.OPEN) {
+    status.textContent = "Connection lost. Please reconnect and try again."; status.classList.add("err"); return;
+  }
+  $("requiredProfileSubmit").disabled = true;
+  status.textContent = "Saving account setup…";
+  S.ws.send(JSON.stringify(payload));
+  // The server sends profile_updated only after the DB writes succeed.
+  _requiredProfilePending = true;
+}
+let _requiredProfilePending = false;
 
 // ── Change password ─────────────────────────────────────────────────
 let _cpwForced = false;
