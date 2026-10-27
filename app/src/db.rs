@@ -871,6 +871,120 @@ impl Db {
         .await
     }
 
+    /// Replace recovery questions and their Argon2 answer hashes. This only
+    /// updates the account_recovery table; it never touches E2EE key backups.
+    pub async fn set_recovery_answers(
+        &self,
+        user_id: UserId,
+        questions: [i64; 3],
+        answer_hashes: [String; 3],
+        now: i64,
+    ) -> rusqlite::Result<()> {
+        let id = user_id.to_string();
+        self.with(move |c| {
+            c.execute(
+                "INSERT INTO account_recovery
+                    (user_id, question_1, answer_hash_1, question_2, answer_hash_2,
+                     question_3, answer_hash_3, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                 ON CONFLICT(user_id) DO UPDATE SET
+                    question_1=excluded.question_1, answer_hash_1=excluded.answer_hash_1,
+                    question_2=excluded.question_2, answer_hash_2=excluded.answer_hash_2,
+                    question_3=excluded.question_3, answer_hash_3=excluded.answer_hash_3,
+                    updated_at=excluded.updated_at",
+                params![id, questions[0], answer_hashes[0], questions[1], answer_hashes[1],
+                        questions[2], answer_hashes[2], now],
+            )?;
+            c.execute(
+                "UPDATE users SET recovery_failed_attempts=0, recovery_locked_until=0 WHERE id=?1",
+                params![id],
+            )?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// Return recovery question IDs and lock state for a matched account.
+    /// Callers must use a generic public response to avoid account enumeration.
+    pub async fn get_recovery_challenge(
+        &self,
+        login: &str,
+    ) -> rusqlite::Result<Option<(UserId, [i64; 3], i64, i64)>> {
+        let key = login.trim().to_lowercase();
+        self.with(move |c| {
+            c.query_row(
+                "SELECT u.id, ar.question_1, ar.question_2, ar.question_3,
+                        u.recovery_failed_attempts, u.recovery_locked_until
+                 FROM users u JOIN account_recovery ar ON ar.user_id=u.id
+                 WHERE u.username_lower=?1 OR u.office_email_lower=?1
+                 LIMIT 1",
+                params![key],
+                |r| Ok((
+                    r.get::<_, String>(0)?.to_compact_string(),
+                    [r.get(1)?, r.get(2)?, r.get(3)?],
+                    r.get(4)?,
+                    r.get(5)?,
+                )),
+            )
+            .optional()
+        })
+        .await
+    }
+
+    /// Retrieve the stored answer hash for one of the selected question slots.
+    pub async fn get_recovery_answer_hash(
+        &self,
+        user_id: UserId,
+        question_slot: usize,
+    ) -> rusqlite::Result<Option<String>> {
+        let id = user_id.to_string();
+        let column = match question_slot { 0 => "answer_hash_1", 1 => "answer_hash_2", 2 => "answer_hash_3", _ => return Ok(None) };
+        self.with(move |c| {
+            let sql = format!("SELECT {column} FROM account_recovery WHERE user_id=?1");
+            c.query_row(&sql, params![id], |r| r.get::<_, String>(0)).optional()
+        })
+        .await
+    }
+
+    /// Increment recovery failures and enforce a short delay after five
+    /// failures plus a longer lockout at ten. Returns the new attempt count.
+    pub async fn record_recovery_failure(
+        &self,
+        user_id: UserId,
+        now: i64,
+    ) -> rusqlite::Result<i64> {
+        let id = user_id.to_string();
+        self.with(move |c| {
+            c.execute(
+                "UPDATE users SET recovery_failed_attempts=recovery_failed_attempts+1,
+                    recovery_locked_until=CASE
+                      WHEN recovery_failed_attempts+1 >= 10 THEN ?2 + 900
+                      WHEN recovery_failed_attempts+1 >= 5 THEN MAX(recovery_locked_until, ?2 + 60)
+                      ELSE recovery_locked_until END
+                 WHERE id=?1",
+                params![id, now],
+            )?;
+            c.query_row(
+                "SELECT recovery_failed_attempts FROM users WHERE id=?1",
+                params![id],
+                |r| r.get(0),
+            )
+        })
+        .await
+    }
+
+    pub async fn clear_recovery_failures(&self, user_id: UserId) -> rusqlite::Result<()> {
+        let id = user_id.to_string();
+        self.with(move |c| {
+            c.execute(
+                "UPDATE users SET recovery_failed_attempts=0, recovery_locked_until=0 WHERE id=?1",
+                params![id],
+            )?;
+            Ok(())
+        })
+        .await
+    }
+
     /// Persist a freshly computed password hash for `user_id`.
     /// `must_change` flags the user to be forced into a change-password
     /// flow on their next successful login (used by admin resets).
