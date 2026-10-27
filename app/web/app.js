@@ -766,8 +766,8 @@ async function submitRecovery(event) {
   const login = $("recoveryLogin").value.trim();
   const answer = $("recoveryAnswer").value.trim();
   const newPassword = $("recoveryNewPassword").value;
-  if (!answer || newPassword.length < 4) {
-    status.textContent = "Enter your answer and a new password of at least 4 characters.";
+  if (!answer || newPassword.length < 8) {
+    status.textContent = "Enter your answer and a new password of at least 8 characters.";
     status.classList.add("err"); return;
   }
   const button = $("recoverySubmitBtn");
