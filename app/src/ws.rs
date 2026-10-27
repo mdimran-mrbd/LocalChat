@@ -20,7 +20,7 @@ use tokio::sync::broadcast;
 use crate::channel::{Channel, ChannelKind, LOBBY_ID};
 use crate::message::{now_secs, FileInfo, MsgKind, WireMsg};
 use crate::state::AppState;
-use crate::user::{UserId, UserInfo};
+use crate::user::{validate_new_username, UserId, UserInfo};
 
 /// What to do with a freshly-supplied password once the join has been
 /// validated. Decided pre-commit so the rest of the join logic can run
@@ -67,7 +67,12 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
 
     #[derive(Deserialize)]
     struct Join {
+        /// Username for registration, or username/office-email login identifier.
         username: String,
+        #[serde(default)]
+        mode: String,
+        #[serde(default, rename = "officeEmail")]
+        office_email: String,
         #[serde(default)]
         avatar: String,
         #[serde(default)]
