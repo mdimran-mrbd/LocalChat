@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS users (
     -- New profile/auth fields are nullable/defaulted so published accounts retain
     -- their stable IDs and credentials during the additive migration.
     office_email    TEXT    NOT NULL DEFAULT '',
+    display_name    TEXT    NOT NULL DEFAULT '',
     office_email_lower TEXT NOT NULL DEFAULT '',
     recovery_questions TEXT NOT NULL DEFAULT '[]',
     recovery_answer_hashes TEXT NOT NULL DEFAULT '[]',
@@ -310,6 +311,9 @@ impl Db {
             // hashes, public keys, encrypted messages, and E2EE backup envelopes
             // are intentionally left untouched.
             let _ = conn.execute("ALTER TABLE users ADD COLUMN office_email TEXT NOT NULL DEFAULT ''", []);
+            let _ = conn.execute("ALTER TABLE users ADD COLUMN display_name TEXT NOT NULL DEFAULT ''", []);
+            // Existing accounts keep their stable handle and receive it as an initial display name.
+            let _ = conn.execute("UPDATE users SET display_name=username WHERE display_name=''", []);
             let _ = conn.execute("ALTER TABLE users ADD COLUMN office_email_lower TEXT NOT NULL DEFAULT ''", []);
             let _ = conn.execute("ALTER TABLE users ADD COLUMN recovery_questions TEXT NOT NULL DEFAULT '[]'", []);
             let _ = conn.execute("ALTER TABLE users ADD COLUMN recovery_answer_hashes TEXT NOT NULL DEFAULT '[]'", []);
@@ -494,7 +498,7 @@ impl Db {
             c.query_row(
                 "SELECT id, username, username_lower, avatar, color, pubkey, joined_at,
                         last_connect, last_seen, last_ip,
-                        total_sessions, msg_count, bytes_uploaded, designation
+                        total_sessions, msg_count, bytes_uploaded, designation, display_name
                    FROM users WHERE username_lower = ?1",
                 params![lname],
                 row_to_user,
@@ -511,7 +515,7 @@ impl Db {
             c.query_row(
                 "SELECT id, username, username_lower, avatar, color, pubkey, joined_at,
                         last_connect, last_seen, last_ip,
-                        total_sessions, msg_count, bytes_uploaded, designation
+                        total_sessions, msg_count, bytes_uploaded, designation, display_name
                    FROM users WHERE id = ?1",
                 params![id],
                 row_to_user,
@@ -528,16 +532,17 @@ impl Db {
         self.with(move |c| {
             c.execute(
                 "INSERT INTO users(
-                    id, username, username_lower, avatar, color, pubkey,
+                    id, username, username_lower, avatar, color, pubkey, display_name,
                     joined_at, last_connect, last_seen, last_ip,
                     total_sessions, msg_count, bytes_uploaded
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
                  ON CONFLICT(id) DO UPDATE SET
                     username       = excluded.username,
                     username_lower = excluded.username_lower,
                     avatar         = excluded.avatar,
                     color          = excluded.color,
                     pubkey         = CASE WHEN excluded.pubkey <> '' THEN excluded.pubkey ELSE users.pubkey END,
+                    display_name   = CASE WHEN excluded.display_name <> '' THEN excluded.display_name ELSE users.display_name END,
                     last_connect   = excluded.last_connect,
                     last_ip        = excluded.last_ip",
                 params![
@@ -547,6 +552,7 @@ impl Db {
                     i.avatar.as_str(),
                     i.color.as_str(),
                     i.pubkey.as_str(),
+                    i.display_name.as_str(),
                     i.joined_at as i64,
                     i.last_connect as i64,
                     i.last_seen as i64,
@@ -650,7 +656,7 @@ impl Db {
             let mut stmt = c.prepare(
                 "SELECT id, username, username_lower, avatar, color, pubkey, joined_at,
                         last_connect, last_seen, last_ip,
-                        total_sessions, msg_count, bytes_uploaded, designation
+                        total_sessions, msg_count, bytes_uploaded, designation, display_name
                    FROM users ORDER BY joined_at",
             )?;
             let rows = stmt.query_map([], row_to_user)?;
@@ -678,6 +684,16 @@ impl Db {
 
     /// Update a user's editable profile atomically. Returns false when the
     /// case-insensitive username is already owned by another account.
+    pub async fn update_user_display_profile(&self, id: UserId, display_name: &str, designation: &str) -> rusqlite::Result<()> {
+        let uid = id.to_string();
+        let display_name = display_name.trim().to_string();
+        let designation = designation.to_string();
+        self.with(move |c| {
+            c.execute("UPDATE users SET display_name=?2, designation=?3 WHERE id=?1", params![uid, display_name, designation])?;
+            Ok(())
+        }).await
+    }
+
     pub async fn update_user_profile(&self, id: UserId, username: &str, designation: &str) -> rusqlite::Result<bool> {
         let uid = id.to_string();
         let username = username.to_string();
@@ -1049,6 +1065,7 @@ fn row_to_user(r: &rusqlite::Row<'_>) -> rusqlite::Result<UserInfo> {
         last_connect: r.get::<_, i64>(7)? as u64,
         total_sessions: r.get::<_, i64>(10)? as u64,
         designation: r.get::<_, String>(13)?.to_compact_string(),
+        display_name: r.get::<_, String>(14).unwrap_or_else(|_| r.get::<_, String>(1)).unwrap_or_default().to_compact_string(),
     })
 }
 
