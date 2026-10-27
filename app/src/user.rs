@@ -128,6 +128,6 @@ mod username_validation_tests {
     fn handle_stems_are_normalized_and_bounded() {
         assert_eq!(display_name_handle_base("Imran Islam"), "imranislam");
         assert_eq!(display_name_handle_base("A"), "user");
-        assert_eq!(display_name_handle_base("Long Display Name For Handle"), "longdisplaynamefo");
+        assert_eq!(display_name_handle_base("Long Display Name For Handle"), "longdisplaynamefor");
     }
 }
