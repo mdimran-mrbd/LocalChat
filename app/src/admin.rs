@@ -26,7 +26,7 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/ban/:user_id", post(ban))
         .route("/unban/:username", post(unban))
         .route("/reset-password/:user_id", post(reset_password))
-        .route("/user-email/:user_id", post(change_user_email))
+        .route("/user-email/:user_id", get(get_user_email).post(change_user_email))
         .route("/broadcast", post(broadcast))
         .route("/channel/:id", axum::routing::delete(delete_channel))
         .route("/uploads", get(list_uploads))
@@ -147,6 +147,19 @@ async fn users(
         bt.cmp(&at)
     });
     Ok(Json(json!({"users": list})))
+}
+
+async fn get_user_email(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
+    headers: HeaderMap,
+    Path(user_id): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    auth!(state, headers, addr);
+    let profile = state.db.get_profile_fields(user_id.to_compact_string()).await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "could not read user profile".into()))?
+        .ok_or((StatusCode::NOT_FOUND, "user not found".into()))?;
+    Ok(Json(json!({"officeEmail": profile.0})))
 }
 
 #[derive(Deserialize)]
