@@ -701,40 +701,69 @@ const S = {
   }
 })();
 
-// ── Join flow ────────────────────────────────────────────────────────
+// ── Login / registration flow ────────────────────────────────────────
+let _joinMode = "login";
+
+$("toggleRegistration")?.addEventListener("click", (event) => {
+  event.preventDefault();
+  _joinMode = _joinMode === "login" ? "register" : "login";
+  const registering = _joinMode === "register";
+  $("registrationFields")?.classList.toggle("hidden", !registering);
+  $("loginIdentifierLabel").textContent = registering ? "Choose a unique username" : "Office email or unique username";
+  $("username").placeholder = registering ? "e.g. imran07" : "Office email or username";
+  $("password").autocomplete = registering ? "new-password" : "current-password";
+  $("joinButtonLabel").textContent = registering ? "Create account" : "Sign in";
+  $("toggleRegistration").textContent = registering ? "Back to sign in" : "Create an account";
+  $("joinStatus").textContent = "";
+  $("joinStatus").classList.remove("err", "ok");
+});
+
+$("forgotPasswordLink")?.addEventListener("click", (event) => {
+  event.preventDefault();
+  toast("Account recovery is not available yet. Please contact the LocalChat host administrator.");
+});
+
 $("joinForm").addEventListener("submit", (e) => {
   e.preventDefault();
-  const username = $("username").value.trim();
+  const identifier = $("username").value.trim();
   const password = $("password").value;
-  if (!username) return;
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{2,23}$/.test(username)) {
-    const status = $("joinStatus");
-    if (status) {
-      status.textContent = "Username must be 3-24 chars: letters, digits, underscore, hyphen, or dot. No spaces.";
+  const status = $("joinStatus");
+  status.textContent = "";
+  status.classList.remove("err", "ok");
+  if (!identifier) return;
+  let registration = {};
+  if (_joinMode === "register") {
+    if (!/^(?=.*[0-9])[A-Za-z0-9!@#$%&_-]{3,24}$/.test(identifier)) {
+      status.textContent = "Username must be 3-24 characters, include a number, contain no spaces, and use only letters, numbers, or !@#$%&_- .";
       status.classList.add("err");
+      $("username").focus();
+      return;
     }
-    const input = $("username");
-    if (input) { input.classList.add("err"); input.focus(); }
-    return;
+    const officeEmail = $("officeEmail").value.trim();
+    const recoveryQuestions = [1, 2, 3].map(n => Number($("recoveryQuestion" + n).value));
+    const recoveryAnswers = [1, 2, 3].map(n => $("recoveryAnswer" + n).value.trim());
+    if (!officeEmail || recoveryQuestions.some(q => !q) ||
+        new Set(recoveryQuestions).size !== 3 || recoveryAnswers.some(a => !a)) {
+      status.textContent = "Enter your office email and choose three different recovery questions with answers.";
+      status.classList.add("err");
+      return;
+    }
+    registration = { officeEmail, recoveryQuestions, recoveryAnswers };
   }
   if (!password || password.length < 4) {
-    const status = $("joinStatus");
-    if (status) {
-      status.textContent = "Password must be at least 4 characters.";
-      status.classList.add("err");
-    }
-    const pw = $("password");
-    if (pw) { pw.classList.add("err"); pw.focus(); }
+    status.textContent = "Password must be at least 4 characters.";
+    status.classList.add("err");
+    $("password").focus();
     return;
   }
-  lstore.set("username", username);
-  connect(username, password);
+  lstore.set("username", identifier);
+  connect(identifier, password, _joinMode, registration);
 });
 
 let _activePassword = "";
 let _pendingNewPassword = "";
 
-function connect(username, password) {
+function connect(username, password, mode = "login", registration = {}) {
   _activePassword = password || "";
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   const ws = new WebSocket(`${proto}//${location.host}/ws`);
@@ -746,6 +775,10 @@ function connect(username, password) {
       op: "join",
       username,
       password: password || "",
+      mode,
+      officeEmail: registration.officeEmail || "",
+      recoveryQuestions: registration.recoveryQuestions || [],
+      recoveryAnswers: registration.recoveryAnswers || [],
       userId: lstore.get("userId") || "",
       pubkey: E2EE.myPubStr(),
     }));
