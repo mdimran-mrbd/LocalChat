@@ -994,6 +994,7 @@ Object.assign(window, { toggleBrowserNotifications });
 function handleEvent(e, password = _activePassword) {
   switch (e.ev) {
     case "welcome":      return onWelcome(e, password);
+    case "profile_updated": return onRequiredProfileUpdated();
     case "msg":          return onWireMsg(e.m);
     case "users":        return onUsers(e.users);
     case "history":      return onHistory(e);
@@ -1158,6 +1159,15 @@ async function onWelcome(e, password) {
   } else if (!e.user.designation) {
     setTimeout(openDesignationModal, 250);
   }
+}
+
+function onRequiredProfileUpdated() {
+  if (!_requiredProfilePending) return;
+  _requiredProfilePending = false;
+  $("requiredProfileSubmit").disabled = false;
+  _requiredProfileFlags = null;
+  closeModal("profileCompletionModal");
+  toast("Account setup saved.");
 }
 
 function onUsers(list) {
