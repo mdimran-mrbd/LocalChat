@@ -144,10 +144,30 @@ function appendLinkedText(container, text, channelId = null) {
   if (channelId) {
     const users = new Map(S.users);
     if (S.me?.id) users.set(S.me.id, S.me);
-    const byName = new Map([...users.values()].filter(u => u?.username && u?.id).map(u => [u.username.toLowerCase(), u]));
+    const byName = new Map();
+    for (const user of users.values()) {
+      if (!user?.id) continue;
+      if (user.username) byName.set(user.username.replace(/^@/, "").toLowerCase(), user);
+      if (user.display_name) byName.set(user.display_name.toLowerCase(), user);
+    }
     for (const match of source.matchAll(/@([A-Za-z0-9._-]+)/g)) {
       const user = byName.get(match[1].toLowerCase());
       if (user) tokens.push({ raw: match[0], index: match.index, kind: "mention", user });
+    }
+    // Display names may contain spaces; match them as a full mention token.
+    for (const user of users.values()) {
+      const name = String(user?.display_name || "").trim();
+      if (!user?.id || !name || !name.includes(" ")) continue;
+      const needle = "@" + name;
+      const lowerSource = source.toLowerCase(), lowerNeedle = needle.toLowerCase();
+      let at = -1;
+      while ((at = lowerSource.indexOf(lowerNeedle, at + 1)) >= 0) {
+        const end = at + needle.length;
+        if ((at === 0 || !/[A-Za-z0-9._-]/.test(source[at - 1])) &&
+            (end === source.length || !/[A-Za-z0-9._-]/.test(source[end]))) {
+          tokens.push({ raw: source.slice(at, end), index: at, kind: "mention", user });
+        }
+      }
     }
   }
   tokens.sort((a, b) => a.index - b.index || (a.kind === "url" ? -1 : 1));
@@ -1738,10 +1758,13 @@ function messageMentionsMe(m) {
       if (decrypted == null) return false;
       text = decrypted;
     }
-    const escaped = S.me.username.replace(/[^A-Za-z0-9._-]/g, (ch) => "\\" + ch);
     const channel = S.channels.get(m.channel);
     if (channel?.kind === "group" && text.toLowerCase().split(/[^a-z0-9@_-]+/).includes("@all")) return true;
-    return new RegExp(`(^|[^A-Za-z0-9._-])@${escaped}(?=$|[^A-Za-z0-9._-])`, "i").test(text);
+    const names = [S.me.username, S.me.display_name].filter(Boolean);
+    return names.some(name => {
+      const escaped = String(name).replace(/[^A-Za-z0-9._-]/g, (ch) => "\\" + ch);
+      return new RegExp(`(^|[^A-Za-z0-9._-])@${escaped}(?=$|[^A-Za-z0-9._-])`, "i").test(text);
+    });
   };
   return inspect().catch(() => false);
 }
