@@ -3432,49 +3432,51 @@ function closeMentionPicker() {
 function getMentionToken() {
   const caret = msgInput.selectionStart ?? msgInput.value.length;
   const before = msgInput.value.slice(0, caret);
-  const match = before.match(/(^|\s)@([A-Za-z0-9._-]*)$/);
+  // Allow spaces while searching so a multi-word display name can be selected.
+  const match = before.match(/(^|\s)@([^\n@]*)$/);
   if (!match) return null;
   return { start: caret - match[2].length - 1, end: caret, query: match[2] };
 }
 function updateMentionPicker() {
   const token = getMentionToken();
   if (!token) { closeMentionPicker(); return; }
-  const query = token.query.toLowerCase();
+  const query = token.query.trimStart().toLowerCase();
   const activeChannel = S.channels.get(S.active);
   const allCandidate = activeChannel?.kind === "group" && "all".startsWith(query)
-    ? [{ id: "__all__", username: "all", color: "var(--brand)", avatar: "@", online: true, isAll: true }]
+    ? [{ id: "__all__", username: "all", display_name: "all", color: "var(--brand)", avatar: "@", online: true, isAll: true }]
     : [];
   const candidates = [...allCandidate, ...[...S.users.values()]
     .filter((u) => u.username && u.username.toLowerCase() !== (S.me?.username || "").toLowerCase())
-    .filter((u) => u.username.toLowerCase().startsWith(query))
-    .sort((a, b) => a.username.localeCompare(b.username))]
+    .filter((u) => u.username.toLowerCase().startsWith(query) || String(u.display_name || "").toLowerCase().startsWith(query))
+    .sort((a, b) => String(a.display_name || a.username).localeCompare(String(b.display_name || b.username)))]
     .slice(0, 8);
   if (!candidates.length) { closeMentionPicker(); return; }
   mentionToken = token;
   mentionCandidates = candidates;
   mentionActiveIndex = Math.min(mentionActiveIndex, candidates.length - 1);
   mentionPicker.replaceChildren(...candidates.map((u, i) => {
+    const displayName = String(u.display_name || u.username);
     const item = el("button", {
       type: "button",
       class: "mention-option" + (i === mentionActiveIndex ? " active" : ""),
       role: "option",
       "aria-selected": i === mentionActiveIndex ? "true" : "false",
-      onmousedown: (ev) => { ev.preventDefault(); insertMention(u.username); },
+      onmousedown: (ev) => { ev.preventDefault(); insertMention(u.isAll ? u.username : displayName); },
     }, [
-      (() => { const node = el("span", { class: "mention-option-avatar", style: `background:${u.color || colorForName(u.username)}` }); renderAvatarContent(node, u.avatar, u.username?.[0] || "?"); return node; })(),
-      el("span", { class: "mention-option-name" }, "@" + u.username),
-      el("span", { class: "mention-option-status" }, u.isAll ? "everyone in group" : (u.online ? "online" : "")),
+      (() => { const node = el("span", { class: "mention-option-avatar", style: `background:${u.color || colorForName(u.username)}` }); renderAvatarContent(node, u.avatar, displayName?.[0] || "?"); return node; })(),
+      el("span", { class: "mention-option-name" }, "@" + displayName),
+      el("span", { class: "mention-option-status" }, u.isAll ? "everyone in group" : ("@" + u.username + (u.online ? " · online" : ""))),
     ]);
     return item;
   }));
   mentionPicker.classList.remove("hidden");
 }
-function insertMention(username) {
+function insertMention(name) {
   if (!mentionToken) return;
   const { start, end } = mentionToken;
   const before = msgInput.value.slice(0, start);
   const after = msgInput.value.slice(end);
-  const inserted = "@" + username + " ";
+  const inserted = "@" + name + " ";
   msgInput.value = before + inserted + after;
   const caret = before.length + inserted.length;
   msgInput.focus();
