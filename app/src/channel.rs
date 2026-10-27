@@ -228,6 +228,32 @@ impl ChannelRegistry {
 
     /// Re-bind any DM channels that contain `username` to the new `user_id`.
     /// Returns the channel IDs that were rebound.
+    /// Keep durable DM identity bindings intact when an authenticated user
+    /// changes their username. DM messages and channel IDs are not rewritten.
+    pub fn rename_dm_username(&self, old_username: &str, new_username: &str) -> Vec<Arc<Channel>> {
+        let old_key = old_username.to_lowercase();
+        let new_key = new_username.to_lowercase().to_compact_string();
+        let mut changed = Vec::new();
+        for entry in self.map.iter() {
+            let channel = Arc::clone(entry.value());
+            if !matches!(channel.kind, ChannelKind::Dm) { continue; }
+            if let Some(names) = channel.dm_users.as_mut() {
+                let mut did_change = false;
+                for name in names.iter_mut() {
+                    if name.to_lowercase() == old_key {
+                        *name = new_key.clone();
+                        did_change = true;
+                    }
+                }
+                if did_change {
+                    names.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+                    changed.push(channel);
+                }
+            }
+        }
+        changed
+    }
+
     pub fn rebind_user_dms(&self, user_id: UserId, username: &str) -> Vec<ChannelId> {
         let lname = username.to_lowercase();
         let mut out = Vec::new();
