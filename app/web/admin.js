@@ -1065,6 +1065,8 @@ function renderSettingsGeneral() {
       formField("Max upload size (MB)", el("input", { id: "s_max_upload", type: "number", min: 1, max: 5000, value: s.maxUploadMb ?? 500 })),
       formField("History in RAM (per channel)", el("input", { id: "s_history", type: "number", min: 16, max: 1000, value: s.historyRam ?? 64 })),
       formField("Rotate history file at (MB)", el("input", { id: "s_rotate", type: "number", min: 1, max: 1000, value: s.rotateMb ?? 10 })),
+      formField("Allowed office-email domains", el("textarea", { id: "s_office_domains", rows: 4, placeholder: "company.example\\nanother-office.example", value: (s.officeEmailDomains || []).join("\\n") }),
+        "One domain per line, without @. An empty list disables new registrations."),
       el("div", { class: "ad-form-actions" }, [
         el("button", { class: "btn btn-primary", type: "submit" }, "Save"),
         el("span", { id: "settingsStatus", class: "muted sm" }),
@@ -1082,6 +1084,7 @@ async function saveGeneralSettings(e) {
       maxUploadMb: clampInt($("s_max_upload").value, 1, 5000, 500),
       historyRam: clampInt($("s_history").value, 16, 1000, 64),
       rotateMb: clampInt($("s_rotate").value, 1, 1000, 10),
+      officeEmailDomains: $("s_office_domains").value.split(/\\r?\\n/).map((d) => d.trim().replace(/^@/, "").toLowerCase()).filter(Boolean),
     };
     const r = await api("/settings", { method: "POST", body: JSON.stringify(body) });
     $("settingsStatus").textContent = r.restart_required
