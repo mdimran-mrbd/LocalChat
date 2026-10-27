@@ -251,7 +251,7 @@ impl ChannelRegistry {
                     changed.push(Arc::clone(&channel));
                 }
                 }
-            }
+            };
         }
         changed
     }
