@@ -432,6 +432,29 @@
     </form>
   </div>
 
+  <!-- Required profile completion for existing accounts -->
+  <div id="profileCompletionModal" class="modal hidden" role="dialog" aria-labelledby="profileCompletionTitle" aria-modal="true">
+    <form class="modal-panel" onsubmit="submitRequiredProfile(event)">
+      <header class="modal-head"><h3 id="profileCompletionTitle">Complete your account setup</h3></header>
+      <div class="modal-body">
+        <p class="muted sm">Before continuing, update the missing account details. Your account ID and encrypted chat history will be preserved.</p>
+        <label class="field" id="requiredUsernameField"><span>Unique username</span><input id="requiredUsername" minlength="3" maxlength="24" autocomplete="username" required placeholder="e.g. imran07"/></label>
+        <label class="field" id="requiredEmailField"><span>Office email</span><input id="requiredOfficeEmail" type="email" maxlength="254" autocomplete="email" placeholder="you@company.example"/></label>
+        <label class="field" id="requiredDesignationField"><span>Designation</span>
+          <select id="requiredDesignation"><option value="">Choose designation…</option><option value="AM">Assistant Manager - AM</option><option value="TL">Team Leader - TL</option><option value="STL">Senior Team Leader - STL</option><option value="QDE">Quality Development Executive - QDE</option><option value="LRD">Learning &amp; Resource Development Lead - LRD</option><option value="EE">Escalation Executive - EE</option><option value="CSA">Customer Service Advisor - CSA</option></select>
+        </label>
+        <div id="requiredRecoveryFields" class="hidden">
+          <p class="muted sm">Choose three different recovery questions and answers. Answers are case-insensitive.</p>
+          <label class="field"><span>Question 1</span><select id="requiredQuestion1"></select><input id="requiredAnswer1" type="password" maxlength="200" placeholder="Answer 1"/></label>
+          <label class="field"><span>Question 2</span><select id="requiredQuestion2"></select><input id="requiredAnswer2" type="password" maxlength="200" placeholder="Answer 2"/></label>
+          <label class="field"><span>Question 3</span><select id="requiredQuestion3"></select><input id="requiredAnswer3" type="password" maxlength="200" placeholder="Answer 3"/></label>
+        </div>
+        <div id="requiredProfileStatus" class="join-status"></div>
+      </div>
+      <footer class="modal-foot"><button id="requiredProfileSubmit" type="submit" class="btn btn-primary">Save and continue</button></footer>
+    </form>
+  </div>
+
   <!-- ═══════════════════ CHANGE PASSWORD MODAL ═══════════════════ -->
   <div id="changePwModal" class="modal hidden" role="dialog" aria-labelledby="cpwTitle">
     <form class="modal-panel" onsubmit="submitChangePassword(event)">
