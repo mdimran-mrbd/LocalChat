@@ -86,8 +86,16 @@ pub fn normalize_display_name(value: &str) -> Result<String, &'static str> {
     if value.is_empty() || value.chars().count() > 48 || value.chars().any(|ch| ch.is_control()) {
         return Err("Display name must be 1–48 characters and cannot contain control characters.");
     }
-    let mut chars = value.chars();
-    Ok(chars.next().map(|first| first.to_uppercase().collect::<String>() + chars.as_str()).unwrap_or_default())
+    // Normalize whitespace and title-case every word, not just the first
+    // character of the full display name (e.g. "md imran islam" -> "Md Imran Islam").
+    let normalized = value.split_whitespace().map(|word| {
+        let mut chars = word.chars();
+        match chars.next() {
+            Some(first) => first.to_uppercase().collect::<String>() + &chars.as_str().to_lowercase(),
+            None => String::new(),
+        }
+    }).collect::<Vec<_>>().join(" ");
+    Ok(normalized)
 }
 
 /// Produce the alphanumeric stem used for a generated unique handle.
@@ -117,8 +125,10 @@ mod username_validation_tests {
     }
 
     #[test]
-    fn display_names_are_non_unique_and_capitalize_first_character() {
+    fn display_names_are_non_unique_and_title_case_each_word() {
         assert_eq!(normalize_display_name("  imran Islam ").unwrap(), "Imran Islam");
+        assert_eq!(normalize_display_name("md imran islam").unwrap(), "Md Imran Islam");
+        assert_eq!(normalize_display_name("mD iMRAN iSLAM").unwrap(), "Md Imran Islam");
         assert_eq!(normalize_display_name("Imran Islam").unwrap(), "Imran Islam");
         assert!(normalize_display_name("").is_err());
         assert!(normalize_display_name(&"x".repeat(49)).is_err());
