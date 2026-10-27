@@ -826,6 +826,34 @@ impl Db {
         .await
     }
 
+    /// Resolve credentials from either a handle or office email. Check both
+    /// normalized columns and their source columns so accounts created before
+    /// the normalized email column was backfilled remain sign-in capable.
+    pub async fn find_user_credentials_by_login_identifier(
+        &self,
+        identifier: &str,
+    ) -> rusqlite::Result<Option<(UserId, String, bool)>> {
+        let key = identifier.trim().trim_start_matches('@').to_lowercase();
+        self.with(move |c| {
+            c.query_row(
+                "SELECT id, password_hash, must_change_password
+                   FROM users
+                  WHERE lower(username) = ?1
+                     OR lower(username_lower) = ?1
+                     OR lower(office_email) = ?1
+                     OR lower(office_email_lower) = ?1
+                  ORDER BY CASE WHEN lower(username) = ?1 OR lower(username_lower) = ?1 THEN 0 ELSE 1 END
+                  LIMIT 1",
+                params![key],
+                |r| Ok((
+                    r.get::<_, String>(0)?.to_compact_string(),
+                    r.get::<_, String>(1)?,
+                    r.get::<_, i64>(2)? != 0,
+                )),
+            ).optional()
+        }).await
+    }
+
     /// Check whether a username is owned by a different stable account ID.
     /// Case folding matches the unique username_lower database constraint.
     pub async fn username_taken_by_other(
