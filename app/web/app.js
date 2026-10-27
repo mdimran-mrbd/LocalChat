@@ -3517,8 +3517,17 @@ function openCreateChannel() {
   $("createModal").classList.remove("hidden");
   $("newChName").focus();
 }
-function closeModal(id) { $(id).classList.add("hidden"); }
+function closeModal(id) {
+  if (id === "profileCompletionModal" && _requiredProfileFlags &&
+      Object.values(_requiredProfileFlags).some(Boolean)) return;
+  $(id).classList.add("hidden");
+}
 function openModal(id) { const m = $(id); if (m) m.classList.remove("hidden"); }
+
+$("profileCompletionModal")?.addEventListener("click", (event) => {
+  if (event.target === $("profileCompletionModal") && _requiredProfileFlags &&
+      Object.values(_requiredProfileFlags).some(Boolean)) event.stopPropagation();
+});
 
 // ── Sidebar "+" menu (new channel / new DM) ─────────────────────────
 function toggleNewMenu(ev) {
