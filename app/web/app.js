@@ -1334,7 +1334,7 @@ function onUsers(list) {
       setProfileFieldEditing("username", false);
       setProfileFieldEditing("designation", false);
       const us = $("saveUsernameBtn"), ds = $("saveDesignationBtn");
-      if (us) { us.disabled = false; us.textContent = "Save username"; }
+      if (us) { us.disabled = false; us.textContent = "Save display name"; }
       if (ds) { ds.disabled = false; ds.textContent = "Save designation"; }
     }
   }
