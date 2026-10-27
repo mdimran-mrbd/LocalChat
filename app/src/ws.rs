@@ -20,7 +20,7 @@ use tokio::sync::broadcast;
 use crate::channel::{Channel, ChannelKind, LOBBY_ID};
 use crate::message::{now_secs, FileInfo, MsgKind, WireMsg};
 use crate::state::AppState;
-use crate::user::{validate_new_username, UserId, UserInfo};
+use crate::user::{display_name_handle_base, normalize_display_name, validate_new_username, UserId, UserInfo};
 
 /// What to do with a freshly-supplied password once the join has been
 /// validated. Decided pre-commit so the rest of the join logic can run
@@ -119,9 +119,7 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
     let is_email_login = !is_registration && identifier.contains('@');
     let display_name_input = if join.display_name.trim().is_empty() { raw_identifier } else { join.display_name.trim() };
     let mut username = if is_registration {
-        if display_name_input.is_empty() || display_name_input.chars().count() > 48
-            || display_name_input.chars().any(|ch| ch.is_control())
-            || display_name_input.trim().is_empty() {
+        if normalize_display_name(display_name_input).is_err() {
             let _ = sink.send(Message::Text(json!({
                 "ev":"error", "text":"Display name must be 1–48 characters and cannot contain control characters.",
                 "code":"invalid_display_name"
@@ -131,10 +129,7 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
         }
         // Generate a unique, stable handle from the display name. The suffix
         // keeps handles unique without making display names globally unique.
-        let mut base: String = display_name_input.chars()
-            .filter(|ch| ch.is_ascii_alphanumeric())
-            .take(18).collect::<String>().to_ascii_lowercase();
-        if base.len() < 2 { base = "user".to_string(); }
+        let base = display_name_handle_base(display_name_input);
         let mut suffix = 1_u32;
         loop {
             let candidate = format!("{}{:02}", base, suffix);
@@ -403,9 +398,7 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
         total_sessions: prior.as_ref().map(|p| p.total_sessions).unwrap_or(0) + 1,
         designation: prior.as_ref().map(|p| p.designation.clone()).unwrap_or_else(|| if is_registration { join.designation.to_compact_string() } else { CompactString::default() }),
         display_name: if is_registration {
-            let trimmed = display_name_input.trim();
-            let mut chars = trimmed.chars();
-            chars.next().map(|first| first.to_uppercase().collect::<String>() + chars.as_str()).unwrap_or_default().to_compact_string()
+            normalize_display_name(display_name_input).unwrap_or_default().to_compact_string()
         } else {
             prior.as_ref().map(|p| p.display_name.clone()).filter(|name| !name.is_empty()).unwrap_or_else(|| username.to_compact_string())
         },
@@ -1748,12 +1741,7 @@ async fn handle_op(
                 return Err("The @handle cannot be changed by users. Update your display name instead.".into());
             }
             let display_name = if let Some(value) = display_name_value {
-                let value = value.trim();
-                if value.is_empty() || value.chars().count() > 48 || value.chars().any(|ch| ch.is_control()) {
-                    return Err("Display name must be 1–48 characters and cannot contain control characters.".into());
-                }
-                let mut chars = value.chars();
-                chars.next().map(|first| first.to_uppercase().collect::<String>() + chars.as_str()).unwrap_or_default()
+                normalize_display_name(value).map_err(str::to_string)?
             } else { info.display_name.to_string() };
             let designation = if let Some(value) = designation_value {
                 if !matches!(value, "AM" | "TL" | "STL" | "QDE" | "LRD" | "EE" | "CSA") {
