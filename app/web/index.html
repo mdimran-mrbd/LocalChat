@@ -77,28 +77,70 @@
 
       <form id="joinForm" class="join-form">
         <label class="field">
-          <span>Username</span>
-          <input id="username" type="text" minlength="3" maxlength="24" required
+          <span id="loginIdentifierLabel">Office email or unique username</span>
+          <input id="username" type="text" maxlength="254" required
                  autocomplete="username" spellcheck="false"
-                 pattern="[A-Za-z0-9][A-Za-z0-9._-]{2,23}"
-                 title="3-24 characters: letters, digits, underscore, hyphen, or dot. No spaces. Must start with a letter or digit."
-                 placeholder="e.g. alice_42"/>
+                 placeholder="Office email or username"/>
         </label>
         <label class="field">
           <span>Password</span>
           <input id="password" type="password" maxlength="128" required
                  autocomplete="current-password" placeholder="At least 4 characters"/>
         </label>
+        <div id="registrationFields" class="hidden">
+          <label class="field">
+            <span>Office email</span>
+            <input id="officeEmail" type="email" maxlength="254" autocomplete="email" placeholder="you@company.example"/>
+          </label>
+          <p class="muted small">Choose a unique username with 3-24 characters, at least one number, no spaces, and only letters, numbers, and !@#$%&amp;_-.</p>
+          <div class="field">
+            <span>Recovery question 1</span>
+            <select id="recoveryQuestion1">
+              <option value="">Choose a question</option>
+              <option value="1">What was the name of your first school?</option>
+              <option value="2">What was the name of the first street you lived on?</option>
+              <option value="3">What nickname did you have as a child?</option>
+              <option value="4">What was the name of your first teacher?</option>
+              <option value="5">What was the name of your first pet?</option>
+              <option value="6">What was the first concert you attended?</option>
+              <option value="7">What was your first job or workplace?</option>
+              <option value="8">What was the model of your first car or motorcycle?</option>
+              <option value="9">What was the name of a childhood friend?</option>
+              <option value="10">What was the first city you lived in?</option>
+            </select>
+            <input id="recoveryAnswer1" type="password" maxlength="200" placeholder="Your answer"/>
+          </div>
+          <div class="field">
+            <span>Recovery question 2</span>
+            <select id="recoveryQuestion2">
+              <option value="">Choose a different question</option>
+              <option value="1">What was the name of your first school?</option><option value="2">What was the name of the first street you lived on?</option><option value="3">What nickname did you have as a child?</option><option value="4">What was the name of your first teacher?</option><option value="5">What was the name of your first pet?</option><option value="6">What was the first concert you attended?</option><option value="7">What was your first job or workplace?</option><option value="8">What was the model of your first car or motorcycle?</option><option value="9">What was the name of a childhood friend?</option><option value="10">What was the first city you lived in?</option>
+            </select>
+            <input id="recoveryAnswer2" type="password" maxlength="200" placeholder="Your answer"/>
+          </div>
+          <div class="field">
+            <span>Recovery question 3</span>
+            <select id="recoveryQuestion3">
+              <option value="">Choose a different question</option>
+              <option value="1">What was the name of your first school?</option><option value="2">What was the name of the first street you lived on?</option><option value="3">What nickname did you have as a child?</option><option value="4">What was the name of your first teacher?</option><option value="5">What was the name of your first pet?</option><option value="6">What was the first concert you attended?</option><option value="7">What was your first job or workplace?</option><option value="8">What was the model of your first car or motorcycle?</option><option value="9">What was the name of a childhood friend?</option><option value="10">What was the first city you lived in?</option>
+            </select>
+            <input id="recoveryAnswer3" type="password" maxlength="200" placeholder="Your answer"/>
+          </div>
+        </div>
         <p class="muted small" style="margin:-4px 0 4px;font-size:12px;">
-          First time? The password you choose now is what you'll use
-          to log back in (including from a different browser).
+          Use your account password to sign in on other browsers. Recovery answers are stored as password hashes.
         </p>
         <button class="btn btn-primary btn-lg" type="submit">
-          Enter chat
+          <span id="joinButtonLabel">Sign in</span>
           <svg viewBox="0 0 24 24" width="16" height="16"><path d="M5 12h14M13 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
         <div id="joinStatus" class="join-status"></div>
       </form>
+      <div class="join-foot muted">
+        <a href="#" id="toggleRegistration">Create an account</a>
+        <span> · </span>
+        <a href="#" id="forgotPasswordLink">Forgot password?</a>
+      </div>
 
       <div class="join-foot muted">
         <span class="foot-left">
