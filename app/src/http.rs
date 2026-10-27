@@ -45,6 +45,8 @@ pub async fn serve(
     let app = Router::new()
         .route("/ws", get(ws_upgrade))
         .route("/api/info", get(info))
+        .route("/api/recovery/challenge", post(recovery_challenge))
+        .route("/api/recovery/reset", post(recovery_reset))
         .route("/api/tls/ca.pem", get(download_ca_certificate))
         .route("/api/update/install", post(install_update))
         .route("/api/share", get(share))
@@ -854,4 +856,98 @@ try {
             }
         }
     }
+}
+
+
+#[derive(Deserialize)]
+struct RecoveryChallengeRequest {
+    login: String,
+}
+
+#[derive(Deserialize)]
+struct RecoveryResetRequest {
+    login: String,
+    #[serde(rename = "questionSlot")]
+    question_slot: usize,
+    answer: String,
+    #[serde(rename = "newPassword")]
+    new_password: String,
+}
+
+async fn recovery_challenge(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<RecoveryChallengeRequest>,
+) -> impl IntoResponse {
+    let login = request.login.trim();
+    if login.is_empty() || login.len() > 254 {
+        return (StatusCode::OK, Json(json!({"ok": false, "message": "If the account has recovery configured, its questions will be available here."})));
+    }
+    let now = now_secs() as i64;
+    match state.db.get_recovery_challenge(login).await.ok().flatten() {
+        Some((_id, questions, _attempts, locked_until)) if locked_until > now => {
+            (StatusCode::TOO_MANY_REQUESTS, Json(json!({"ok": false, "message": "Recovery is temporarily delayed. Please try again later."})))
+        }
+        Some((_id, questions, _, _)) => {
+            (StatusCode::OK, Json(json!({"ok": true, "questions": questions})))
+        }
+        None => {
+            (StatusCode::OK, Json(json!({"ok": false, "message": "If the account has recovery configured, its questions will be available here."})))
+        }
+    }
+}
+
+async fn recovery_reset(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<RecoveryResetRequest>,
+) -> impl IntoResponse {
+    let login = request.login.trim();
+    let generic = "Recovery could not be completed. Check your details or try again later.";
+    if login.is_empty() || login.len() > 254 || request.answer.trim().is_empty()
+        || request.answer.len() > 200 || !(8..=128).contains(&request.new_password.len())
+        || request.question_slot > 2 {
+        return (StatusCode::BAD_REQUEST, Json(json!({"ok": false, "message": generic})));
+    }
+    let now = now_secs() as i64;
+    let Some((user_id, _questions, _attempts, locked_until)) =
+        state.db.get_recovery_challenge(login).await.ok().flatten()
+    else {
+        return (StatusCode::OK, Json(json!({"ok": false, "message": generic})));
+    };
+    if locked_until > now {
+        return (StatusCode::TOO_MANY_REQUESTS, Json(json!({"ok": false, "message": "Too many attempts. Recovery is temporarily locked."})));
+    }
+    let hash = state.db.get_recovery_answer_hash(user_id.clone(), request.question_slot).await.ok().flatten();
+    let answer = request.answer.trim().to_lowercase();
+    if !hash.as_deref().map_or(false, |stored| crate::ws::verify_password(&answer, stored)) {
+        let attempts = state.db.record_recovery_failure(user_id, now).await.unwrap_or(10);
+        let message = if attempts >= 10 {
+            "Too many failed attempts. Recovery is locked for 15 minutes."
+        } else if attempts >= 5 {
+            "Too many failed attempts. Wait at least 60 seconds before trying again."
+        } else {
+            generic
+        };
+        return (StatusCode::OK, Json(json!({"ok": false, "message": message})));
+    }
+
+    // The E2EE private-key backup is encrypted using the account password.
+    // Resetting a password without rewrapping that backup would lock the user
+    // out of existing DMs. Do not reset credentials when such a backup exists.
+    if state.db.get_e2ee_key_backup(&user_id).await.ok().flatten().is_some() {
+        let _ = state.db.clear_recovery_failures(user_id).await;
+        return (StatusCode::CONFLICT, Json(json!({
+            "ok": false,
+            "code": "e2ee_backup_requires_old_password",
+            "message": "Your encrypted chat-key backup is protected by your current password. To preserve access to existing encrypted DMs, password reset is disabled for this account until a recovery-key backup is configured. Contact the server administrator; do not clear app data or regenerate keys."
+        })));
+    }
+
+    let Some(hash) = crate::ws::hash_password(&request.new_password) else {
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"ok": false, "message": "Could not secure the new password."})));
+    };
+    if state.db.set_password_hash(user_id.clone(), &hash, false).await.is_err() {
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"ok": false, "message": "Could not save the new password."})));
+    }
+    let _ = state.db.clear_recovery_failures(user_id).await;
+    (StatusCode::OK, Json(json!({"ok": true, "message": "Password reset. You can now sign in."})))
 }
