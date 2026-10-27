@@ -930,18 +930,11 @@ async fn recovery_reset(
         return (StatusCode::OK, Json(json!({"ok": false, "message": message})));
     }
 
-    // The E2EE private-key backup is encrypted using the account password.
-    // Resetting a password without rewrapping that backup would lock the user
-    // out of existing DMs. Do not reset credentials when such a backup exists.
-    if state.db.get_e2ee_key_backup(&user_id).await.ok().flatten().is_some() {
-        let _ = state.db.clear_recovery_failures(user_id).await;
-        return (StatusCode::CONFLICT, Json(json!({
-            "ok": false,
-            "code": "e2ee_backup_requires_old_password",
-            "message": "Your encrypted chat-key backup is protected by your current password. To preserve access to existing encrypted DMs, password reset is disabled for this account until a recovery-key backup is configured. Contact the server administrator; do not clear app data or regenerate keys."
-        })));
-    }
-
+    // Recovery answers authorize a credential reset. Keep the existing E2EE
+    // backup and public-key identity untouched: a device that already holds
+    // the established local key can re-wrap the backup after signing in with
+    // the new password. A fresh device without that key may still need access
+    // to the original device to recover old encrypted DMs.
     let Some(hash) = crate::ws::hash_password(&request.new_password) else {
         return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"ok": false, "message": "Could not secure the new password."})));
     };
@@ -949,5 +942,5 @@ async fn recovery_reset(
         return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"ok": false, "message": "Could not save the new password."})));
     }
     let _ = state.db.clear_recovery_failures(user_id).await;
-    (StatusCode::OK, Json(json!({"ok": true, "message": "Password reset. You can now sign in."})))
+    (StatusCode::OK, Json(json!({"ok": true, "message": "Password reset. Your existing messages and encryption identity were preserved. On this device, sign in with the new password so LocalChat can refresh the encrypted key backup. A different device may still need the original device to access older encrypted DMs."})))
 }
