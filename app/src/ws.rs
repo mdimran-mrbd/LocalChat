@@ -1777,6 +1777,11 @@ async fn handle_op(
             if old_key != new_key {
                 state.username_to_id.remove(&old_key);
                 state.username_to_id.insert(new_key, user_id.clone());
+                // Preserve old DM channel IDs and message history by updating
+                // their participant-name bindings before the next reconnect.
+                for channel in state.channels.rename_dm_username(&info.username, &username) {
+                    let _ = state.db.upsert_channel(&channel.meta()).await;
+                }
             }
             info.username = username.to_compact_string();
             info.designation = designation.to_compact_string();
