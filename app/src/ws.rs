@@ -379,7 +379,7 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
         last_seen: prior.as_ref().map(|p| p.last_seen).unwrap_or(0),
         last_connect: now_secs(),
         total_sessions: prior.as_ref().map(|p| p.total_sessions).unwrap_or(0) + 1,
-        designation: prior.as_ref().map(|p| p.designation.clone()).unwrap_or_default(),
+        designation: prior.as_ref().map(|p| p.designation.clone()).unwrap_or_else(|| if is_registration { join.designation.to_compact_string() } else { CompactString::default() }),
     };
     state.users.insert(user_id.clone(), info.clone());
     state.known_users.insert(user_id.clone(), info.clone());
