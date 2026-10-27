@@ -1693,13 +1693,23 @@ async fn handle_op(
             let mut info = state.users.get(&user_id).map(|entry| entry.value().clone()).ok_or("user not found")?;
             let username_value = v.get("username").and_then(Value::as_str);
             let designation_value = v.get("designation").and_then(Value::as_str);
-            if username_value.is_none() && designation_value.is_none() {
+            let email_value = v.get("officeEmail").and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty());
+            let questions_value = v.get("recoveryQuestions").and_then(Value::as_array);
+            let answers_value = v.get("recoveryAnswers").and_then(Value::as_array);
+            if username_value.is_none() && designation_value.is_none() && email_value.is_none()
+                && questions_value.is_none() && answers_value.is_none() {
                 return Err("no profile fields to update".into());
             }
-            let username = if let Some(value) = username_value { sanitize_username(value).to_string() } else { info.username.to_string() };
-            if username.is_empty() {
-                return Err("Username must be 3–24 characters: letters, digits, underscore, hyphen, or dot.".into());
-            }
+
+            let username = if let Some(value) = username_value {
+                validate_new_username(value).map_err(|e| e.to_string())?;
+                value.trim().to_string()
+            } else {
+                if validate_new_username(&info.username).is_err() {
+                    return Err("Choose a new username that follows the current username rules.".into());
+                }
+                info.username.to_string()
+            };
             let designation = if let Some(value) = designation_value {
                 if !matches!(value, "AM" | "TL" | "STL" | "QDE" | "LRD" | "EE" | "CSA") {
                     return Err("choose a valid designation".into());
@@ -1708,6 +1718,56 @@ async fn handle_op(
             } else {
                 info.designation.to_string()
             };
+
+            let current_profile = state.db.get_profile_fields(user_id.clone()).await
+                .map_err(|_| "could not read profile".to_string())?
+                .ok_or("user not found")?;
+            if let Some(email) = email_value {
+                if !current_profile.0.is_empty() && !current_profile.0.eq_ignore_ascii_case(email) {
+                    return Err("Office email cannot be changed by users. Contact the server administrator.".into());
+                }
+                if current_profile.0.is_empty() {
+                    let valid = email.len() <= 254 && email.split_once('@').map_or(false, |(local, domain)| {
+                        !local.is_empty() && domain.contains('.') && !email.chars().any(char::is_whitespace)
+                    });
+                    let domains = state.config.read().unwrap().office_email_domains.clone();
+                    let allowed = email.rsplit_once('@').map_or(false, |(_, domain)| {
+                        domains.iter().any(|d| d.trim().trim_start_matches('@').eq_ignore_ascii_case(domain))
+                    });
+                    if !valid || !allowed || domains.is_empty() {
+                        return Err("Use an office email from a domain allowed by the server administrator.".into());
+                    }
+                    if state.db.office_email_exists(email).await.unwrap_or(true) {
+                        return Err("That office email is already registered.".into());
+                    }
+                    state.db.set_office_email(user_id.clone(), email).await
+                        .map_err(|_| "could not save office email".to_string())?;
+                }
+            }
+
+            if questions_value.is_some() || answers_value.is_some() {
+                let qs = questions_value.ok_or("choose three recovery questions")?;
+                let ans = answers_value.ok_or("provide all three recovery answers")?;
+                if qs.len() != 3 || ans.len() != 3 {
+                    return Err("Choose three different recovery questions and provide all answers.".into());
+                }
+                let mut question_ids = [0_i64; 3];
+                let mut answer_hashes: [String; 3] = [String::new(), String::new(), String::new()];
+                for idx in 0..3 {
+                    question_ids[idx] = qs[idx].as_i64().ok_or("invalid recovery question")?;
+                    let answer = ans[idx].as_str().unwrap_or("").trim().to_lowercase();
+                    if !(1..=10).contains(&question_ids[idx]) || answer.is_empty() || answer.len() > 200 {
+                        return Err("Recovery answers must be provided for valid questions.".into());
+                    }
+                    answer_hashes[idx] = hash_password(&answer).ok_or("could not secure recovery answers")?;
+                }
+                if question_ids.iter().collect::<std::collections::HashSet<_>>().len() != 3 {
+                    return Err("Choose three different recovery questions.".into());
+                }
+                state.db.set_recovery_answers(user_id.clone(), question_ids, answer_hashes, now_secs() as i64).await
+                    .map_err(|_| "could not save recovery questions".to_string())?;
+            }
+
             let old_key = info.username.to_lowercase().to_compact_string();
             let new_key = username.to_lowercase().to_compact_string();
             let changed = state.db.update_user_profile(user_id.clone(), &username, &designation).await
