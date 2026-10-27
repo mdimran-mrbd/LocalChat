@@ -105,16 +105,38 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
         return;
     };
 
-    let username = sanitize_username(&join.username);
-    if username.is_empty() {
-        let _ = sink
-            .send(Message::Text(
-                r#"{"ev":"error","text":"Username must be 3-24 chars: letters, digits, underscore, hyphen, or dot. No spaces.","code":"invalid_username"}"#.into(),
-            ))
-            .await;
-        state.metrics.dec_connect();
-        return;
-    }
+    let is_registration = join.mode.eq_ignore_ascii_case("register");
+    let identifier = join.username.trim();
+    let is_email_login = !is_registration && identifier.contains('@');
+    let mut username = if is_registration {
+        let candidate = sanitize_username(identifier);
+        if candidate.is_empty() || validate_new_username(identifier).is_err() {
+            let _ = sink.send(Message::Text(json!({
+                "ev":"error",
+                "text":"Username does not meet the new registration rules.",
+                "code":"invalid_username"
+            }).to_string())).await;
+            state.metrics.dec_connect();
+            return;
+        }
+        candidate
+    } else if is_email_login {
+        if identifier.len() > 254 || identifier.chars().any(char::is_whitespace) {
+            let _ = sink.send(Message::Text(r#"{"ev":"error","text":"Invalid login details.","code":"invalid_login"}"#.into())).await;
+            state.metrics.dec_connect();
+            return;
+        }
+        identifier.to_compact_string()
+    } else {
+        // Keep the old username path permissive until after authentication;
+        // legacy accounts must be able to log in and complete their profile.
+        if identifier.is_empty() || identifier.len() > 64 || identifier.chars().any(|c| c.is_whitespace() || c.is_control()) {
+            let _ = sink.send(Message::Text(r#"{"ev":"error","text":"Invalid login details.","code":"invalid_login"}"#.into())).await;
+            state.metrics.dec_connect();
+            return;
+        }
+        identifier.to_compact_string()
+    };
 
     // ---- Ban check.
     let banned = {
