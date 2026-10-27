@@ -79,9 +79,28 @@ pub fn validate_new_username(username: &str) -> Result<(), &'static str> {
     Ok(())
 }
 
+/// Validate and normalize a user-facing display name. Display names are
+/// intentionally non-unique; only the generated username/@handle is unique.
+pub fn normalize_display_name(value: &str) -> Result<String, &'static str> {
+    let value = value.trim();
+    if value.is_empty() || value.chars().count() > 48 || value.chars().any(|ch| ch.is_control()) {
+        return Err("Display name must be 1–48 characters and cannot contain control characters.");
+    }
+    let mut chars = value.chars();
+    Ok(chars.next().map(|first| first.to_uppercase().collect::<String>() + chars.as_str()).unwrap_or_default())
+}
+
+/// Produce the alphanumeric stem used for a generated unique handle.
+pub fn display_name_handle_base(value: &str) -> String {
+    let mut base: String = value.chars().filter(|ch| ch.is_ascii_alphanumeric())
+        .take(18).collect::<String>().to_ascii_lowercase();
+    if base.len() < 2 { base = "user".to_string(); }
+    base
+}
+
 #[cfg(test)]
 mod username_validation_tests {
-    use super::validate_new_username;
+    use super::{display_name_handle_base, normalize_display_name, validate_new_username};
 
     #[test]
     fn accepts_new_username_policy() {
@@ -95,5 +114,20 @@ mod username_validation_tests {
         for name in ["", "ab", "no-number", "has space7", "bad.name7", "slash/7", "user\\7"] {
             assert!(validate_new_username(name).is_err(), "{name}");
         }
+    }
+
+    #[test]
+    fn display_names_are_non_unique_and_capitalize_first_character() {
+        assert_eq!(normalize_display_name("  imran Islam ").unwrap(), "Imran Islam");
+        assert_eq!(normalize_display_name("Imran Islam").unwrap(), "Imran Islam");
+        assert!(normalize_display_name("").is_err());
+        assert!(normalize_display_name(&"x".repeat(49)).is_err());
+    }
+
+    #[test]
+    fn handle_stems_are_normalized_and_bounded() {
+        assert_eq!(display_name_handle_base("Imran Islam"), "imranislam");
+        assert_eq!(display_name_handle_base("A"), "user");
+        assert_eq!(display_name_handle_base("Long Display Name For Handle"), "longdisplaynamefo");
     }
 }
