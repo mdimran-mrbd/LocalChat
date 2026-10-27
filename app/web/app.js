@@ -789,6 +789,7 @@ $("toggleRegistration")?.addEventListener("click", (event) => {
   $("registrationFields")?.classList.toggle("hidden", !registering);
   $("loginIdentifierLabel").textContent = registering ? "Choose your display name" : "Office email or @handle";
   $("username").placeholder = registering ? "e.g. Imran Islam" : "Office email or @handle";
+  $("username").maxLength = registering ? 48 : 254;
   $("password").autocomplete = registering ? "new-password" : "current-password";
   $("joinButtonLabel").textContent = registering ? "Create account" : "Sign in";
   $("toggleRegistration").textContent = registering ? "Back to sign in" : "Create an account";
