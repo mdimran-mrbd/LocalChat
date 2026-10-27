@@ -1755,7 +1755,6 @@ async fn handle_op(
                 let mut chars = value.chars();
                 chars.next().map(|first| first.to_uppercase().collect::<String>() + chars.as_str()).unwrap_or_default()
             } else { info.display_name.to_string() };
-            let username = info.username.to_string();
             let designation = if let Some(value) = designation_value {
                 if !matches!(value, "AM" | "TL" | "STL" | "QDE" | "LRD" | "EE" | "CSA") {
                     return Err("choose a valid designation".into());
