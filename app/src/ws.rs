@@ -174,12 +174,19 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
     }
 
     // Look up any prior credentials row for this username.
-    let stored = state
-        .db
-        .find_user_credentials(&username)
-        .await
-        .ok()
-        .flatten();
+    let stored = if is_email_login {
+        state.db.find_user_credentials_by_office_email(&username).await.ok().flatten()
+    } else {
+        state.db.find_user_credentials(&username).await.ok().flatten()
+    };
+
+    if is_email_login {
+        if let Some((account_id, _, _)) = stored.as_ref() {
+            if let Some(canonical) = state.db.username_for_user_id(account_id.clone()).await.ok().flatten() {
+                username = canonical.to_compact_string();
+            }
+        }
+    }
 
     // Decide whether this is a signup or a login, and on login verify
     // the password before letting the join proceed. We do this BEFORE
