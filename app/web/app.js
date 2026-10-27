@@ -795,6 +795,26 @@ $("toggleRegistration")?.addEventListener("click", (event) => {
   $("joinStatus").classList.remove("err", "ok");
 });
 
+// Keep the three recovery-question dropdowns mutually exclusive as the user chooses.
+function refreshRecoveryQuestionOptions(prefix = "recoveryQuestion") {
+  const selects = [1, 2, 3].map(n => $(prefix + n)).filter(Boolean);
+  const selected = new Set(selects.map(s => s.value).filter(Boolean));
+  for (const select of selects) {
+    const ownValue = select.value;
+    for (const option of [...select.options]) {
+      if (!option.value) continue;
+      const usedElsewhere = selected.has(option.value) && option.value !== ownValue;
+      option.disabled = usedElsewhere;
+      option.hidden = usedElsewhere;
+    }
+  }
+}
+for (const prefix of ["recoveryQuestion", "requiredQuestion"]) {
+  for (let n = 1; n <= 3; n++) {
+    $(prefix + n)?.addEventListener("change", () => refreshRecoveryQuestionOptions(prefix));
+  }
+}
+
 $("forgotPasswordLink")?.addEventListener("click", (event) => {
   event.preventDefault();
   $("recoveryLogin").value = $("username").value.trim();
@@ -821,15 +841,16 @@ $("joinForm").addEventListener("submit", (e) => {
       return;
     }
     const officeEmail = $("officeEmail").value.trim();
+    const designation = $("registrationDesignation").value;
     const recoveryQuestions = [1, 2, 3].map(n => Number($("recoveryQuestion" + n).value));
     const recoveryAnswers = [1, 2, 3].map(n => $("recoveryAnswer" + n).value.trim());
-    if (!officeEmail || recoveryQuestions.some(q => !q) ||
+    if (!officeEmail || !designation || recoveryQuestions.some(q => !q) ||
         new Set(recoveryQuestions).size !== 3 || recoveryAnswers.some(a => !a)) {
-      status.textContent = "Enter your office email and choose three different recovery questions with answers.";
+      status.textContent = "Enter your office email, choose a designation, and choose three different recovery questions with answers.";
       status.classList.add("err");
       return;
     }
-    registration = { officeEmail, recoveryQuestions, recoveryAnswers };
+    registration = { officeEmail, designation, recoveryQuestions, recoveryAnswers };
   }
   if (!password || password.length < 4) {
     status.textContent = "Password must be at least 4 characters.";
@@ -858,6 +879,7 @@ function connect(username, password, mode = "login", registration = {}) {
       password: password || "",
       mode,
       officeEmail: registration.officeEmail || "",
+      designation: registration.designation || "",
       recoveryQuestions: registration.recoveryQuestions || [],
       recoveryAnswers: registration.recoveryAnswers || [],
       userId: lstore.get("userId") || "",

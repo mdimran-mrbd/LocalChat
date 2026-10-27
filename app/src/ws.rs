@@ -73,6 +73,8 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
         mode: String,
         #[serde(default, rename = "officeEmail")]
         office_email: String,
+        #[serde(default)]
+        designation: String,
         #[serde(default, rename = "recoveryQuestions")]
         recovery_questions: Vec<i64>,
         #[serde(default, rename = "recoveryAnswers")]
@@ -179,7 +181,10 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
 
     // Look up any prior credentials row for this username.
     let stored = if is_email_login {
-        state.db.find_user_credentials_by_office_email(&username).await.ok().flatten()
+        match state.db.find_user_credentials_by_office_email(&username).await.ok().flatten() {
+            Some(account) => Some(account),
+            None => state.db.find_user_credentials(&username).await.ok().flatten(),
+        }
     } else {
         state.db.find_user_credentials(&username).await.ok().flatten()
     };
@@ -207,11 +212,17 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
         let domain_allowed = email.rsplit_once('@').map_or(false, |(_, domain)| {
             domains.iter().any(|allowed| allowed.trim().trim_start_matches('@').eq_ignore_ascii_case(domain))
         });
+        let designation_valid = matches!(join.designation.as_str(), "AM" | "TL" | "STL" | "QDE" | "LRD" | "EE" | "CSA");
         let recovery_valid = join.recovery_questions.len() == 3
             && join.recovery_answers.len() == 3
             && join.recovery_questions.iter().all(|q| (1..=10).contains(q))
             && join.recovery_questions.iter().collect::<std::collections::HashSet<_>>().len() == 3
             && join.recovery_answers.iter().all(|a| !a.trim().is_empty() && a.trim().len() <= 200);
+        if !designation_valid {
+            let _ = sink.send(Message::Text(r#"{"ev":"error","text":"Choose a valid designation before registering.","code":"designation_required"}"#.into())).await;
+            state.metrics.dec_connect();
+            return;
+        }
         if !recovery_valid {
             let _ = sink.send(Message::Text(r#"{"ev":"error","text":"Choose three different recovery questions and provide all three answers.","code":"recovery_setup_required"}"#.into())).await;
             state.metrics.dec_connect();
@@ -410,6 +421,7 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
 
     if is_registration {
         let _ = state.db.set_office_email(user_id.clone(), join.office_email.trim()).await;
+        let _ = state.db.set_user_designation(user_id.clone(), &join.designation).await;
         let questions = [
             join.recovery_questions[0],
             join.recovery_questions[1],
