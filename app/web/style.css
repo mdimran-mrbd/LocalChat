@@ -237,6 +237,7 @@ input:focus, textarea:focus {
 .brand-mark.sm { filter: none; margin: 0; }
 .join-brand h1 { margin: 0 0 4px; font-size: 22px; font-weight: 650; letter-spacing: -0.01em; }
 .join-brand p { margin: 0; font-size: 13px; }
+.join-form-scrollable { max-height: min(58vh, 620px); overflow-y: auto; overscroll-behavior: contain; padding: 2px 6px 8px 0; }
 .join-form { display: flex; flex-direction: column; gap: 14px; }
 .join-form .btn { width: 100%; }
 .join-status { font-size: 12px; color: var(--danger); text-align: center; min-height: 16px; }

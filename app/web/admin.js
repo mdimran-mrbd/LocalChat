@@ -1087,6 +1087,9 @@ async function saveGeneralSettings(e) {
       officeEmailDomains: $("s_office_domains").value.split(/\r?\n/).map((d) => d.trim().replace(/^@/, "").toLowerCase()).filter(Boolean),
     };
     const r = await api("/settings", { method: "POST", body: JSON.stringify(body) });
+    // Refresh the normalized persisted allowlist so the saved domains remain visible.
+    const refreshed = await api("/settings");
+    if (Array.isArray(refreshed.officeEmailDomains)) $("s_office_domains").value = refreshed.officeEmailDomains.join("\n");
     $("settingsStatus").textContent = r.restart_required
       ? "Saved. Restart the server to apply the port change."
       : "Saved.";
