@@ -701,6 +701,83 @@ const S = {
   }
 })();
 
+async function loadRecoveryChallenge() {
+  const login = $("recoveryLogin").value.trim();
+  const status = $("recoveryStatus");
+  status.textContent = "";
+  status.classList.remove("err", "ok");
+  if (!login) { status.textContent = "Enter your username or office email."; status.classList.add("err"); return; }
+  const button = $("recoveryLoadBtn");
+  button.disabled = true;
+  try {
+    const response = await fetch("/api/recovery/challenge", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ login })
+    });
+    const data = await response.json();
+    if (!data.ok || !Array.isArray(data.questions)) {
+      status.textContent = data.message || "Recovery questions are not available for that account.";
+      status.classList.add("err");
+      return;
+    }
+    const select = $("recoveryQuestionSlot");
+    select.replaceChildren();
+    data.questions.forEach((questionId, slot) => {
+      const label = _recoveryQuestionLabels[Number(questionId) - 1] || "Recovery question";
+      select.add(new Option(label, String(slot)));
+    });
+    $("recoveryAnswerFields").classList.remove("hidden");
+    status.textContent = "Choose one question and answer it.";
+    status.classList.add("ok");
+  } catch {
+    status.textContent = "Could not contact the server. Please try again.";
+    status.classList.add("err");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function submitRecovery(event) {
+  event.preventDefault();
+  const status = $("recoveryStatus");
+  status.textContent = "";
+  status.classList.remove("err", "ok");
+  const login = $("recoveryLogin").value.trim();
+  const answer = $("recoveryAnswer").value.trim();
+  const newPassword = $("recoveryNewPassword").value;
+  if (!answer || newPassword.length < 8) {
+    status.textContent = "Enter your answer and a new password of at least 8 characters.";
+    status.classList.add("err"); return;
+  }
+  const button = $("recoverySubmitBtn");
+  button.disabled = true;
+  try {
+    const response = await fetch("/api/recovery/reset", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        login,
+        questionSlot: Number($("recoveryQuestionSlot").value),
+        answer,
+        newPassword
+      })
+    });
+    const data = await response.json();
+    status.textContent = data.message || (data.ok ? "Password reset." : "Recovery failed.");
+    status.classList.toggle("err", !data.ok);
+    status.classList.toggle("ok", !!data.ok);
+    if (data.ok) {
+      $("username").value = login;
+      $("password").value = "";
+      setTimeout(() => closeModal("recoveryModal"), 900);
+    }
+  } catch {
+    status.textContent = "Could not contact the server. Please try again.";
+    status.classList.add("err");
+  } finally {
+    button.disabled = false;
+  }
+}
+
 // ── Login / registration flow ────────────────────────────────────────
 let _joinMode = "login";
 
@@ -720,7 +797,11 @@ $("toggleRegistration")?.addEventListener("click", (event) => {
 
 $("forgotPasswordLink")?.addEventListener("click", (event) => {
   event.preventDefault();
-  toast("Account recovery is not available yet. Please contact the LocalChat host administrator.");
+  $("recoveryLogin").value = $("username").value.trim();
+  $("recoveryAnswerFields").classList.add("hidden");
+  $("recoveryStatus").textContent = "";
+  openModal("recoveryModal");
+  $("recoveryLogin").focus();
 });
 
 $("joinForm").addEventListener("submit", (e) => {
