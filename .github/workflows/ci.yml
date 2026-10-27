@@ -33,7 +33,9 @@ jobs:
         with:
           node-version: 22
       - name: Check JavaScript syntax
-        run: node --check app/web/app.js
+        run: |
+          node --check app/web/app.js
+          node --check app/web/admin.js
 
   build-windows:
     name: Build Windows test executable
