@@ -1783,6 +1783,7 @@ async fn handle_op(
             state.users.insert(user_id.clone(), info.clone());
             state.known_users.insert(user_id.clone(), info);
             broadcast_users(&state).await;
+            let _ = sink.send(Message::Text(json!({"ev":"profile_updated"}).to_string())).await;
         }
 
         "designation_set" => {
