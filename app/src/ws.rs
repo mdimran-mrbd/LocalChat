@@ -196,14 +196,14 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
         return;
     }
 
-    // Look up any prior credentials row for this username.
-    let stored = if is_email_login {
-        match state.db.find_user_credentials_by_office_email(&username).await.ok().flatten() {
-            Some(account) => Some(account),
-            None => state.db.find_user_credentials(&username).await.ok().flatten(),
-        }
-    } else {
+    // Registration checks whether the generated handle is already taken.
+    // Login resolves either the unique @handle or office email through one
+    // case-insensitive query, including legacy rows whose normalized email
+    // column was not populated by an earlier build.
+    let stored = if is_registration {
         state.db.find_user_credentials(&username).await.ok().flatten()
+    } else {
+        state.db.find_user_credentials_by_login_identifier(identifier).await.ok().flatten()
     };
 
     if !is_registration {
