@@ -1037,6 +1037,14 @@ function onKicked(e) {
 }
 
 function onError(e) {
+  if (_requiredProfilePending && $("profileCompletionModal") && !$("profileCompletionModal").classList.contains("hidden")) {
+    _requiredProfilePending = false;
+    $("requiredProfileSubmit").disabled = false;
+    const status = $("requiredProfileStatus");
+    status.textContent = e.text || "Could not save account setup.";
+    status.classList.add("err");
+    return;
+  }
   if (!S.me) {
     // Server rejected our auto-join (banned, bad name, name taken, etc.).
     // Drop the saved name so the user can pick a different one, surface
