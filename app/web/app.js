@@ -766,8 +766,8 @@ async function submitRecovery(event) {
   const login = $("recoveryLogin").value.trim();
   const answer = $("recoveryAnswer").value.trim();
   const newPassword = $("recoveryNewPassword").value;
-  if (!answer || newPassword.length < 8) {
-    status.textContent = "Enter your answer and a new password of at least 8 characters.";
+  if (!answer || newPassword.length < 4) {
+    status.textContent = "Enter your answer and a new password of at least 4 characters.";
     status.classList.add("err"); return;
   }
   const button = $("recoverySubmitBtn");
@@ -783,13 +783,18 @@ async function submitRecovery(event) {
       })
     });
     const data = await response.json();
-    status.textContent = data.message || (data.ok ? "Password reset." : "Recovery failed.");
-    status.classList.toggle("err", !data.ok);
-    status.classList.toggle("ok", !!data.ok);
     if (data.ok) {
+      // Success immediately returns the user to sign-in; do not flash the
+      // server's informational recovery message as red error text.
+      status.textContent = "";
+      status.classList.remove("err", "ok");
       $("username").value = login;
       $("password").value = "";
-      setTimeout(() => closeModal("recoveryModal"), 900);
+      closeModal("recoveryModal");
+    } else {
+      status.textContent = data.message || "Recovery failed.";
+      status.classList.add("err");
+      status.classList.remove("ok");
     }
   } catch {
     status.textContent = "Could not contact the server. Please try again.";
