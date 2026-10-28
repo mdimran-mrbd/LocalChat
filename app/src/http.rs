@@ -903,7 +903,7 @@ async fn recovery_reset(
     let login = request.login.trim();
     let generic = "Recovery could not be completed. Check your details or try again later.";
     if login.is_empty() || login.len() > 254 || request.answer.trim().is_empty()
-        || request.answer.len() > 200 || !(8..=128).contains(&request.new_password.len())
+        || request.answer.len() > 200 || !(4..=128).contains(&request.new_password.len())
         || request.question_slot > 2 {
         return (StatusCode::BAD_REQUEST, Json(json!({"ok": false, "message": generic})));
     }
