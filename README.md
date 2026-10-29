@@ -32,7 +32,7 @@ people share a network but not necessarily the internet:
 - **One binary, no install.** Drop `LocalChat.exe` on a desktop. Double-click.
   That's the whole setup.
 - **LAN-first and private.** Chat works without internet. When the host has internet, the host browser can check GitHub Releases for updates after the host opts in; installing an update always requires confirmation. No chat messages or user data are sent.
-- **Account-based identity.** Register with a display name and a unique office email from a domain allowed by the server administrator. LocalChat generates a unique @handle for sign-in and mentions. Display names are editable and do not need to be unique; users can sign in with their @handle or office email. Email changes are restricted to the host's Admin dashboard. No email verification message is sent.
+- **Account-based identity.** Register with a display name and a unique office email from a domain allowed by the server administrator. Users choose a unique username for sign-in and mentions. Display names are editable and do not need to be unique; users can sign in with their unique username or office email. Email changes are restricted to the host's Admin dashboard. No email verification message is sent.
 - **End-to-end encrypted DMs.** The host process literally cannot read direct
   messages.
 - **Persistent.** Channels, members, message history, reactions and uploads
@@ -61,7 +61,7 @@ people share a network but not necessarily the internet:
 3. Allow it through Windows Firewall (Private network is enough).
 4. Read the LAN URL from the tray tooltip — e.g. `https://192.168.1.42:5000` —
    and share it with anyone on the same Wi-Fi.
-5. They open the URL and register with a display name, an allowed office email, a designation, and recovery answers. LocalChat creates their unique @handle. They can later sign in with that handle or office email. No client installation or email verification is required.
+5. They open the URL and register with a unique username, display name, an allowed office email, a designation, and recovery answers. They can later sign in with that handle or office email. No client installation or email verification is required.
 
 > 🔒 **HTTPS certificate note:** On a private LAN, browsers may show a certificate-authority warning until the LocalChat host's public CA certificate is trusted on the connecting device. Follow [the LAN HTTPS trust guide](docs/lan-https-trust.md). Do not proceed past a certificate warning unless you have verified you are connecting to your own trusted LocalChat host.
 
