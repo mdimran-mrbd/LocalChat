@@ -1,7 +1,7 @@
 # LocalChat 4.0.0 — Authentication UX/UI Redesign Proposal
 **Scope:** Login, account registration, and forgotten-password recovery only.  
 **Branch:** `feature/localchat-4.0.0-auth-ux`  
-**Status:** Proposal for user approval — no UI implementation included.  
+**Status:** User-approved; first authentication implementation is in progress and awaiting CI plus manual Windows-build validation.  
 **Design direction:** Emerald Studio · light-first · balanced density · smooth, restrained motion.
 
 ## 1. Principles
