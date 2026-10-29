@@ -20,7 +20,7 @@ use tokio::sync::broadcast;
 use crate::channel::{Channel, ChannelKind, LOBBY_ID};
 use crate::message::{now_secs, FileInfo, MsgKind, WireMsg};
 use crate::state::AppState;
-use crate::user::{normalize_display_name, UserId, UserInfo};
+use crate::user::{normalize_display_name, validate_new_username, UserId, UserInfo};
 
 /// What to do with a freshly-supplied password once the join has been
 /// validated. Decided pre-commit so the rest of the join logic can run
@@ -119,6 +119,13 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
     let is_email_login = !is_registration && identifier.contains('@');
     let display_name_input = join.display_name.trim();
     let mut username = if is_registration {
+        if let Err(message) = validate_new_username(raw_identifier) {
+            let _ = sink.send(Message::Text(json!({
+                "ev":"error", "text":message, "code":"invalid_unique_username"
+            }).to_string())).await;
+            state.metrics.dec_connect();
+            return;
+        }
         if normalize_display_name(display_name_input).is_err() {
             let _ = sink.send(Message::Text(json!({
                 "ev":"error", "text":"Display name must be 1–48 characters and cannot contain control characters.",
@@ -127,47 +134,9 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
             state.metrics.dec_connect();
             return;
         }
-        // Issue a stable, server-generated username from the display name.
-        // The suffix guarantees a numeric component; the database remains the
-        // authority for uniqueness and existing usernames are never renamed.
-        let base = display_name_input.chars()
-            .filter(|ch| ch.is_ascii_alphanumeric())
-            .collect::<String>()
-            .to_ascii_lowercase();
-        let base = if base.is_empty() { "user".to_string() } else { base };
-        let base: String = base.chars().take(20).collect();
-        let mut generated = None;
-        for suffix in 1u32..=9999 {
-            let candidate = format!("{}{:02}", base, suffix);
-            match state.db.find_user_credentials(&candidate).await {
-                Ok(None) => {
-                    let key = candidate.to_ascii_lowercase();
-                    if !state.username_to_id.contains_key(key.as_str()) {
-                        generated = Some(candidate);
-                        break;
-                    }
-                }
-                Ok(Some(_)) => continue,
-                Err(error) => {
-                    crate::applog::log(format_args!("username generation lookup failed: {}", error));
-                    let _ = sink.send(Message::Text(json!({
-                        "ev":"error", "text":"Could not create your account because of a server database error. Please contact the administrator.",
-                        "code":"username_generation_failed"
-                    }).to_string())).await;
-                    state.metrics.dec_connect();
-                    return;
-                }
-            }
-        }
-        let Some(generated) = generated else {
-            let _ = sink.send(Message::Text(json!({
-                "ev":"error", "text":"Could not generate a unique username. Please ask the administrator for help.",
-                "code":"username_generation_exhausted"
-            }).to_string())).await;
-            state.metrics.dec_connect();
-            return;
-        };
-        generated.to_compact_string()
+        // User-chosen usernames are normalized case-insensitively so casing
+        // cannot create separate identities for the same account.
+        raw_identifier.to_ascii_lowercase().to_compact_string()
     } else if is_email_login {
         if identifier.len() > 254 || identifier.chars().any(char::is_whitespace) {
             let _ = sink.send(Message::Text(r#"{"ev":"error","text":"Invalid login details.","code":"invalid_login"}"#.into())).await;
