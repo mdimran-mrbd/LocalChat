@@ -3729,7 +3729,7 @@ html[data-theme="dark"] #recoveryModal .auth-recovery-back { color:#65d8a6; }
 #join .auth-security-questions .field:first-child { grid-column:1 / -1; }
 #join .auth-security-questions input { min-height:38px; }
 #join .auth-security-note { line-height:1.35; }
-#join #forgotPasswordLink { display:none !important; }
+#join #registrationPasswordPanel #forgotPasswordLink { display:none !important; }
 #join #registrationPasswordPanel #passwordField .field-label-row { display:block; }
 #recoveryModal #recoveryNextBtn { background:#087f5b !important; border-color:#087f5b !important; color:#fff !important; }
 #recoveryModal #recoveryNextBtn:hover { background:#066649 !important; border-color:#066649 !important; }
@@ -3757,3 +3757,39 @@ html[data-theme="dark"] #join select, html[data-theme="dark"] #recoveryModal sel
 #join .join-foot { margin-top:12px; padding-top:12px; }
 #join .auth-registration-step .field-hint { margin-top:4px; line-height:1.3; }
 #join .auth-registration-step .field-hint ul { gap:1px; }
+
+#join .join-panel{border-radius:24px!important;padding:20px 24px 16px!important}
+#join .join-brand{display:flex;align-items:center;justify-content:center;gap:10px;margin:0 0 12px!important;text-align:left}
+#join .join-brand .brand-mark{display:grid;margin:0!important;flex:0 0 auto}
+#join .join-brand .brand-mark svg{width:30px!important;height:30px!important}
+#join .join-brand h1{margin:0!important;font-size:21px!important;line-height:1.1}
+#join .join-brand p{margin:0!important;font-size:10px!important;line-height:1.2}
+#join .auth-registration-heading{text-align:center;margin:0 0 8px!important}
+#join .auth-registration-heading h2{margin:0 0 3px!important;font-size:19px!important}
+#join .auth-registration-heading p{margin:0!important;font-size:11px!important;line-height:1.35}
+#join .auth-progress{margin:4px 0 9px!important;gap:6px}
+#join .auth-progress-step{min-width:72px;gap:3px;font-size:9px}
+#join .auth-progress-icon{width:28px;height:28px}
+#join .auth-progress-icon svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+#join .auth-progress-step.is-active .auth-progress-icon{width:35px;height:35px}
+#join .auth-progress-step.is-active .auth-progress-icon svg{width:20px;height:20px}
+#join .auth-progress-track{margin-top:-15px}
+#join .auth-registration-step{padding:13px 16px 14px!important;border-radius:20px!important}
+#join .auth-registration-step .field{gap:4px!important;margin-bottom:7px!important}
+#join .auth-registration-step .field>span:first-child{font-size:11px}
+#join .auth-registration-step input,#join .auth-registration-step select{min-height:36px!important;height:36px;padding-top:6px!important;padding-bottom:6px!important;font-size:12px!important}
+#join .auth-security-questions{display:flex!important;flex-direction:column!important;gap:7px!important}
+#join .auth-security-questions .field:first-child{grid-column:auto!important}
+#join .auth-security-questions input{min-height:34px!important;height:34px!important}
+#join .auth-step-actions{margin-top:8px}
+#join .auth-step-actions .btn{min-height:36px;padding:8px 12px}
+#join .username-field{position:relative}
+#join .username-field>input{padding-right:42px!important}
+#join .username-help{position:absolute;right:10px;top:27px;z-index:2;display:grid;place-items:center;width:19px;height:19px;padding:0;border-radius:50%;border:1px solid var(--fg-2,#87958d);background:transparent;color:var(--fg-2,#87958d);opacity:.72;font-size:12px;font-weight:700;line-height:1;cursor:help}
+#join .username-help:hover,#join .username-help:focus-visible,#join .username-help[aria-expanded=true]{opacity:1;color:var(--brand,#087f5b);border-color:var(--brand,#087f5b);outline:none}
+#join .username-help-popover{display:none;position:absolute;z-index:10;right:0;top:50px;width:min(290px,90vw);padding:10px 12px;border:1px solid var(--border,#dbe4de);border-radius:10px;background:var(--bg-1,#fff);color:var(--fg,#20352b);box-shadow:0 10px 26px rgba(0,0,0,.14);font-size:11px;line-height:1.45}
+#join .username-help-popover strong{display:block;margin-bottom:3px}
+#join .username-field:focus-within .username-help-popover,#join .username-field:has(.username-help:hover) .username-help-popover,#join .username-help[aria-expanded=true]+.username-help-popover{display:block}
+html[data-theme=dark] #join .username-help-popover{background:var(--bg-1,#18231e);color:var(--fg,#eaf4ee);border-color:var(--border,#34463c)}
+#join .auth-registration-step .field-hint{display:none!important}
+@media(max-height:800px){#join.screen-join{align-items:start;overflow-y:auto;padding-top:12px;padding-bottom:12px}#join .join-panel{padding-top:14px!important;padding-bottom:12px!important}#join .join-brand{margin-bottom:8px!important}#join .auth-registration-step{padding-top:10px!important;padding-bottom:10px!important}#join .auth-registration-step .field{margin-bottom:5px!important}}
