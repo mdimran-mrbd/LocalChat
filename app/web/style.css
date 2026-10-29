@@ -3554,3 +3554,82 @@ html[data-theme="dark"] #join .join-foot a { color: #65d8a6; }
 html[data-theme="dark"] .auth-success-panel { background: #18231e; color: #e6f2eb; }
 html[data-theme="dark"] .auth-success-icon { color: #7be0b2; background: #1c4535; }
 html[data-theme="dark"] .auth-assigned-username { color: #a8f0ca; background: #112d21; border-color: #285b43; }
+
+
+/* LocalChat 4.0.0 auth revision: chosen username + dedicated recovery view */
+#join .field-hint {
+  display: block;
+  margin-top: 3px;
+  color: #63786e;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.55;
+}
+html[data-theme="dark"] #join .field-hint { color: #a6bbb0; }
+#join #registrationUsername { text-transform: none; }
+#recoveryModal.auth-recovery-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  overflow-y: auto;
+  padding: clamp(16px, 4vw, 44px);
+  background:
+    radial-gradient(ellipse at 78% 8%, rgba(8, 127, 91, .11), transparent 38%),
+    #f4f8f5;
+  backdrop-filter: none;
+}
+#recoveryModal.auth-recovery-modal.hidden { display: none !important; }
+#recoveryModal .auth-recovery-panel {
+  box-sizing: border-box;
+  width: min(100%, 520px);
+  max-height: none;
+  overflow: visible;
+  padding: clamp(24px, 4vw, 42px);
+  border: 1px solid #e0eae4;
+  border-radius: 24px;
+  background: #fff;
+  color: #18352a;
+  box-shadow: 0 28px 80px rgba(26, 63, 45, .13);
+}
+#recoveryModal .auth-recovery-brand { margin-bottom: 28px; }
+#recoveryModal .auth-recovery-mark {
+  display: grid; place-items: center; width: 46px; height: 46px; margin-bottom: 24px;
+  border-radius: 15px; background: linear-gradient(145deg, #087f5b, #0b9a6c);
+  color: #fff; font-size: 24px; font-weight: 800; box-shadow: 0 8px 18px rgba(8, 127, 91, .18);
+}
+#recoveryModal .eyebrow {
+  margin: 0 0 8px; color: #087f5b; font-size: 11px; font-weight: 800; letter-spacing: .12em;
+}
+#recoveryModal #recoveryTitle { margin: 0; color: #183b2f; font-size: clamp(25px, 4vw, 31px); letter-spacing: -.04em; }
+#recoveryModal .auth-recovery-brand > p:last-child { margin: 10px 0 0; color: #63786e; line-height: 1.6; }
+#recoveryModal .modal-body { padding: 0; display: grid; gap: 16px; }
+#recoveryModal .modal-body > .muted { margin: 0; color: #526c5f; line-height: 1.65; }
+#recoveryModal .field > span { color: #29473c; font-size: 13px; font-weight: 650; }
+#recoveryModal input,
+#recoveryModal select {
+  min-height: 46px; border: 1px solid #d6e2db; border-radius: 11px; background: #fbfdfb; color: #172e25;
+}
+#recoveryModal input:focus,
+#recoveryModal select:focus { outline: none; border-color: #0b946b; box-shadow: 0 0 0 3px rgba(11, 148, 107, .14); }
+#recoveryModal #recoveryLoadBtn,
+#recoveryModal #recoverySubmitBtn { width: 100%; min-height: 48px; border-radius: 12px; }
+#recoveryModal .auth-recovery-back {
+  justify-self: start; padding-left: 0; color: #087f5b; font-weight: 650;
+}
+#recoveryModal .join-status { min-height: 18px; margin: 0; }
+html[data-theme="dark"] #recoveryModal.auth-recovery-modal { background: radial-gradient(ellipse at 78% 8%, rgba(30, 158, 112, .15), transparent 38%), #101a16; }
+html[data-theme="dark"] #recoveryModal .auth-recovery-panel { background: #18231e; border-color: #2c4036; color: #e6f2eb; }
+html[data-theme="dark"] #recoveryModal #recoveryTitle { color: #e9f8ef; }
+html[data-theme="dark"] #recoveryModal .auth-recovery-brand > p:last-child,
+html[data-theme="dark"] #recoveryModal .modal-body > .muted { color: #a6bbb0; }
+html[data-theme="dark"] #recoveryModal .field > span { color: #c9ded2; }
+html[data-theme="dark"] #recoveryModal input,
+html[data-theme="dark"] #recoveryModal select { color: #e7f4ec; background: #111b16; border-color: #3b5045; }
+html[data-theme="dark"] #recoveryModal .auth-recovery-back { color: #65d8a6; }
+@media (max-width: 520px) {
+  #recoveryModal.auth-recovery-modal { padding: 12px; place-items: start center; }
+  #recoveryModal .auth-recovery-panel { margin: auto 0; padding: 24px 20px; border-radius: 20px; }
+  #recoveryModal .auth-recovery-brand { margin-bottom: 22px; }
+}
