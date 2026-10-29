@@ -176,7 +176,7 @@ function appendLinkedText(container, text, channelId = null) {
       }
     }
   }
-  tokens.sort((a, b) => a.index - b.index || (a.kind === "url" ? -1 : 1));
+  tokens.sort((a, b) => a.index - b.index || b.raw.length - a.raw.length || (a.kind === "url" ? -1 : 1));
   let cursor = 0;
   for (const item of tokens) {
     if (item.index < cursor) continue;
@@ -3493,7 +3493,7 @@ function updateMentionPicker() {
       class: "mention-option" + (i === mentionActiveIndex ? " active" : ""),
       role: "option",
       "aria-selected": i === mentionActiveIndex ? "true" : "false",
-      onmousedown: (ev) => { ev.preventDefault(); insertMention(u.isAll ? u.username : displayName); },
+      // Resolve mentions by the unique username, even when the display name has spaces\n      // or overlaps another member name (e.g. "test test" and "test").\n      onmousedown: (ev) => { ev.preventDefault(); insertMention(u.username); },
     }, [
       (() => { const node = el("span", { class: "mention-option-avatar", style: `background:${u.color || colorForName(u.username)}` }); renderAvatarContent(node, u.avatar, displayName?.[0] || "?"); return node; })(),
       el("span", { class: "mention-option-name" }, "@" + displayName),
