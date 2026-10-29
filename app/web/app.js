@@ -782,12 +782,16 @@ let _joinMode = "login";
 if ($("registrationDesignation")) $("registrationDesignation").required = false;
 
 function setRegistrationStep(step) {
-  const identity = $("registrationIdentityPanel"), security = $("registrationSecurityPanel");
-  if (!identity || !security) return;
-  const onSecurity = step === 2;
-  identity.classList.toggle("hidden", onSecurity);
-  security.classList.toggle("hidden", !onSecurity);
-  (onSecurity ? $("password") : $("officeEmail"))?.focus();
+  const panels = [$("registrationIdentityPanel"), $("registrationSecurityPanel"), $("registrationPasswordPanel")];
+  if (panels.some(panel => !panel)) return;
+  panels.forEach((panel, index) => panel.classList.toggle("hidden", index + 1 !== step));
+  document.querySelectorAll("#join .auth-progress-step").forEach((node, index) => {
+    node.classList.toggle("is-active", index + 1 === step);
+    node.classList.toggle("is-complete", index + 1 < step);
+  });
+  document.querySelectorAll("#join .auth-progress-track").forEach((node, index) => node.classList.toggle("is-complete", index + 1 < step));
+  const focusTarget = step === 1 ? $("officeEmail") : step === 2 ? $("recoveryQuestion1") : $("password");
+  focusTarget?.focus();
 }
 $("registrationNextBtn")?.addEventListener("click", () => {
   const email=$("officeEmail"), display=$("registrationDisplayName"), username=$("registrationUsername"), designation=$("registrationDesignation"), status=$("joinStatus");
@@ -800,14 +804,24 @@ $("registrationNextBtn")?.addEventListener("click", () => {
   username.value=handle; setRegistrationStep(2);
 });
 $("registrationBackBtn")?.addEventListener("click",()=>setRegistrationStep(1));
+$("registrationPasswordNextBtn")?.addEventListener("click", () => {
+  const status=$("joinStatus"); status.textContent=""; status.classList.remove("err","ok");
+  for (let n=1;n<=3;n++) {
+    const question=$("recoveryQuestion"+n), answer=$("recoveryAnswer"+n);
+    if (!question.value) { status.textContent="Choose a recovery question for each slot."; status.classList.add("err"); question.focus(); return; }
+    if (!answer.value.trim()) { status.textContent="Enter an answer for each recovery question."; status.classList.add("err"); answer.focus(); return; }
+  }
+  if (new Set([1,2,3].map(n=>$("recoveryQuestion"+n).value)).size !== 3) { status.textContent="Choose three different recovery questions."; status.classList.add("err"); $("recoveryQuestion1").focus(); return; }
+  setRegistrationStep(3);
+});
+$("registrationPasswordBackBtn")?.addEventListener("click",()=>setRegistrationStep(2));
 $("toggleRegistration")?.addEventListener("click",(event)=>{
   event.preventDefault(); _joinMode=_joinMode==="login"?"register":"login";
   const registering=_joinMode==="register";
   $("registrationFields")?.classList.toggle("hidden",!registering);
   $("loginIdentifierField")?.classList.toggle("hidden",registering);
   const passwordField=$("passwordField");
-  (registering ? $("registrationPasswordArea") : $("loginPasswordArea"))?.append(passwordField);
-  if (registering) $("registrationPasswordArea")?.append($("registrationRepeatPasswordField"));
+  if (!registering) $("loginPasswordArea")?.append(passwordField);
   $("loginSubmitBtn")?.classList.toggle("hidden",registering);
   $("username").required=!registering; $("password").required=true;
   $("password").autocomplete=registering?"new-password":"current-password";
