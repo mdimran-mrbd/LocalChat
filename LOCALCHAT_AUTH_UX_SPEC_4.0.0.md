@@ -41,7 +41,7 @@
 1. LocalChat mark and name.
 2. Heading: **Welcome back**.
 3. Short supporting line: “Sign in to your LocalChat network.”
-4. Identifier field labelled **Email or @handle**.
+4. Identifier field labelled **Email or @username**.
 5. Password field with show/hide control and a **Forgot password?** text action aligned with the password label or immediately below it.
 6. Full-width **Sign in** primary button, with a clear loading state.
 7. Divider or quiet secondary prompt: “New to this network?” with **Create an account**.
@@ -72,7 +72,7 @@
 
 ### Generated handle
 - Do not ask the user to create a username.
-- Explain that LocalChat assigns a unique `@handle` after account creation and that it can be used to sign in and be mentioned in chats.
+- Explain that LocalChat assigns a unique `@username` after account creation and that it can be used to sign in and be mentioned in chats.
 - After successful registration, show a distinct **Account created** confirmation that reveals the assigned handle, provides a copy action, and explains that the display name is editable while the email is admin-managed.
 - Only show the generated handle if it is returned authoritatively by the backend. Never fabricate one client-side.
 
@@ -96,7 +96,7 @@
 
 ### Step 1 — Identify account
 - Heading: **Recover your account**.
-- Explain: “Enter the email or @handle for your account.”
+- Explain: “Enter the email or @username for your account.”
 - One identifier field and **Continue** action.
 - Secondary **Back to sign in** action.
 - Use neutral errors that do not unnecessarily reveal whether an account exists.
