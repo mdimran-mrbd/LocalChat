@@ -821,7 +821,8 @@ $("toggleRegistration")?.addEventListener("click",(event)=>{
   $("registrationFields")?.classList.toggle("hidden",!registering);
   $("loginIdentifierField")?.classList.toggle("hidden",registering);
   const passwordField=$("passwordField");
-  if (!registering) $("loginPasswordArea")?.append(passwordField);
+  (registering ? $("registrationPasswordArea") : $("loginPasswordArea"))?.append(passwordField);
+  if (registering) $("registrationPasswordArea")?.append($("registrationRepeatPasswordField"));
   $("loginSubmitBtn")?.classList.toggle("hidden",registering);
   $("username").required=!registering; $("password").required=true;
   $("password").autocomplete=registering?"new-password":"current-password";
