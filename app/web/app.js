@@ -729,7 +729,8 @@ const S = {
 })();
 
 async function loadRecoveryChallenge() {
-  const login = $("recoveryLogin").value.trim();
+  const loginInput = $("recoveryLogin").value.trim();
+  const login = loginInput.startsWith("@") && !loginInput.includes("@", 1) ? loginInput.slice(1) : loginInput;
   const status = $("recoveryStatus");
   status.textContent = "";
   status.classList.remove("err", "ok");
@@ -769,7 +770,8 @@ async function submitRecovery(event) {
   const status = $("recoveryStatus");
   status.textContent = "";
   status.classList.remove("err", "ok");
-  const login = $("recoveryLogin").value.trim();
+  const loginInput = $("recoveryLogin").value.trim();
+  const login = loginInput.startsWith("@") && !loginInput.includes("@", 1) ? loginInput.slice(1) : loginInput;
   const answer = $("recoveryAnswer").value.trim();
   const newPassword = $("recoveryNewPassword").value;
   if (!answer || newPassword.length < 4) {
