@@ -3378,3 +3378,179 @@ body.poll-modal-open { overflow:hidden; }
 
 /* Account identity: the unique handle is distinct from the editable display name. */
 .user-handle { margin-left: 4px; color: var(--fg-2); font-size: .78em; font-weight: 500; white-space: nowrap; }
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   LocalChat 4.0.0 · Emerald Studio authentication journey
+   A complete authentication-only visual layer; app workspace tokens
+   and layout remain unchanged until their own redesign segment.
+   ═══════════════════════════════════════════════════════════════════ */
+#join.screen-join {
+  --auth-emerald: #087f5b;
+  --auth-emerald-strong: #066649;
+  --auth-ink: #162b25;
+  --auth-muted: #5d7169;
+  position: relative;
+  isolation: isolate;
+  box-sizing: border-box;
+  min-height: 100vh;
+  min-height: 100dvh;
+  height: 100vh;
+  height: 100dvh;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: minmax(280px, .92fr) minmax(420px, 1.08fr);
+  align-items: center;
+  justify-items: center;
+  gap: clamp(28px, 6vw, 96px);
+  padding: clamp(24px, 5vw, 72px);
+  background:
+    radial-gradient(ellipse at 78% 4%, rgba(8, 127, 91, .08), transparent 38%),
+    #f5f8f6;
+}
+#join.screen-join::before {
+  content: "LOCALCHAT\A\AYour conversations,\Awithin your network.\A\A\APrivate by design.\A\ADirect messages use\Aend-to-end encryption.";
+  white-space: pre-line;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: min(620px, calc(100dvh - 48px));
+  padding: clamp(30px, 4vw, 58px);
+  border-radius: 28px;
+  color: #f3fff9;
+  background:
+    radial-gradient(circle at 85% 14%, rgba(150, 232, 193, .19), transparent 26%),
+    linear-gradient(145deg, #075b45 0%, #087f5b 52%, #0b9a6c 100%);
+  box-shadow: 0 28px 70px rgba(6, 78, 59, .16);
+  font-size: clamp(16px, 1.35vw, 20px);
+  line-height: 1.8;
+  letter-spacing: .01em;
+}
+#join .join-panel {
+  box-sizing: border-box;
+  width: min(500px, 100%);
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+  padding: clamp(24px, 3.3vw, 42px);
+  border: 1px solid #e1eae5;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, .96);
+  box-shadow: 0 24px 64px rgba(28, 58, 44, .09);
+  color: var(--auth-ink);
+}
+#join .join-brand { text-align: left; margin-bottom: 30px; }
+#join .brand-mark { margin-bottom: 16px; filter: drop-shadow(0 7px 15px rgba(8, 127, 91, .18)); }
+#join .brand-mark svg { width: 42px; height: 42px; }
+#join .join-brand h1 { font-size: 28px; font-weight: 750; letter-spacing: -.045em; color: #183b2f; }
+#join .join-brand p { margin-top: 8px; color: var(--auth-muted); font-size: 14px; }
+#join .join-form { gap: 16px; }
+#join .join-form-scrollable {
+  max-height: none;
+  overflow: visible;
+  padding: 0;
+}
+#join .field > span,
+#join .field label,
+#join .field > label { color: #29473c; font-size: 13px; font-weight: 650; }
+#join input,
+#join select {
+  min-height: 46px;
+  border-radius: 11px;
+  border-color: #d6e2db;
+  background: #fbfdfb;
+  color: #172e25;
+  box-shadow: none;
+}
+#join input::placeholder { color: #87978f; }
+#join input:focus,
+#join select:focus {
+  border-color: #0b946b;
+  box-shadow: 0 0 0 3px rgba(11, 148, 107, .14);
+  outline: none;
+}
+#join .btn-primary {
+  min-height: 48px;
+  border: 1px solid var(--auth-emerald);
+  border-radius: 12px;
+  background: var(--auth-emerald);
+  color: #fff;
+  box-shadow: 0 5px 12px rgba(8, 127, 91, .12);
+  font-weight: 700;
+  transition: background 150ms ease, transform 150ms ease, box-shadow 150ms ease;
+}
+#join .btn-primary:hover {
+  background: var(--auth-emerald-strong);
+  box-shadow: 0 8px 18px rgba(8, 127, 91, .18);
+  transform: translateY(-1px);
+}
+#join .btn-primary:focus-visible,
+#join a:focus-visible,
+#join button:focus-visible { outline: 3px solid rgba(11, 148, 107, .35); outline-offset: 3px; }
+#join .join-status { min-height: 18px; text-align: left; font-size: 13px; }
+#join .join-foot {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top-color: #e7eee9;
+  color: #63786e;
+  font-size: 12px;
+}
+#join .join-foot a { color: #087f5b; font-weight: 650; text-decoration: none; }
+#join .join-foot a:hover { text-decoration: underline; }
+#join .muted.small { color: #657a70; line-height: 1.6; font-size: 12px; }
+#join .field select option:disabled { color: #9aa8a1; }
+.auth-success-panel { padding: 30px; text-align: center; }
+.auth-success-icon {
+  display: grid; place-items: center; width: 54px; height: 54px; margin: 0 auto 16px;
+  border-radius: 18px; color: #087f5b; background: #e3f5ec; font-size: 28px; font-weight: 800;
+}
+.auth-success-panel h2 { margin: 0 0 10px; color: #173b2e; font-size: 23px; letter-spacing: -.03em; }
+.auth-success-panel p { line-height: 1.65; }
+.auth-assigned-username {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin: 20px 0; padding: 12px 14px; border: 1px solid #cce5d8; border-radius: 13px;
+  background: #f2faf5; color: #075b45; font-size: 19px; font-weight: 750; overflow-wrap: anywhere;
+}
+.auth-assigned-username .btn { flex: 0 0 auto; }
+@media (max-width: 860px) {
+  #join.screen-join { grid-template-columns: minmax(0, 1fr); gap: 0; padding: 18px; }
+  #join.screen-join::before { display: none; }
+  #join .join-panel { width: min(500px, 100%); max-height: none; }
+}
+@media (max-width: 520px) {
+  #join.screen-join { padding: 12px; align-items: start; }
+  #join .join-panel { margin: auto 0; padding: 24px 20px; border-radius: 20px; }
+  #join .join-brand { margin-bottom: 24px; }
+  #join .join-brand h1 { font-size: 25px; }
+  #join .join-foot { flex-wrap: wrap; justify-content: center; }
+}
+@media (max-height: 760px) and (min-width: 861px) {
+  #join.screen-join { padding-block: 18px; gap: 28px; }
+  #join.screen-join::before { min-height: calc(100dvh - 36px); padding: 26px; }
+  #join .join-panel { max-height: calc(100dvh - 36px); padding: 24px; }
+  #join .join-brand { margin-bottom: 18px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #join *, #join *::before, #join *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}
+html[data-theme="dark"] #join.screen-join {
+  background: radial-gradient(ellipse at 78% 4%, rgba(30, 158, 112, .13), transparent 38%), #101a16;
+}
+html[data-theme="dark"] #join .join-panel {
+  color: #e6f2eb; background: #18231e; border-color: #2c4036;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, .28);
+}
+html[data-theme="dark"] #join .join-brand h1,
+html[data-theme="dark"] .auth-success-panel h2 { color: #e9f8ef; }
+html[data-theme="dark"] #join .join-brand p,
+html[data-theme="dark"] #join .muted.small { color: #a6bbb0; }
+html[data-theme="dark"] #join .field > span { color: #c9ded2; }
+html[data-theme="dark"] #join input,
+html[data-theme="dark"] #join select { color: #e7f4ec; background: #111b16; border-color: #3b5045; }
+html[data-theme="dark"] #join input::placeholder { color: #8ca298; }
+html[data-theme="dark"] #join .join-foot { border-top-color: #30443a; color: #a6bbb0; }
+html[data-theme="dark"] #join .join-foot a { color: #65d8a6; }
+html[data-theme="dark"] .auth-success-panel { background: #18231e; color: #e6f2eb; }
+html[data-theme="dark"] .auth-success-icon { color: #7be0b2; background: #1c4535; }
+html[data-theme="dark"] .auth-assigned-username { color: #a8f0ca; background: #112d21; border-color: #285b43; }
