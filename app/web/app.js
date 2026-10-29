@@ -817,8 +817,8 @@ $("toggleRegistration")?.addEventListener("click", (event) => {
   // A required control inside a visually hidden section still prevents the
   // browser from dispatching the form submit event. Toggle it with the mode.
   if ($("registrationDesignation")) $("registrationDesignation").required = registering;
-  $("loginIdentifierLabel").textContent = registering ? "Choose a unique username" : "Office email or unique username";
-  $("username").placeholder = registering ? "e.g. imran01" : "Office email or unique username";
+  $("loginIdentifierLabel").textContent = registering ? "Choose your @unique_username" : "Office email or @unique_username";
+  $("username").placeholder = registering ? "e.g. imran01" : "Office email or @unique_username";
   $("username").maxLength = registering ? 24 : 254;
   if ($("registrationDisplayName")) $("registrationDisplayName").required = registering;
   $("password").autocomplete = registering ? "new-password" : "current-password";
