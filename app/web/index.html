@@ -56,23 +56,8 @@
   <div id="join" class="screen-join">
     <div class="join-panel">
       <div class="join-brand">
-        <div class="brand-mark">
-          <svg viewBox="0 0 32 32" width="48" height="48" aria-hidden="true">
-            <defs>
-              <linearGradient id="lcGrad" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
-                <stop offset="0" stop-color="#087f5b"/><stop offset="1" stop-color="#0b9a6c"/>
-              </linearGradient>
-            </defs>
-            <rect width="32" height="32" rx="8" fill="url(#lcGrad)"/>
-            <path d="M8 10a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3h-5l-4 3v-3h-1a3 3 0 0 1-3-3z" fill="white"/>
-            <circle cx="13" cy="13.5" r="1.3" fill="#087f5b"/>
-            <circle cx="16" cy="13.5" r="1.3" fill="#087f5b"/>
-            <circle cx="19" cy="13.5" r="1.3" fill="#087f5b"/>
-            <circle cx="24" cy="8" r="3" fill="#65d8a6" stroke="white" stroke-width="1.5"/>
-          </svg>
-        </div>
-        <h1>LocalChat</h1>
-        <p class="muted">Private messaging for your local network</p>
+        <div class="brand-mark"><svg viewBox="0 0 32 32" width="48" height="48" aria-hidden="true"><defs><linearGradient id="lcGrad" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#087f5b"/><stop offset="1" stop-color="#0b9a6c"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#lcGrad)"/><path d="M8 10a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3h-5l-4 3v-3h-1a3 3 0 0 1-3-3z" fill="white"/><circle cx="13" cy="13.5" r="1.3" fill="#087f5b"/><circle cx="16" cy="13.5" r="1.3" fill="#087f5b"/><circle cx="19" cy="13.5" r="1.3" fill="#087f5b"/><circle cx="24" cy="8" r="3" fill="#65d8a6" stroke="white" stroke-width="1.5"/></svg></div>
+        <div class="join-brand-copy"><h1>LocalChat</h1><p class="muted">Private messaging for your local network</p></div>
       </div>
 
       <form id="joinForm" class="join-form join-form-scrollable">
@@ -399,7 +384,7 @@
   <!-- Password recovery is separate from sign-in -->
   <div id="recoveryModal" class="modal auth-recovery-modal hidden" role="dialog" aria-labelledby="recoveryTitle" aria-modal="true">
     <form class="modal-panel auth-recovery-panel" onsubmit="submitRecovery(event)">
-      <header class="auth-recovery-brand"><div class="auth-recovery-mark" aria-hidden="true">L</div><p class="eyebrow">LOCALCHAT ACCOUNT HELP</p><h2 id="recoveryTitle">Recover your account</h2><p class="muted">Verify your identity and choose a new password.</p></header>
+      <header class="auth-recovery-brand"><div class="auth-recovery-branding"><span class="auth-recovery-logo"><svg viewBox="0 0 32 32" width="48" height="48" aria-hidden="true"><defs><linearGradient id="lcGrad" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#087f5b"/><stop offset="1" stop-color="#0b9a6c"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#lcGrad)"/><path d="M8 10a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3h-5l-4 3v-3h-1a3 3 0 0 1-3-3z" fill="white"/><circle cx="13" cy="13.5" r="1.3" fill="#087f5b"/><circle cx="16" cy="13.5" r="1.3" fill="#087f5b"/><circle cx="19" cy="13.5" r="1.3" fill="#087f5b"/><circle cx="24" cy="8" r="3" fill="#65d8a6" stroke="white" stroke-width="1.5"/></svg></span><span class="auth-recovery-brand-copy"><strong>LocalChat</strong><small>Private messaging for your local network</small></span></div><h2 id="recoveryTitle">Recover your account</h2><p class="muted">Verify your identity and choose a new password.</p></header>
       <div class="modal-body">
         <p class="muted sm">Answer one of your saved recovery questions to reset your password. Repeated failures trigger a temporary lockout.</p>
         <label class="field" id="recoveryIdentifierField"><span>Email or @username</span><input id="recoveryLogin" required maxlength="254" autocomplete="username" placeholder="you@company.example or @username"/></label>
