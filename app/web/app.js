@@ -1344,6 +1344,7 @@ async function onWelcome(e, password) {
     setTimeout(openDesignationModal, 250);
   }
   if (justRegistered) {
+    try { lstore.set("username", "@" + e.user.username); } catch {}
     const assigned = $("registrationSuccessUsername");
     if (assigned) assigned.textContent = "@" + e.user.username;
     setTimeout(() => openModal("registrationSuccessModal"), 350);
