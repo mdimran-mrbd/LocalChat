@@ -3682,3 +3682,26 @@ html[data-theme="dark"] #join select,html[data-theme="dark"] #recoveryModal sele
 @keyframes auth-step-in { from { opacity:0; transform:translateX(8px); } to { opacity:1; transform:translateX(0); } }
 @media(max-width:520px) { #join.screen-join { padding:12px; align-items:center; } #join .join-panel { max-height:calc(100dvh - 24px); padding:24px 20px; } #join .join-brand { margin-bottom:22px; } #join .join-brand h1 { font-size:25px; } #join .auth-step-actions { grid-template-columns:minmax(82px,.55fr) minmax(0,1fr); } }
 @media(prefers-reduced-motion:reduce) { #join .auth-registration-step { animation:none; } }
+
+
+/* Auth artifact review fixes */
+#join .join-panel { border:1px solid var(--border, #e0e8e3); }
+#join input#officeEmail { border:1px solid #d6e2db !important; box-shadow:none; outline:none; }
+#join input#officeEmail:focus { border-color:#0b946b !important; box-shadow:0 0 0 3px rgba(11,148,107,.14); }
+html[data-theme="dark"] #join input#officeEmail { border-color:#3b5045 !important; }
+#join.is-register #forgotPasswordLink { display:none !important; }
+#join .auth-privacy-foot { display:flex; align-items:center; justify-content:space-between !important; gap:12px; width:100%; }
+#join .auth-privacy-foot .foot-left { margin-right:auto; justify-content:flex-start; text-align:left; }
+#join #themeToggleJoin { margin-left:auto; flex:0 0 auto; }
+#recoveryModal .auth-recovery-step { display:flex; flex-direction:column; gap:14px; animation:auth-step-in 220ms ease both; }
+#recoveryModal .auth-recovery-step.hidden { display:none !important; }
+#recoveryModal .auth-step-heading h3 { margin:5px 0 4px; font-size:19px; color:#183b2f; letter-spacing:-.025em; }
+#recoveryModal .auth-step-heading p { margin:0; color:#63786e; font-size:12px; line-height:1.5; }
+#recoveryModal .auth-recovery-back { justify-self:start; border:0 !important; background:transparent !important; box-shadow:none !important; padding:4px 0; color:#087f5b; font-size:12px; cursor:pointer; }
+#recoveryModal .auth-recovery-back:hover { text-decoration:underline; }
+#recoveryModal .auth-step-actions { display:grid; grid-template-columns:minmax(90px,.65fr) minmax(0,1fr); gap:10px; }
+#recoveryModal .auth-step-actions .btn { width:100%; }
+#recoveryModal .auth-step-heading h3 { color:#183b2f; }
+html[data-theme="dark"] #recoveryModal .auth-step-heading h3 { color:#e9f8ef; }
+html[data-theme="dark"] #recoveryModal .auth-step-heading p { color:#a6bbb0; }
+html[data-theme="dark"] #recoveryModal .auth-recovery-back { color:#65d8a6; }
