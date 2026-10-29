@@ -20,7 +20,6 @@ function userNameNode(user) {
   }
   const root = el("span", { class: "user-name-display" });
   root.append(document.createTextNode(profile.display_name || profile.username || "Unknown"));
-  if (profile.username) root.append(el("span", { class: "user-handle" }, " @" + profile.username.replace(/^@/, "")));
   if (profile.designation) root.append(el("span", { class: "user-designation" }, " • " + profile.designation));
   return root;
 }
@@ -818,9 +817,10 @@ $("toggleRegistration")?.addEventListener("click", (event) => {
   // A required control inside a visually hidden section still prevents the
   // browser from dispatching the form submit event. Toggle it with the mode.
   if ($("registrationDesignation")) $("registrationDesignation").required = registering;
-  $("loginIdentifierLabel").textContent = registering ? "Choose your display name" : "Office email or @handle";
-  $("username").placeholder = registering ? "e.g. Imran Islam" : "Office email or @handle";
-  $("username").maxLength = registering ? 48 : 254;
+  $("loginIdentifierLabel").textContent = registering ? "Choose a unique username" : "Office email or unique username";
+  $("username").placeholder = registering ? "e.g. imran01" : "Office email or unique username";
+  $("username").maxLength = registering ? 24 : 254;
+  if ($("registrationDisplayName")) $("registrationDisplayName").required = registering;
   $("password").autocomplete = registering ? "new-password" : "current-password";
   $("joinButtonLabel").textContent = registering ? "Create account" : "Sign in";
   $("toggleRegistration").textContent = registering ? "Back to sign in" : "Create an account";
@@ -867,9 +867,14 @@ $("joinForm").addEventListener("submit", (e) => {
   if (!identifier) return;
   let registration = {};
   if (_joinMode === "register") {
-    if (!identifier || identifier.length > 48 || /[\u0000-\u001f\u007f]/.test(identifier)) {
-      status.textContent = "Display name must be 1–48 characters and cannot contain control characters.";
+    if (!/^[A-Za-z0-9_-]{3,24}$/.test(identifier) || !/[0-9]/.test(identifier)) {
+      status.textContent = "Unique username must be 3–24 characters, use only letters, numbers, _ or -, include at least one number, and contain no spaces.";
       status.classList.add("err"); $("username").focus(); return;
+    }
+    const displayName = $("registrationDisplayName").value.trim();
+    if (!displayName || displayName.length > 48 || /[\u0000-\u001f\u007f]/.test(displayName)) {
+      status.textContent = "Display name must be 1–48 characters and cannot contain control characters.";
+      status.classList.add("err"); $("registrationDisplayName").focus(); return;
     }
     const officeEmail = $("officeEmail").value.trim();
     const designation = $("registrationDesignation").value;
@@ -881,7 +886,7 @@ $("joinForm").addEventListener("submit", (e) => {
       status.classList.add("err");
       return;
     }
-    registration = { displayName: identifier, officeEmail, designation, recoveryQuestions, recoveryAnswers };
+    registration = { displayName, officeEmail, designation, recoveryQuestions, recoveryAnswers };
   }
   if (!password || password.length < 4) {
     status.textContent = "Password must be at least 4 characters.";
