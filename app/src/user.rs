@@ -70,8 +70,8 @@ pub fn validate_new_username(username: &str) -> Result<(), &'static str> {
     if name.chars().any(char::is_whitespace) {
         return Err("Username cannot contain spaces.");
     }
-    if !name.chars().all(|c| c.is_ascii_alphanumeric() || "!@#$%&_-".contains(c)) {
-        return Err("Username contains an unsupported character.");
+    if !name.chars().all(|c| c.is_ascii_alphanumeric() || "_-".contains(c)) {
+        return Err("Username may contain only English letters, numbers, underscores, and hyphens.");
     }
     if !name.chars().any(|c| c.is_ascii_digit()) {
         return Err("Username must include at least one number.");
@@ -80,7 +80,7 @@ pub fn validate_new_username(username: &str) -> Result<(), &'static str> {
 }
 
 /// Validate and normalize a user-facing display name. Display names are
-/// intentionally non-unique; only the generated username/@handle is unique.
+/// intentionally non-unique; only the unique username is unique.
 pub fn normalize_display_name(value: &str) -> Result<String, &'static str> {
     let value = value.trim();
     if value.is_empty() || value.chars().count() > 48 || value.chars().any(|ch| ch.is_control()) {
@@ -98,28 +98,20 @@ pub fn normalize_display_name(value: &str) -> Result<String, &'static str> {
     Ok(normalized)
 }
 
-/// Produce the alphanumeric stem used for a generated unique handle.
-pub fn display_name_handle_base(value: &str) -> String {
-    let mut base: String = value.chars().filter(|ch| ch.is_ascii_alphanumeric())
-        .take(18).collect::<String>().to_ascii_lowercase();
-    if base.len() < 2 { base = "user".to_string(); }
-    base
-}
-
 #[cfg(test)]
 mod username_validation_tests {
-    use super::{display_name_handle_base, normalize_display_name, validate_new_username};
+    use super::{normalize_display_name, validate_new_username};
 
     #[test]
     fn accepts_new_username_policy() {
-        for name in ["imran7", "Team_42", "user-1", "a!b2", "abc#9", "name_2026"] {
+        for name in ["imran7", "Team_42", "user-1", "name_2026"] {
             assert!(validate_new_username(name).is_ok(), "{name}");
         }
     }
 
     #[test]
     fn rejects_invalid_new_usernames() {
-        for name in ["", "ab", "no-number", "has space7", "bad.name7", "slash/7", "user\\7"] {
+        for name in ["", "ab", "no-number", "has space7", "bad.name7", "slash/7", "user\\7", "a!b2", "abc#9"] {
             assert!(validate_new_username(name).is_err(), "{name}");
         }
     }
@@ -134,10 +126,5 @@ mod username_validation_tests {
         assert!(normalize_display_name(&"x".repeat(49)).is_err());
     }
 
-    #[test]
-    fn handle_stems_are_normalized_and_bounded() {
-        assert_eq!(display_name_handle_base("Imran Islam"), "imranislam");
-        assert_eq!(display_name_handle_base("A"), "user");
-        assert_eq!(display_name_handle_base("Long Display Name For Handle"), "longdisplaynamefor");
-    }
+
 }
