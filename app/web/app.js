@@ -822,6 +822,7 @@ $("usernameHelp")?.addEventListener("click",()=>{const b=$("usernameHelp");b.set
 $("toggleRegistration")?.addEventListener("click",(event)=>{
   event.preventDefault(); _joinMode=_joinMode==="login"?"register":"login";
   const registering=_joinMode==="register";
+  $("join")?.classList.toggle("is-registering",registering);
   $("registrationFields")?.classList.toggle("hidden",!registering);
   $("loginIdentifierField")?.classList.toggle("hidden",registering);
   const passwordField=$("passwordField");
