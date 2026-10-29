@@ -792,7 +792,9 @@ impl Db {
         let key = office_email.trim().to_lowercase();
         self.with(move |c| {
             let found = c.query_row(
-                "SELECT EXISTS(SELECT 1 FROM users WHERE office_email_lower=?1)",
+                "SELECT EXISTS(SELECT 1 FROM users
+                 WHERE office_email_lower=?1
+                    OR (office_email_lower='' AND lower(trim(office_email))=?1))",
                 params![key],
                 |r| r.get::<_, i64>(0),
             )?;
