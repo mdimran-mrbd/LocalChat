@@ -20,7 +20,7 @@ use tokio::sync::broadcast;
 use crate::channel::{Channel, ChannelKind, LOBBY_ID};
 use crate::message::{now_secs, FileInfo, MsgKind, WireMsg};
 use crate::state::AppState;
-use crate::user::{UserId, UserInfo};
+use crate::user::{normalize_display_name, validate_new_username, UserId, UserInfo};
 
 /// What to do with a freshly-supplied password once the join has been
 /// validated. Decided pre-commit so the rest of the join logic can run
@@ -46,7 +46,7 @@ pub(crate) fn hash_password(plain: &str) -> Option<String> {
         .map(|h| h.to_string())
 }
 
-fn verify_password(plain: &str, stored_hash: &str) -> bool {
+pub(crate) fn verify_password(plain: &str, stored_hash: &str) -> bool {
     use argon2::{Argon2, PasswordVerifier};
     use password_hash::PasswordHash;
     let Ok(parsed) = PasswordHash::new(stored_hash) else { return false };
@@ -67,7 +67,20 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
 
     #[derive(Deserialize)]
     struct Join {
+        /// Username for registration, or username/office-email login identifier.
         username: String,
+        #[serde(default, rename = "displayName")]
+        display_name: String,
+        #[serde(default)]
+        mode: String,
+        #[serde(default, rename = "officeEmail")]
+        office_email: String,
+        #[serde(default)]
+        designation: String,
+        #[serde(default, rename = "recoveryQuestions")]
+        recovery_questions: Vec<i64>,
+        #[serde(default, rename = "recoveryAnswers")]
+        recovery_answers: Vec<String>,
         #[serde(default)]
         avatar: String,
         #[serde(default)]
@@ -100,16 +113,47 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
         return;
     };
 
-    let username = sanitize_username(&join.username);
-    if username.is_empty() {
-        let _ = sink
-            .send(Message::Text(
-                r#"{"ev":"error","text":"Username must be 3-24 chars: letters, digits, underscore, hyphen, or dot. No spaces.","code":"invalid_username"}"#.into(),
-            ))
-            .await;
-        state.metrics.dec_connect();
-        return;
-    }
+    let is_registration = join.mode.eq_ignore_ascii_case("register");
+    let raw_identifier = join.username.trim();
+    let identifier = if !is_registration { raw_identifier.strip_prefix('@').unwrap_or(raw_identifier) } else { raw_identifier };
+    let is_email_login = !is_registration && identifier.contains('@');
+    let display_name_input = join.display_name.trim();
+    let mut username = if is_registration {
+        if let Err(message) = validate_new_username(raw_identifier) {
+            let _ = sink.send(Message::Text(json!({
+                "ev":"error", "text":message, "code":"invalid_unique_username"
+            }).to_string())).await;
+            state.metrics.dec_connect();
+            return;
+        }
+        if normalize_display_name(display_name_input).is_err() {
+            let _ = sink.send(Message::Text(json!({
+                "ev":"error", "text":"Display name must be 1–48 characters and cannot contain control characters.",
+                "code":"invalid_display_name"
+            }).to_string())).await;
+            state.metrics.dec_connect();
+            return;
+        }
+        // User-chosen unique usernames are normalized to lowercase so casing
+        // can never create separate identities for the same account name.
+        raw_identifier.to_ascii_lowercase().to_compact_string()
+    } else if is_email_login {
+        if identifier.len() > 254 || identifier.chars().any(char::is_whitespace) {
+            let _ = sink.send(Message::Text(r#"{"ev":"error","text":"Invalid login details.","code":"invalid_login"}"#.into())).await;
+            state.metrics.dec_connect();
+            return;
+        }
+        identifier.to_compact_string()
+    } else {
+        // Keep the old username path permissive until after authentication;
+        // legacy accounts must be able to log in and complete their profile.
+        if identifier.is_empty() || identifier.len() > 64 || identifier.chars().any(|c| c.is_whitespace() || c.is_control()) {
+            let _ = sink.send(Message::Text(r#"{"ev":"error","text":"Invalid login details.","code":"invalid_login"}"#.into())).await;
+            state.metrics.dec_connect();
+            return;
+        }
+        identifier.to_compact_string()
+    };
 
     // ---- Ban check.
     let banned = {
@@ -146,18 +190,89 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
         return;
     }
 
-    // Look up any prior credentials row for this username.
-    let stored = state
-        .db
-        .find_user_credentials(&username)
-        .await
-        .ok()
-        .flatten();
+    // Registration checks whether the chosen unique username is already taken.
+    // Login resolves either the @unique_username (with or without the @ prefix) or office email through one
+    // case-insensitive query, including legacy rows whose normalized email
+    // column was not populated by an earlier build.
+    let lookup_result = if is_registration {
+        state.db.find_user_credentials(&username).await
+    } else {
+        state.db.find_user_credentials_by_login_identifier(identifier).await
+    };
+    let stored = match lookup_result {
+        Ok(account) => account,
+        Err(error) => {
+            crate::applog::log(format_args!("account credential lookup failed: {}", error));
+            let _ = sink.send(Message::Text(json!({
+                "ev": "error",
+                "text": "Could not check your login details because of a server database error. Please contact the administrator.",
+                "code": "login_lookup_failed"
+            }).to_string())).await;
+            state.metrics.dec_connect();
+            return;
+        }
+    };
 
-    // Decide whether this is a signup or a login, and on login verify
-    // the password before letting the join proceed. We do this BEFORE
-    // touching any in-memory state so a wrong password leaves nothing
-    // behind.
+    if !is_registration {
+        if let Some((account_id, _, _)) = stored.as_ref() {
+            if let Some(canonical) = state.db.username_for_user_id(account_id.clone()).await.ok().flatten() {
+                // Always use the DB's canonical spelling after case-insensitive
+                // lookup; never let "imran" and "Imran" become separate runtime identities.
+                username = canonical.to_compact_string();
+            }
+        }
+    }
+
+    // Registration is explicit. A typo in a login identifier must never
+    // silently create a new account with a different identity.
+    if is_registration {
+        let email = join.office_email.trim();
+        let valid_email = email.len() <= 254
+            && email.split_once('@').map_or(false, |(local, domain)| {
+                !local.is_empty() && !domain.is_empty() && domain.contains('.')
+                    && !email.chars().any(char::is_whitespace)
+            });
+        let domains = state.config.read().unwrap().office_email_domains.clone();
+        let domain_allowed = email.rsplit_once('@').map_or(false, |(_, domain)| {
+            domains.iter().any(|allowed| allowed.trim().trim_start_matches('@').eq_ignore_ascii_case(domain))
+        });
+        let designation_valid = matches!(join.designation.as_str(), "AM" | "TL" | "STL" | "QDE" | "LRD" | "EE" | "CSA");
+        let recovery_valid = join.recovery_questions.len() == 3
+            && join.recovery_answers.len() == 3
+            && join.recovery_questions.iter().all(|q| (1..=10).contains(q))
+            && join.recovery_questions.iter().collect::<std::collections::HashSet<_>>().len() == 3
+            && join.recovery_answers.iter().all(|a| !a.trim().is_empty() && a.trim().len() <= 200);
+        if !designation_valid {
+            let _ = sink.send(Message::Text(r#"{"ev":"error","text":"Choose a valid designation before registering.","code":"designation_required"}"#.into())).await;
+            state.metrics.dec_connect();
+            return;
+        }
+        if !recovery_valid {
+            let _ = sink.send(Message::Text(r#"{"ev":"error","text":"Choose three different recovery questions and provide all three answers.","code":"recovery_setup_required"}"#.into())).await;
+            state.metrics.dec_connect();
+            return;
+        }
+        if !valid_email || !domain_allowed || domains.is_empty() {
+            let _ = sink.send(Message::Text(json!({
+                "ev":"error",
+                "text":"Registration requires an office email from a domain allowed by the server administrator.",
+                "code":"office_email_not_allowed"
+            }).to_string())).await;
+            state.metrics.dec_connect();
+            return;
+        }
+        if stored.is_some() || state.db.office_email_exists(email).await.unwrap_or(true) {
+            let _ = sink.send(Message::Text(r#"{"ev":"error","text":"That username or office email is already registered.","code":"account_exists"}"#.into())).await;
+            state.metrics.dec_connect();
+            return;
+        }
+    } else if stored.is_none() {
+        let _ = sink.send(Message::Text(r#"{"ev":"error","text":"No account found. Choose Register to create an account.","code":"registration_required"}"#.into())).await;
+        state.metrics.dec_connect();
+        return;
+    }
+
+    // Verify credentials before mutating any runtime state.
     let mut password_action: PasswordAction = PasswordAction::None;
     let mut forced_user_id: Option<UserId> = None;
     let mut must_change_password = false;
@@ -288,7 +403,12 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
         last_seen: prior.as_ref().map(|p| p.last_seen).unwrap_or(0),
         last_connect: now_secs(),
         total_sessions: prior.as_ref().map(|p| p.total_sessions).unwrap_or(0) + 1,
-        designation: prior.as_ref().map(|p| p.designation.clone()).unwrap_or_default(),
+        designation: prior.as_ref().map(|p| p.designation.clone()).unwrap_or_else(|| if is_registration { join.designation.to_compact_string() } else { CompactString::default() }),
+        display_name: if is_registration {
+            normalize_display_name(display_name_input).unwrap_or_default().to_compact_string()
+        } else {
+            prior.as_ref().map(|p| p.display_name.clone()).filter(|name| !name.is_empty()).unwrap_or_else(|| username.to_compact_string())
+        },
     };
     state.users.insert(user_id.clone(), info.clone());
     state.known_users.insert(user_id.clone(), info.clone());
@@ -326,6 +446,28 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
         ).await;
     } else {
         let _ = state.db.create_user(&info).await;
+    }
+
+    if is_registration {
+        let _ = state.db.set_office_email(user_id.clone(), join.office_email.trim()).await;
+        let _ = state.db.set_user_designation(user_id.clone(), &join.designation).await;
+        let questions = [
+            join.recovery_questions[0],
+            join.recovery_questions[1],
+            join.recovery_questions[2],
+        ];
+        let answers = [
+            join.recovery_answers[0].trim().to_lowercase(),
+            join.recovery_answers[1].trim().to_lowercase(),
+            join.recovery_answers[2].trim().to_lowercase(),
+        ];
+        if let (Some(h1), Some(h2), Some(h3)) = (
+            hash_password(&answers[0]), hash_password(&answers[1]), hash_password(&answers[2])
+        ) {
+            let _ = state.db.set_recovery_answers(
+                user_id.clone(), questions, [h1, h2, h3], now_secs() as i64
+            ).await;
+        }
     }
 
     // Persist the password hash for new signups (and back-fill rows
@@ -407,8 +549,19 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
         .to_compact_string();
     state.sessions.insert(session_token.clone(), user_id.clone());
 
+    let profile_fields = state.db.get_profile_fields(user_id.clone()).await.ok().flatten();
+    let profile_completion = profile_fields.as_ref().map(|(email, designation, has_recovery)| json!({
+        "username": info.display_name.trim().is_empty(),
+        "officeEmail": email.is_empty(),
+        "designation": designation.is_empty(),
+        "recoveryQuestions": !has_recovery,
+    })).unwrap_or_else(|| json!({
+        "username": true, "officeEmail": true, "designation": true, "recoveryQuestions": true
+    }));
+
     let welcome = json!({
         "ev": "welcome",
+        "profileCompletion": profile_completion,
         "user": info,
         "channels": state.channels.visible_to(user_id.clone()),
         "users": state.users.iter().map(|e| e.value().clone()).collect::<Vec<_>>(),
@@ -1405,6 +1558,7 @@ async fn handle_op(
                     members.push(json!({
                         "id": profile.id,
                         "username": profile.username,
+                        "display_name": profile.display_name,
                         "avatar": profile.avatar,
                         "color": profile.color,
                         "pubkey": profile.pubkey,
@@ -1581,14 +1735,22 @@ async fn handle_op(
         "profile_update" => {
             let mut info = state.users.get(&user_id).map(|entry| entry.value().clone()).ok_or("user not found")?;
             let username_value = v.get("username").and_then(Value::as_str);
+            let display_name_value = v.get("displayName").and_then(Value::as_str);
             let designation_value = v.get("designation").and_then(Value::as_str);
-            if username_value.is_none() && designation_value.is_none() {
+            let email_value = v.get("officeEmail").and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty());
+            let questions_value = v.get("recoveryQuestions").and_then(Value::as_array);
+            let answers_value = v.get("recoveryAnswers").and_then(Value::as_array);
+            if username_value.is_none() && display_name_value.is_none() && designation_value.is_none() && email_value.is_none()
+                && questions_value.is_none() && answers_value.is_none() {
                 return Err("no profile fields to update".into());
             }
-            let username = if let Some(value) = username_value { sanitize_username(value).to_string() } else { info.username.to_string() };
-            if username.is_empty() {
-                return Err("Username must be 3–24 characters: letters, digits, underscore, hyphen, or dot.".into());
+
+            if username_value.is_some() {
+                return Err("The unique username cannot be changed by users. Update your display name instead.".into());
             }
+            let display_name = if let Some(value) = display_name_value {
+                normalize_display_name(value).map_err(str::to_string)?
+            } else { info.display_name.to_string() };
             let designation = if let Some(value) = designation_value {
                 if !matches!(value, "AM" | "TL" | "STL" | "QDE" | "LRD" | "EE" | "CSA") {
                     return Err("choose a valid designation".into());
@@ -1597,20 +1759,64 @@ async fn handle_op(
             } else {
                 info.designation.to_string()
             };
-            let old_key = info.username.to_lowercase().to_compact_string();
-            let new_key = username.to_lowercase().to_compact_string();
-            let changed = state.db.update_user_profile(user_id.clone(), &username, &designation).await
-                .map_err(|_| "could not save profile".to_string())?;
-            if !changed { return Err("That username is already in use. Choose another one.".into()); }
-            if old_key != new_key {
-                state.username_to_id.remove(&old_key);
-                state.username_to_id.insert(new_key, user_id.clone());
+
+            let current_profile = state.db.get_profile_fields(user_id.clone()).await
+                .map_err(|_| "could not read profile".to_string())?
+                .ok_or("user not found")?;
+            if let Some(email) = email_value {
+                if !current_profile.0.is_empty() && !current_profile.0.eq_ignore_ascii_case(email) {
+                    return Err("Office email cannot be changed by users. Contact the server administrator.".into());
+                }
+                if current_profile.0.is_empty() {
+                    let valid = email.len() <= 254 && email.split_once('@').map_or(false, |(local, domain)| {
+                        !local.is_empty() && domain.contains('.') && !email.chars().any(char::is_whitespace)
+                    });
+                    let domains = state.config.read().unwrap().office_email_domains.clone();
+                    let allowed = email.rsplit_once('@').map_or(false, |(_, domain)| {
+                        domains.iter().any(|d| d.trim().trim_start_matches('@').eq_ignore_ascii_case(domain))
+                    });
+                    if !valid || !allowed || domains.is_empty() {
+                        return Err("Use an office email from a domain allowed by the server administrator.".into());
+                    }
+                    if state.db.office_email_exists(email).await.unwrap_or(true) {
+                        return Err("That office email is already registered.".into());
+                    }
+                    state.db.set_office_email(user_id.clone(), email).await
+                        .map_err(|_| "could not save office email".to_string())?;
+                }
             }
-            info.username = username.to_compact_string();
+
+            if questions_value.is_some() || answers_value.is_some() {
+                let qs = questions_value.ok_or("choose three recovery questions")?;
+                let ans = answers_value.ok_or("provide all three recovery answers")?;
+                if qs.len() != 3 || ans.len() != 3 {
+                    return Err("Choose three different recovery questions and provide all answers.".into());
+                }
+                let mut question_ids = [0_i64; 3];
+                let mut answer_hashes: [String; 3] = [String::new(), String::new(), String::new()];
+                for idx in 0..3 {
+                    question_ids[idx] = qs[idx].as_i64().ok_or("invalid recovery question")?;
+                    let answer = ans[idx].as_str().unwrap_or("").trim().to_lowercase();
+                    if !(1..=10).contains(&question_ids[idx]) || answer.is_empty() || answer.len() > 200 {
+                        return Err("Recovery answers must be provided for valid questions.".into());
+                    }
+                    answer_hashes[idx] = hash_password(&answer).ok_or("could not secure recovery answers")?;
+                }
+                if question_ids.iter().collect::<std::collections::HashSet<_>>().len() != 3 {
+                    return Err("Choose three different recovery questions.".into());
+                }
+                state.db.set_recovery_answers(user_id.clone(), question_ids, answer_hashes, now_secs() as i64).await
+                    .map_err(|_| "could not save recovery questions".to_string())?;
+            }
+
+            state.db.update_user_display_profile(user_id.clone(), &display_name, &designation).await
+                .map_err(|_| "could not save profile".to_string())?;
+            info.display_name = display_name.to_compact_string();
             info.designation = designation.to_compact_string();
             state.users.insert(user_id.clone(), info.clone());
             state.known_users.insert(user_id.clone(), info);
             broadcast_users(&state).await;
+            let _ = sink.send(Message::Text(json!({"ev":"profile_updated"}).to_string())).await;
         }
 
         "designation_set" => {

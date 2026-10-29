@@ -39,6 +39,15 @@ CREATE TABLE IF NOT EXISTS users (
     id              TEXT    PRIMARY KEY,
     username        TEXT    NOT NULL,
     username_lower  TEXT    NOT NULL UNIQUE,
+    -- New profile/auth fields are nullable/defaulted so published accounts retain
+    -- their stable IDs and credentials during the additive migration.
+    office_email    TEXT    NOT NULL DEFAULT '',
+    display_name    TEXT    NOT NULL DEFAULT '',
+    office_email_lower TEXT NOT NULL DEFAULT '',
+    recovery_questions TEXT NOT NULL DEFAULT '[]',
+    recovery_answer_hashes TEXT NOT NULL DEFAULT '[]',
+    recovery_failed_attempts INTEGER NOT NULL DEFAULT 0,
+    recovery_locked_until INTEGER NOT NULL DEFAULT 0,
     designation     TEXT    NOT NULL DEFAULT '',
     avatar          TEXT    NOT NULL DEFAULT '',
     color           TEXT    NOT NULL DEFAULT '',
@@ -54,6 +63,20 @@ CREATE TABLE IF NOT EXISTS users (
     bytes_uploaded  INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_users_last_connect ON users(last_connect DESC);
+
+-- Recovery answers are stored only as salted password hashes. This table
+-- is separate from E2EE key backups: account recovery must never rewrite
+-- or replace the user's established encryption key.
+CREATE TABLE IF NOT EXISTS account_recovery (
+    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    question_1 INTEGER NOT NULL,
+    answer_hash_1 TEXT NOT NULL,
+    question_2 INTEGER NOT NULL,
+    answer_hash_2 TEXT NOT NULL,
+    question_3 INTEGER NOT NULL,
+    answer_hash_3 TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS e2ee_key_backups (
     user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
@@ -284,6 +307,19 @@ impl Db {
             let _ = conn.execute("ALTER TABLE messages ADD COLUMN client_id TEXT", []);
             let _ = conn.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0", []);
             let _ = conn.execute("ALTER TABLE users ADD COLUMN designation TEXT NOT NULL DEFAULT ''", []);
+            // Login/profile migration is additive. Existing account IDs, password
+            // hashes, public keys, encrypted messages, and E2EE backup envelopes
+            // are intentionally left untouched.
+            let _ = conn.execute("ALTER TABLE users ADD COLUMN office_email TEXT NOT NULL DEFAULT ''", []);
+            let _ = conn.execute("ALTER TABLE users ADD COLUMN display_name TEXT NOT NULL DEFAULT ''", []);
+            // Existing accounts keep their stable handle and receive it as an initial display name.
+            let _ = conn.execute("UPDATE users SET display_name=username WHERE display_name=''", []);
+            let _ = conn.execute("ALTER TABLE users ADD COLUMN office_email_lower TEXT NOT NULL DEFAULT ''", []);
+            let _ = conn.execute("ALTER TABLE users ADD COLUMN recovery_questions TEXT NOT NULL DEFAULT '[]'", []);
+            let _ = conn.execute("ALTER TABLE users ADD COLUMN recovery_answer_hashes TEXT NOT NULL DEFAULT '[]'", []);
+            let _ = conn.execute("ALTER TABLE users ADD COLUMN recovery_failed_attempts INTEGER NOT NULL DEFAULT 0", []);
+            let _ = conn.execute("ALTER TABLE users ADD COLUMN recovery_locked_until INTEGER NOT NULL DEFAULT 0", []);
+            let _ = conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_office_email_lower ON users(office_email_lower) WHERE office_email_lower <> ''", []);
             let _ = conn.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_client_id ON messages(client_id) WHERE client_id IS NOT NULL",
                 [],
@@ -462,7 +498,7 @@ impl Db {
             c.query_row(
                 "SELECT id, username, username_lower, avatar, color, pubkey, joined_at,
                         last_connect, last_seen, last_ip,
-                        total_sessions, msg_count, bytes_uploaded, designation
+                        total_sessions, msg_count, bytes_uploaded, designation, display_name
                    FROM users WHERE username_lower = ?1",
                 params![lname],
                 row_to_user,
@@ -479,7 +515,7 @@ impl Db {
             c.query_row(
                 "SELECT id, username, username_lower, avatar, color, pubkey, joined_at,
                         last_connect, last_seen, last_ip,
-                        total_sessions, msg_count, bytes_uploaded, designation
+                        total_sessions, msg_count, bytes_uploaded, designation, display_name
                    FROM users WHERE id = ?1",
                 params![id],
                 row_to_user,
@@ -496,16 +532,17 @@ impl Db {
         self.with(move |c| {
             c.execute(
                 "INSERT INTO users(
-                    id, username, username_lower, avatar, color, pubkey,
+                    id, username, username_lower, avatar, color, pubkey, display_name,
                     joined_at, last_connect, last_seen, last_ip,
                     total_sessions, msg_count, bytes_uploaded
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
                  ON CONFLICT(id) DO UPDATE SET
                     username       = excluded.username,
                     username_lower = excluded.username_lower,
                     avatar         = excluded.avatar,
                     color          = excluded.color,
                     pubkey         = CASE WHEN excluded.pubkey <> '' THEN excluded.pubkey ELSE users.pubkey END,
+                    display_name   = CASE WHEN excluded.display_name <> '' THEN excluded.display_name ELSE users.display_name END,
                     last_connect   = excluded.last_connect,
                     last_ip        = excluded.last_ip",
                 params![
@@ -515,6 +552,7 @@ impl Db {
                     i.avatar.as_str(),
                     i.color.as_str(),
                     i.pubkey.as_str(),
+                    i.display_name.as_str(),
                     i.joined_at as i64,
                     i.last_connect as i64,
                     i.last_seen as i64,
@@ -618,7 +656,7 @@ impl Db {
             let mut stmt = c.prepare(
                 "SELECT id, username, username_lower, avatar, color, pubkey, joined_at,
                         last_connect, last_seen, last_ip,
-                        total_sessions, msg_count, bytes_uploaded, designation
+                        total_sessions, msg_count, bytes_uploaded, designation, display_name
                    FROM users ORDER BY joined_at",
             )?;
             let rows = stmt.query_map([], row_to_user)?;
@@ -646,6 +684,16 @@ impl Db {
 
     /// Update a user's editable profile atomically. Returns false when the
     /// case-insensitive username is already owned by another account.
+    pub async fn update_user_display_profile(&self, id: UserId, display_name: &str, designation: &str) -> rusqlite::Result<()> {
+        let uid = id.to_string();
+        let display_name = display_name.trim().to_string();
+        let designation = designation.to_string();
+        self.with(move |c| {
+            c.execute("UPDATE users SET display_name=?2, designation=?3 WHERE id=?1", params![uid, display_name, designation])?;
+            Ok(())
+        }).await
+    }
+
     pub async fn update_user_profile(&self, id: UserId, username: &str, designation: &str) -> rusqlite::Result<bool> {
         let uid = id.to_string();
         let username = username.to_string();
@@ -727,6 +775,287 @@ impl Db {
         .await
     }
 
+    /// Resolve the canonical username for a stable account ID.
+    pub async fn username_for_user_id(
+        &self,
+        user_id: UserId,
+    ) -> rusqlite::Result<Option<String>> {
+        let id = user_id.to_string();
+        self.with(move |c| {
+            c.query_row("SELECT username FROM users WHERE id=?1", params![id], |r| r.get(0))
+                .optional()
+        }).await
+    }
+
+    /// Return true if the normalized office email is already assigned.
+    pub async fn office_email_exists(&self, office_email: &str) -> rusqlite::Result<bool> {
+        let key = office_email.trim().to_lowercase();
+        self.with(move |c| {
+            let found = c.query_row(
+                "SELECT EXISTS(SELECT 1 FROM users
+                 WHERE office_email_lower=?1
+                    OR (office_email_lower='' AND lower(trim(office_email))=?1))",
+                params![key],
+                |r| r.get::<_, i64>(0),
+            )?;
+            Ok(found != 0)
+        }).await
+    }
+
+    /// Look up credentials by a normalized office email. This is deliberately
+    /// separate from username lookup so callers never accidentally use an
+    /// email address as the canonical username or user identity.
+    pub async fn find_user_credentials_by_office_email(
+        &self,
+        office_email: &str,
+    ) -> rusqlite::Result<Option<(UserId, String, bool)>> {
+        let key = office_email.trim().to_lowercase();
+        self.with(move |c| {
+            let row = c
+                .query_row(
+                    "SELECT id, password_hash, must_change_password
+                     FROM users WHERE office_email_lower = ?1 AND office_email_lower <> ''",
+                    params![key],
+                    |r| Ok((
+                        r.get::<_, String>(0)?.to_compact_string(),
+                        r.get::<_, String>(1)?,
+                        r.get::<_, i64>(2)? != 0,
+                    )),
+                )
+                .optional()?;
+            Ok(row)
+        })
+        .await
+    }
+
+    /// Resolve credentials from either a handle or office email. Check both
+    /// normalized columns and their source columns so accounts created before
+    /// the normalized email column was backfilled remain sign-in capable.
+    pub async fn find_user_credentials_by_login_identifier(
+        &self,
+        identifier: &str,
+    ) -> rusqlite::Result<Option<(UserId, String, bool)>> {
+        let key = identifier.trim().trim_start_matches('@').to_lowercase();
+        self.with(move |c| {
+            c.query_row(
+                "SELECT id, password_hash, must_change_password
+                   FROM users
+                  WHERE lower(username) = ?1
+                     OR lower(username_lower) = ?1
+                     OR lower(office_email) = ?1
+                     OR lower(office_email_lower) = ?1
+                  ORDER BY CASE WHEN lower(username) = ?1 OR lower(username_lower) = ?1 THEN 0 ELSE 1 END
+                  LIMIT 1",
+                params![key],
+                |r| Ok((
+                    r.get::<_, String>(0)?.to_compact_string(),
+                    r.get::<_, String>(1)?,
+                    r.get::<_, i64>(2)? != 0,
+                )),
+            ).optional()
+        }).await
+    }
+
+    /// Check whether a username is owned by a different stable account ID.
+    /// Case folding matches the unique username_lower database constraint.
+    pub async fn username_taken_by_other(
+        &self,
+        username: &str,
+        user_id: &UserId,
+    ) -> rusqlite::Result<bool> {
+        let key = username.trim().to_lowercase();
+        let id = user_id.to_string();
+        self.with(move |c| {
+            let found = c.query_row(
+                "SELECT EXISTS(SELECT 1 FROM users WHERE username_lower = ?1 AND id <> ?2)",
+                params![key, id],
+                |r| r.get::<_, i64>(0),
+            )?;
+            Ok(found != 0)
+        })
+        .await
+    }
+
+    /// Change only the account's login/display username. The stable user ID,
+    /// E2EE public key and key backup, messages, memberships and channel IDs
+    /// are untouched. The unique index rejects case-insensitive collisions.
+    pub async fn update_username_for_user(
+        &self,
+        user_id: UserId,
+        username: &str,
+    ) -> rusqlite::Result<bool> {
+        let id = user_id.to_string();
+        let name = username.trim().to_string();
+        let lower = name.to_lowercase();
+        self.with(move |c| {
+            let changed = c.execute(
+                "UPDATE users SET username = ?1, username_lower = ?2 WHERE id = ?3",
+                params![name, lower, id],
+            )?;
+            Ok(changed != 0)
+        })
+        .await
+    }
+
+    /// Save an office email after the caller has validated the configured
+    /// domain policy. A unique index enforces case-insensitive uniqueness.
+    pub async fn set_office_email(
+        &self,
+        user_id: UserId,
+        office_email: &str,
+    ) -> rusqlite::Result<()> {
+        let id = user_id.to_string();
+        let email = office_email.trim().to_string();
+        let lower = email.to_lowercase();
+        self.with(move |c| {
+            c.execute(
+                "UPDATE users SET office_email = ?1, office_email_lower = ?2 WHERE id = ?3",
+                params![email, lower, id],
+            )?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// Read profile-completion fields without returning passwords or key
+    /// material. Recovery answer hashes are stored in account_recovery, not
+    /// returned by this method.
+    pub async fn get_profile_fields(
+        &self,
+        user_id: UserId,
+    ) -> rusqlite::Result<Option<(String, String, bool)>> {
+        let id = user_id.to_string();
+        self.with(move |c| {
+            c.query_row(
+                "SELECT office_email, designation,
+                    EXISTS(SELECT 1 FROM account_recovery ar WHERE ar.user_id = users.id)
+                 FROM users WHERE id = ?1",
+                params![id],
+                |r| Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, i64>(2)? != 0,
+                )),
+            )
+            .optional()
+        })
+        .await
+    }
+
+    /// Replace recovery questions and their Argon2 answer hashes. This only
+    /// updates the account_recovery table; it never touches E2EE key backups.
+    pub async fn set_recovery_answers(
+        &self,
+        user_id: UserId,
+        questions: [i64; 3],
+        answer_hashes: [String; 3],
+        now: i64,
+    ) -> rusqlite::Result<()> {
+        let id = user_id.to_string();
+        self.with(move |c| {
+            c.execute(
+                "INSERT INTO account_recovery
+                    (user_id, question_1, answer_hash_1, question_2, answer_hash_2,
+                     question_3, answer_hash_3, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                 ON CONFLICT(user_id) DO UPDATE SET
+                    question_1=excluded.question_1, answer_hash_1=excluded.answer_hash_1,
+                    question_2=excluded.question_2, answer_hash_2=excluded.answer_hash_2,
+                    question_3=excluded.question_3, answer_hash_3=excluded.answer_hash_3,
+                    updated_at=excluded.updated_at",
+                params![id, questions[0], answer_hashes[0], questions[1], answer_hashes[1],
+                        questions[2], answer_hashes[2], now],
+            )?;
+            c.execute(
+                "UPDATE users SET recovery_failed_attempts=0, recovery_locked_until=0 WHERE id=?1",
+                params![id],
+            )?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// Return recovery question IDs and lock state for a matched account.
+    /// Callers must use a generic public response to avoid account enumeration.
+    pub async fn get_recovery_challenge(
+        &self,
+        login: &str,
+    ) -> rusqlite::Result<Option<(UserId, [i64; 3], i64, i64)>> {
+        let key = login.trim().to_lowercase();
+        self.with(move |c| {
+            c.query_row(
+                "SELECT u.id, ar.question_1, ar.question_2, ar.question_3,
+                        u.recovery_failed_attempts, u.recovery_locked_until
+                 FROM users u JOIN account_recovery ar ON ar.user_id=u.id
+                 WHERE u.username_lower=?1 OR u.office_email_lower=?1
+                 LIMIT 1",
+                params![key],
+                |r| Ok((
+                    r.get::<_, String>(0)?.to_compact_string(),
+                    [r.get(1)?, r.get(2)?, r.get(3)?],
+                    r.get(4)?,
+                    r.get(5)?,
+                )),
+            )
+            .optional()
+        })
+        .await
+    }
+
+    /// Retrieve the stored answer hash for one of the selected question slots.
+    pub async fn get_recovery_answer_hash(
+        &self,
+        user_id: UserId,
+        question_slot: usize,
+    ) -> rusqlite::Result<Option<String>> {
+        let id = user_id.to_string();
+        let column = match question_slot { 0 => "answer_hash_1", 1 => "answer_hash_2", 2 => "answer_hash_3", _ => return Ok(None) };
+        self.with(move |c| {
+            let sql = format!("SELECT {column} FROM account_recovery WHERE user_id=?1");
+            c.query_row(&sql, params![id], |r| r.get::<_, String>(0)).optional()
+        })
+        .await
+    }
+
+    /// Increment recovery failures and enforce a short delay after five
+    /// failures plus a longer lockout at ten. Returns the new attempt count.
+    pub async fn record_recovery_failure(
+        &self,
+        user_id: UserId,
+        now: i64,
+    ) -> rusqlite::Result<i64> {
+        let id = user_id.to_string();
+        self.with(move |c| {
+            c.execute(
+                "UPDATE users SET recovery_failed_attempts=recovery_failed_attempts+1,
+                    recovery_locked_until=CASE
+                      WHEN recovery_failed_attempts+1 >= 10 THEN ?2 + 900
+                      WHEN recovery_failed_attempts+1 >= 5 THEN MAX(recovery_locked_until, ?2 + 60)
+                      ELSE recovery_locked_until END
+                 WHERE id=?1",
+                params![id, now],
+            )?;
+            c.query_row(
+                "SELECT recovery_failed_attempts FROM users WHERE id=?1",
+                params![id],
+                |r| r.get(0),
+            )
+        })
+        .await
+    }
+
+    pub async fn clear_recovery_failures(&self, user_id: UserId) -> rusqlite::Result<()> {
+        let id = user_id.to_string();
+        self.with(move |c| {
+            c.execute(
+                "UPDATE users SET recovery_failed_attempts=0, recovery_locked_until=0 WHERE id=?1",
+                params![id],
+            )?;
+            Ok(())
+        })
+        .await
+    }
+
     /// Persist a freshly computed password hash for `user_id`.
     /// `must_change` flags the user to be forced into a change-password
     /// flow on their next successful login (used by admin resets).
@@ -766,6 +1095,7 @@ fn row_to_user(r: &rusqlite::Row<'_>) -> rusqlite::Result<UserInfo> {
         last_connect: r.get::<_, i64>(7)? as u64,
         total_sessions: r.get::<_, i64>(10)? as u64,
         designation: r.get::<_, String>(13)?.to_compact_string(),
+        display_name: r.get::<_, String>(14).or_else(|_| r.get::<_, String>(1)).unwrap_or_default().to_compact_string(),
     })
 }
 

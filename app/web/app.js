@@ -14,12 +14,19 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const _AVATAR_COLORS = ["#6366f1","#8b5cf6","#ec4899","#ef4444","#f97316","#eab308","#22c55e","#14b8a6","#06b6d4","#3b82f6"];
 function userNameNode(user) {
   let profile = typeof user === "string" ? { username: user } : (user || {});
-  if (!profile.designation && S.userProfiles) {
+  if (S.userProfiles && profile.username) {
     const cached = [...S.userProfiles.values()].find(item => (item.username || "").toLowerCase() === (profile.username || "").toLowerCase());
-    if (cached) profile = { ...cached, ...profile, designation: cached.designation || profile.designation };
+    if (cached) profile = {
+      ...cached,
+      ...profile,
+      // DM/channel peer objects can contain only username/avatar fields. Keep
+      // the authoritative cached profile when optional fields are absent.
+      display_name: profile.display_name || cached.display_name,
+      designation: profile.designation || cached.designation,
+    };
   }
   const root = el("span", { class: "user-name-display" });
-  root.append(document.createTextNode(profile.username || "Unknown"));
+  root.append(document.createTextNode(profile.display_name || "Unknown"));
   if (profile.designation) root.append(el("span", { class: "user-designation" }, " • " + profile.designation));
   return root;
 }
@@ -143,10 +150,30 @@ function appendLinkedText(container, text, channelId = null) {
   if (channelId) {
     const users = new Map(S.users);
     if (S.me?.id) users.set(S.me.id, S.me);
-    const byName = new Map([...users.values()].filter(u => u?.username && u?.id).map(u => [u.username.toLowerCase(), u]));
+    const byName = new Map();
+    for (const user of users.values()) {
+      if (!user?.id) continue;
+      if (user.username) byName.set(user.username.replace(/^@/, "").toLowerCase(), user);
+      if (user.display_name) byName.set(user.display_name.toLowerCase(), user);
+    }
     for (const match of source.matchAll(/@([A-Za-z0-9._-]+)/g)) {
       const user = byName.get(match[1].toLowerCase());
       if (user) tokens.push({ raw: match[0], index: match.index, kind: "mention", user });
+    }
+    // Display names may contain spaces; match them as a full mention token.
+    for (const user of users.values()) {
+      const name = String(user?.display_name || "").trim();
+      if (!user?.id || !name || !name.includes(" ")) continue;
+      const needle = "@" + name;
+      const lowerSource = source.toLowerCase(), lowerNeedle = needle.toLowerCase();
+      let at = -1;
+      while ((at = lowerSource.indexOf(lowerNeedle, at + 1)) >= 0) {
+        const end = at + needle.length;
+        if ((at === 0 || !/[A-Za-z0-9._-]/.test(source[at - 1])) &&
+            (end === source.length || !/[A-Za-z0-9._-]/.test(source[end]))) {
+          tokens.push({ raw: source.slice(at, end), index: at, kind: "mention", user });
+        }
+      }
     }
   }
   tokens.sort((a, b) => a.index - b.index || (a.kind === "url" ? -1 : 1));
@@ -701,40 +728,187 @@ const S = {
   }
 })();
 
-// ── Join flow ────────────────────────────────────────────────────────
+async function loadRecoveryChallenge() {
+  const login = $("recoveryLogin").value.trim();
+  const status = $("recoveryStatus");
+  status.textContent = "";
+  status.classList.remove("err", "ok");
+  if (!login) { status.textContent = "Enter your username or office email."; status.classList.add("err"); return; }
+  const button = $("recoveryLoadBtn");
+  button.disabled = true;
+  try {
+    const response = await fetch("/api/recovery/challenge", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ login })
+    });
+    const data = await response.json();
+    if (!data.ok || !Array.isArray(data.questions)) {
+      status.textContent = data.message || "Recovery questions are not available for that account.";
+      status.classList.add("err");
+      return;
+    }
+    const select = $("recoveryQuestionSlot");
+    select.replaceChildren();
+    data.questions.forEach((questionId, slot) => {
+      const label = _recoveryQuestionLabels[Number(questionId) - 1] || "Recovery question";
+      select.add(new Option(label, String(slot)));
+    });
+    $("recoveryAnswerFields").classList.remove("hidden");
+    status.textContent = "Choose one question and answer it.";
+    status.classList.add("ok");
+  } catch {
+    status.textContent = "Could not contact the server. Please try again.";
+    status.classList.add("err");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function submitRecovery(event) {
+  event.preventDefault();
+  const status = $("recoveryStatus");
+  status.textContent = "";
+  status.classList.remove("err", "ok");
+  const login = $("recoveryLogin").value.trim();
+  const answer = $("recoveryAnswer").value.trim();
+  const newPassword = $("recoveryNewPassword").value;
+  if (!answer || newPassword.length < 4) {
+    status.textContent = "Enter your answer and a new password of at least 4 characters.";
+    status.classList.add("err"); return;
+  }
+  const button = $("recoverySubmitBtn");
+  button.disabled = true;
+  try {
+    const response = await fetch("/api/recovery/reset", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        login,
+        questionSlot: Number($("recoveryQuestionSlot").value),
+        answer,
+        newPassword
+      })
+    });
+    const data = await response.json();
+    if (data.ok) {
+      // Success immediately returns the user to sign-in; do not flash the
+      // server's informational recovery message as red error text.
+      status.textContent = "";
+      status.classList.remove("err", "ok");
+      $("username").value = login;
+      $("password").value = "";
+      closeModal("recoveryModal");
+    } else {
+      status.textContent = data.message || "Recovery failed.";
+      status.classList.add("err");
+      status.classList.remove("ok");
+    }
+  } catch {
+    status.textContent = "Could not contact the server. Please try again.";
+    status.classList.add("err");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+// ── Login / registration flow ────────────────────────────────────────
+let _joinMode = "login";
+// Hidden registration controls must not block login form submission through
+// native HTML constraint validation. Only require designation in register mode.
+if ($("registrationDesignation")) $("registrationDesignation").required = false;
+
+$("toggleRegistration")?.addEventListener("click", (event) => {
+  event.preventDefault();
+  _joinMode = _joinMode === "login" ? "register" : "login";
+  const registering = _joinMode === "register";
+  $("registrationFields")?.classList.toggle("hidden", !registering);
+  // A required control inside a visually hidden section still prevents the
+  // browser from dispatching the form submit event. Toggle it with the mode.
+  if ($("registrationDesignation")) $("registrationDesignation").required = registering;
+  $("loginIdentifierLabel").textContent = registering ? "Choose your @unique_username" : "Office email or @unique_username";
+  $("username").placeholder = registering ? "e.g. imran01" : "Office email or @unique_username";
+  $("username").maxLength = registering ? 24 : 254;
+  if ($("registrationDisplayName")) $("registrationDisplayName").required = registering;
+  $("password").autocomplete = registering ? "new-password" : "current-password";
+  $("joinButtonLabel").textContent = registering ? "Create account" : "Sign in";
+  $("toggleRegistration").textContent = registering ? "Back to sign in" : "Create an account";
+  $("joinStatus").textContent = "";
+  $("joinStatus").classList.remove("err", "ok");
+});
+
+// Keep the three recovery-question dropdowns mutually exclusive as the user chooses.
+function refreshRecoveryQuestionOptions(prefix = "recoveryQuestion") {
+  const selects = [1, 2, 3].map(n => $(prefix + n)).filter(Boolean);
+  const selected = new Set(selects.map(s => s.value).filter(Boolean));
+  for (const select of selects) {
+    const ownValue = select.value;
+    for (const option of [...select.options]) {
+      if (!option.value) continue;
+      const usedElsewhere = selected.has(option.value) && option.value !== ownValue;
+      option.disabled = usedElsewhere;
+      option.hidden = usedElsewhere;
+    }
+  }
+}
+for (const prefix of ["recoveryQuestion", "requiredQuestion"]) {
+  for (let n = 1; n <= 3; n++) {
+    $(prefix + n)?.addEventListener("change", () => refreshRecoveryQuestionOptions(prefix));
+  }
+}
+
+$("forgotPasswordLink")?.addEventListener("click", (event) => {
+  event.preventDefault();
+  $("recoveryLogin").value = $("username").value.trim();
+  $("recoveryAnswerFields").classList.add("hidden");
+  $("recoveryStatus").textContent = "";
+  openModal("recoveryModal");
+  $("recoveryLogin").focus();
+});
+
 $("joinForm").addEventListener("submit", (e) => {
   e.preventDefault();
-  const username = $("username").value.trim();
+  const identifier = $("username").value.trim();
   const password = $("password").value;
-  if (!username) return;
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{2,23}$/.test(username)) {
-    const status = $("joinStatus");
-    if (status) {
-      status.textContent = "Username must be 3-24 chars: letters, digits, underscore, hyphen, or dot. No spaces.";
-      status.classList.add("err");
+  const status = $("joinStatus");
+  status.textContent = "";
+  status.classList.remove("err", "ok");
+  if (!identifier) return;
+  let registration = {};
+  if (_joinMode === "register") {
+    if (!/^[A-Za-z0-9_-]{3,24}$/.test(identifier) || !/[0-9]/.test(identifier)) {
+      status.textContent = "Unique username must be 3–24 characters, use only letters, numbers, _ or -, include at least one number, and contain no spaces.";
+      status.classList.add("err"); $("username").focus(); return;
     }
-    const input = $("username");
-    if (input) { input.classList.add("err"); input.focus(); }
-    return;
+    const displayName = $("registrationDisplayName").value.trim();
+    if (!displayName || displayName.length > 48 || /[\u0000-\u001f\u007f]/.test(displayName)) {
+      status.textContent = "Display name must be 1–48 characters and cannot contain control characters.";
+      status.classList.add("err"); $("registrationDisplayName").focus(); return;
+    }
+    const officeEmail = $("officeEmail").value.trim();
+    const designation = $("registrationDesignation").value;
+    const recoveryQuestions = [1, 2, 3].map(n => Number($("recoveryQuestion" + n).value));
+    const recoveryAnswers = [1, 2, 3].map(n => $("recoveryAnswer" + n).value.trim());
+    if (!officeEmail || !designation || recoveryQuestions.some(q => !q) ||
+        new Set(recoveryQuestions).size !== 3 || recoveryAnswers.some(a => !a)) {
+      status.textContent = "Enter your office email, choose a designation, and choose three different recovery questions with answers.";
+      status.classList.add("err");
+      return;
+    }
+    registration = { displayName, officeEmail, designation, recoveryQuestions, recoveryAnswers };
   }
   if (!password || password.length < 4) {
-    const status = $("joinStatus");
-    if (status) {
-      status.textContent = "Password must be at least 4 characters.";
-      status.classList.add("err");
-    }
-    const pw = $("password");
-    if (pw) { pw.classList.add("err"); pw.focus(); }
+    status.textContent = "Password must be at least 4 characters.";
+    status.classList.add("err");
+    $("password").focus();
     return;
   }
-  lstore.set("username", username);
-  connect(username, password);
+  lstore.set("username", identifier);
+  connect(identifier, password, _joinMode, registration);
 });
 
 let _activePassword = "";
 let _pendingNewPassword = "";
 
-function connect(username, password) {
+function connect(username, password, mode = "login", registration = {}) {
   _activePassword = password || "";
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   const ws = new WebSocket(`${proto}//${location.host}/ws`);
@@ -745,7 +919,13 @@ function connect(username, password) {
     ws.send(JSON.stringify({
       op: "join",
       username,
+      displayName: registration.displayName || "",
       password: password || "",
+      mode,
+      officeEmail: registration.officeEmail || "",
+      designation: registration.designation || "",
+      recoveryQuestions: registration.recoveryQuestions || [],
+      recoveryAnswers: registration.recoveryAnswers || [],
       userId: lstore.get("userId") || "",
       pubkey: E2EE.myPubStr(),
     }));
@@ -961,6 +1141,7 @@ Object.assign(window, { toggleBrowserNotifications });
 function handleEvent(e, password = _activePassword) {
   switch (e.ev) {
     case "welcome":      return onWelcome(e, password);
+    case "profile_updated": return onRequiredProfileUpdated();
     case "msg":          return onWireMsg(e.m);
     case "users":        return onUsers(e.users);
     case "history":      return onHistory(e);
@@ -1003,6 +1184,14 @@ function onKicked(e) {
 }
 
 function onError(e) {
+  if (_requiredProfilePending && $("profileCompletionModal") && !$("profileCompletionModal").classList.contains("hidden")) {
+    _requiredProfilePending = false;
+    $("requiredProfileSubmit").disabled = false;
+    const status = $("requiredProfileStatus");
+    status.textContent = e.text || "Could not save account setup.";
+    status.classList.add("err");
+    return;
+  }
   if (!S.me) {
     // Server rejected our auto-join (banned, bad name, name taken, etc.).
     // Drop the saved name so the user can pick a different one, surface
@@ -1117,11 +1306,23 @@ async function onWelcome(e, password) {
   switchChannel(e.lobby || "pub:general");
   sendOp({ op: "saved_list" });
   S.lobby = e.lobby || "pub:general";
+  _requiredProfileFlags = e.profileCompletion || null;
   if (e.mustChangePassword) {
     setTimeout(() => openChangePasswordModal({ forced: true }), 200);
+  } else if (_requiredProfileFlags && Object.values(_requiredProfileFlags).some(Boolean)) {
+    setTimeout(openRequiredProfileModal, 250);
   } else if (!e.user.designation) {
     setTimeout(openDesignationModal, 250);
   }
+}
+
+function onRequiredProfileUpdated() {
+  if (!_requiredProfilePending) return;
+  _requiredProfilePending = false;
+  $("requiredProfileSubmit").disabled = false;
+  _requiredProfileFlags = null;
+  closeModal("profileCompletionModal");
+  toast("Account setup saved.");
 }
 
 function onUsers(list) {
@@ -1137,7 +1338,7 @@ function onUsers(list) {
   for (const u of list) { S.users.set(u.id, u); S.userProfiles.set(u.id, u); }
   const updatedMe = list.find(u => u.id === S.me?.id);
   if (updatedMe) {
-    const profileChanged = !!previousMe && (previousMe.username !== updatedMe.username || previousMe.designation !== updatedMe.designation);
+    const profileChanged = !!previousMe && (previousMe.display_name !== updatedMe.display_name || previousMe.designation !== updatedMe.designation);
     const avatarChanged = !!previousMe && previousMe.avatar !== updatedMe.avatar;
     S.me = updatedMe;
     const ownAvatar = $("meChip")?.querySelector(".avatar");
@@ -1148,7 +1349,7 @@ function onUsers(list) {
     if (ownName) ownName.replaceChildren(userNameNode(updatedMe));
     if (updatedMe.designation) closeModal("designationModal");
     if (profileChanged && $("settingsPanel")?.classList.contains("open")) {
-      $("profileUsername").value = updatedMe.username || "";
+      $("profileUsername").value = updatedMe.display_name || updatedMe.username || "";
       $("profileDesignation").value = updatedMe.designation || "CSA";
       const status = $("profileSettingsStatus");
       status.textContent = "Profile saved.";
@@ -1156,7 +1357,7 @@ function onUsers(list) {
       setProfileFieldEditing("username", false);
       setProfileFieldEditing("designation", false);
       const us = $("saveUsernameBtn"), ds = $("saveDesignationBtn");
-      if (us) { us.disabled = false; us.textContent = "Save username"; }
+      if (us) { us.disabled = false; us.textContent = "Save display name"; }
       if (ds) { ds.disabled = false; ds.textContent = "Save designation"; }
     }
   }
@@ -1580,10 +1781,13 @@ function messageMentionsMe(m) {
       if (decrypted == null) return false;
       text = decrypted;
     }
-    const escaped = S.me.username.replace(/[^A-Za-z0-9._-]/g, (ch) => "\\" + ch);
     const channel = S.channels.get(m.channel);
     if (channel?.kind === "group" && text.toLowerCase().split(/[^a-z0-9@_-]+/).includes("@all")) return true;
-    return new RegExp(`(^|[^A-Za-z0-9._-])@${escaped}(?=$|[^A-Za-z0-9._-])`, "i").test(text);
+    const names = [S.me.username, S.me.display_name].filter(Boolean);
+    return names.some(name => {
+      const escaped = String(name).replace(/[^A-Za-z0-9._-]/g, (ch) => "\\" + ch);
+      return new RegExp(`(^|[^A-Za-z0-9._-])@${escaped}(?=$|[^A-Za-z0-9._-])`, "i").test(text);
+    });
   };
   return inspect().catch(() => false);
 }
@@ -2287,7 +2491,7 @@ async function renderMessage(m, { follow, peer, ch }) {
           type: authorIsMe ? undefined : "button",
           class: "author" + (authorIsMe ? "" : " author-link"),
           style: `color:${m.color || "var(--brand)"}`,
-          title: authorIsMe ? m.username : `Message ${m.username}`,
+          title: authorIsMe ? "Your message" : "Open direct chat",
           onclick: authorIsMe ? undefined : (ev) => {
             ev.stopPropagation();
             openDmWithUserId(m.userId, m.username);
@@ -3251,49 +3455,60 @@ function closeMentionPicker() {
 function getMentionToken() {
   const caret = msgInput.selectionStart ?? msgInput.value.length;
   const before = msgInput.value.slice(0, caret);
-  const match = before.match(/(^|\s)@([A-Za-z0-9._-]*)$/);
+  // Allow spaces while searching so a multi-word display name can be selected.
+  const match = before.match(/(^|\s)@([^\n@]*)$/);
   if (!match) return null;
   return { start: caret - match[2].length - 1, end: caret, query: match[2] };
 }
 function updateMentionPicker() {
   const token = getMentionToken();
   if (!token) { closeMentionPicker(); return; }
-  const query = token.query.toLowerCase();
+  const query = token.query.trimStart().toLowerCase();
   const activeChannel = S.channels.get(S.active);
   const allCandidate = activeChannel?.kind === "group" && "all".startsWith(query)
-    ? [{ id: "__all__", username: "all", color: "var(--brand)", avatar: "@", online: true, isAll: true }]
+    ? [{ id: "__all__", username: "all", display_name: "all", color: "var(--brand)", avatar: "@", online: true, isAll: true }]
     : [];
   const candidates = [...allCandidate, ...[...S.users.values()]
+    .map((u) => {
+      const cached = S.userProfiles.get(u.id) ||
+        [...S.userProfiles.values()].find((p) => (p.username || "").toLowerCase() === (u.username || "").toLowerCase());
+      return cached ? {
+        ...u,
+        display_name: u.display_name || cached.display_name,
+        designation: u.designation || cached.designation,
+      } : u;
+    })
     .filter((u) => u.username && u.username.toLowerCase() !== (S.me?.username || "").toLowerCase())
-    .filter((u) => u.username.toLowerCase().startsWith(query))
-    .sort((a, b) => a.username.localeCompare(b.username))]
+    .filter((u) => u.username.toLowerCase().startsWith(query) || String(u.display_name || "").toLowerCase().startsWith(query))
+    .sort((a, b) => String(a.display_name || a.username).localeCompare(String(b.display_name || b.username)))]
     .slice(0, 8);
   if (!candidates.length) { closeMentionPicker(); return; }
   mentionToken = token;
   mentionCandidates = candidates;
   mentionActiveIndex = Math.min(mentionActiveIndex, candidates.length - 1);
   mentionPicker.replaceChildren(...candidates.map((u, i) => {
+    const displayName = String(u.display_name || u.username);
     const item = el("button", {
       type: "button",
       class: "mention-option" + (i === mentionActiveIndex ? " active" : ""),
       role: "option",
       "aria-selected": i === mentionActiveIndex ? "true" : "false",
-      onmousedown: (ev) => { ev.preventDefault(); insertMention(u.username); },
+      onmousedown: (ev) => { ev.preventDefault(); insertMention(u.isAll ? u.username : displayName); },
     }, [
-      (() => { const node = el("span", { class: "mention-option-avatar", style: `background:${u.color || colorForName(u.username)}` }); renderAvatarContent(node, u.avatar, u.username?.[0] || "?"); return node; })(),
-      el("span", { class: "mention-option-name" }, "@" + u.username),
-      el("span", { class: "mention-option-status" }, u.isAll ? "everyone in group" : (u.online ? "online" : "")),
+      (() => { const node = el("span", { class: "mention-option-avatar", style: `background:${u.color || colorForName(u.username)}` }); renderAvatarContent(node, u.avatar, displayName?.[0] || "?"); return node; })(),
+      el("span", { class: "mention-option-name" }, "@" + displayName),
+      el("span", { class: "mention-option-status" }, u.isAll ? "everyone in group" : ("@" + u.username + (u.online ? " · online" : ""))),
     ]);
     return item;
   }));
   mentionPicker.classList.remove("hidden");
 }
-function insertMention(username) {
+function insertMention(name) {
   if (!mentionToken) return;
   const { start, end } = mentionToken;
   const before = msgInput.value.slice(0, start);
   const after = msgInput.value.slice(end);
-  const inserted = "@" + username + " ";
+  const inserted = "@" + name + " ";
   msgInput.value = before + inserted + after;
   const caret = before.length + inserted.length;
   msgInput.focus();
@@ -3382,8 +3597,17 @@ function openCreateChannel() {
   $("createModal").classList.remove("hidden");
   $("newChName").focus();
 }
-function closeModal(id) { $(id).classList.add("hidden"); }
+function closeModal(id) {
+  if (id === "profileCompletionModal" && _requiredProfileFlags &&
+      Object.values(_requiredProfileFlags).some(Boolean)) return;
+  $(id).classList.add("hidden");
+}
 function openModal(id) { const m = $(id); if (m) m.classList.remove("hidden"); }
+
+$("profileCompletionModal")?.addEventListener("click", (event) => {
+  if (event.target === $("profileCompletionModal") && _requiredProfileFlags &&
+      Object.values(_requiredProfileFlags).some(Boolean)) event.stopPropagation();
+});
 
 // ── Sidebar "+" menu (new channel / new DM) ─────────────────────────
 function toggleNewMenu(ev) {
@@ -3667,7 +3891,7 @@ Object.assign(window,{setProfileAvatarPreset});
 
 function openSettingsPanel() {
   if (!S.me) return;
-  $("profileUsername").value = S.me.username || "";
+  $("profileUsername").value = S.me.display_name || S.me.username || "";
   $("profileDesignation").value = S.me.designation || "CSA";
   renderProfileAvatarSettings();
   setProfileFieldEditing("username", false);
@@ -3699,17 +3923,17 @@ function setProfileFieldEditing(field, editing) {
   if (editing) input.focus();
 }
 function cancelProfileFieldEdit(field) {
-  $("profileUsername").value = S.me?.username || "";
+  $("profileUsername").value = S.me?.display_name || S.me?.username || "";
   $("profileDesignation").value = S.me?.designation || "CSA";
   setProfileFieldEditing(field, false);
   const status = $("profileSettingsStatus"); if (status) { status.textContent = ""; status.classList.remove("err", "ok"); }
 }
 function submitProfileField(field) {
-  const username = ($("profileUsername")?.value || "").trim();
+  const displayName = ($("profileUsername")?.value || "").trim();
   const designation = $("profileDesignation")?.value || "";
   const status = $("profileSettingsStatus"); status.classList.remove("err", "ok");
-  if (field === "username" && !/^[A-Za-z0-9][A-Za-z0-9_.-]{2,23}$/.test(username)) {
-    status.textContent = "Use 3–24 characters: letters, digits, underscore, hyphen, or dot; start with a letter or digit.";
+  if (field === "username" && (!displayName || displayName.length > 48 || /[\u0000-\u001f\u007f]/.test(displayName))) {
+    status.textContent = "Display name must be 1–48 characters and cannot contain control characters.";
     status.classList.add("err"); $("profileUsername")?.focus(); return;
   }
   if (field === "designation" && !["AM","TL","STL","QDE","LRD","EE","CSA"].includes(designation)) {
@@ -3719,8 +3943,8 @@ function submitProfileField(field) {
   const save = $(field === "username" ? "saveUsernameBtn" : "saveDesignationBtn");
   if (save) { save.disabled = true; save.textContent = "Saving…"; }
   status.textContent = "Saving changes…";
-  sendOp(field === "username" ? { op: "profile_update", username } : { op: "profile_update", designation });
-  setTimeout(() => { if (save?.isConnected) { save.disabled = false; save.textContent = field === "username" ? "Save username" : "Save designation"; } }, 3000);
+  sendOp(field === "username" ? { op: "profile_update", displayName } : { op: "profile_update", designation });
+  setTimeout(() => { if (save?.isConnected) { save.disabled = false; save.textContent = field === "username" ? "Save display name" : "Save designation"; } }, 3000);
 }
 function signOut() {
   lstore.remove("username");
@@ -3732,6 +3956,85 @@ function signOut() {
   S.ws = null;
   location.reload();
 }
+
+let _requiredProfileFlags = null;
+const _recoveryQuestionLabels = [
+  "What was the name of your first school?",
+  "What was the name of the first street you lived on?",
+  "What nickname did you have as a child?",
+  "What was the name of your first teacher?",
+  "What was the name of your first pet?",
+  "What was the first concert or live music event you attended?",
+  "What was your first job or workplace?",
+  "What was the model of your first car or motorcycle?",
+  "What was the name of a childhood friend?",
+  "What was the first city you lived in?"
+];
+
+function openRequiredProfileModal() {
+  if (!_requiredProfileFlags || !Object.values(_requiredProfileFlags).some(Boolean)) return;
+  const flags = _requiredProfileFlags;
+  $("requiredUsernameField").classList.toggle("hidden", !flags.username);
+  $("requiredEmailField").classList.toggle("hidden", !flags.officeEmail);
+  $("requiredDesignationField").classList.toggle("hidden", !flags.designation);
+  $("requiredRecoveryFields").classList.toggle("hidden", !flags.recoveryQuestions);
+  $("requiredUsername").value = S.me?.display_name || S.me?.username || "";
+  $("requiredOfficeEmail").value = "";
+  $("requiredDesignation").value = S.me?.designation || "";
+  for (let n = 1; n <= 3; n++) {
+    const select = $("requiredQuestion" + n);
+    if (select && !select.options.length) {
+      select.add(new Option("Choose a question", ""));
+      _recoveryQuestionLabels.forEach((label, index) => select.add(new Option(label, String(index + 1))));
+    }
+    if ($("requiredAnswer" + n)) $("requiredAnswer" + n).value = "";
+  }
+  openModal("profileCompletionModal");
+  if (flags.username) $("requiredUsername").focus();
+}
+
+async function submitRequiredProfile(event) {
+  event.preventDefault();
+  const flags = _requiredProfileFlags || {};
+  const username = $("requiredUsername").value.trim();
+  const designation = $("requiredDesignation").value;
+  const officeEmail = $("requiredOfficeEmail").value.trim();
+  const status = $("requiredProfileStatus");
+  status.textContent = "";
+  status.classList.remove("err", "ok");
+  if (flags.username && (!username || username.length > 48 || /[\u0000-\u001f\u007f]/.test(username))) {
+    status.textContent = "Display name must be 1–48 characters and cannot contain control characters.";
+    status.classList.add("err"); return;
+  }
+  if (flags.officeEmail && !officeEmail) {
+    status.textContent = "Enter your office email."; status.classList.add("err"); return;
+  }
+  if (flags.designation && !designation) {
+    status.textContent = "Choose your designation."; status.classList.add("err"); return;
+  }
+  const payload = { op: "profile_update" };
+  if (flags.username) payload.displayName = username;
+  if (flags.designation) payload.designation = designation;
+  else payload.designation = S.me.designation || "CSA";
+  if (flags.officeEmail) payload.officeEmail = officeEmail;
+  if (flags.recoveryQuestions) {
+    payload.recoveryQuestions = [1, 2, 3].map(n => Number($("requiredQuestion" + n).value));
+    payload.recoveryAnswers = [1, 2, 3].map(n => $("requiredAnswer" + n).value.trim());
+    if (payload.recoveryQuestions.some(q => !q) || new Set(payload.recoveryQuestions).size !== 3 ||
+        payload.recoveryAnswers.some(a => !a)) {
+      status.textContent = "Choose three different questions and enter all answers."; status.classList.add("err"); return;
+    }
+  }
+  if (!S.ws || S.ws.readyState !== WebSocket.OPEN) {
+    status.textContent = "Connection lost. Please reconnect and try again."; status.classList.add("err"); return;
+  }
+  $("requiredProfileSubmit").disabled = true;
+  status.textContent = "Saving account setup…";
+  S.ws.send(JSON.stringify(payload));
+  // The server sends profile_updated only after the DB writes succeed.
+  _requiredProfilePending = true;
+}
+let _requiredProfilePending = false;
 
 // ── Change password ─────────────────────────────────────────────────
 let _cpwForced = false;

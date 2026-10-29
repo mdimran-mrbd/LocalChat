@@ -32,8 +32,7 @@ people share a network but not necessarily the internet:
 - **One binary, no install.** Drop `LocalChat.exe` on a desktop. Double-click.
   That's the whole setup.
 - **LAN-first and private.** Chat works without internet. When the host has internet, the host browser can check GitHub Releases for updates after the host opts in; installing an update always requires confirmation. No chat messages or user data are sent.
-- **No accounts.** Pick a name, you're in. Identity is bound to a per-browser
-  key so usernames can't be impersonated.
+- **Account-based identity.** Register with a unique username, display name, and office email from a domain allowed by the server administrator. Users choose a unique username for sign-in and mentions. Display names are editable and do not need to be unique; users can sign in with their unique username or office email. Email changes are restricted to the host's Admin dashboard. No email verification message is sent.
 - **End-to-end encrypted DMs.** The host process literally cannot read direct
   messages.
 - **Persistent.** Channels, members, message history, reactions and uploads
@@ -62,7 +61,7 @@ people share a network but not necessarily the internet:
 3. Allow it through Windows Firewall (Private network is enough).
 4. Read the LAN URL from the tray tooltip — e.g. `https://192.168.1.42:5000` —
    and share it with anyone on the same Wi-Fi.
-5. They open the URL, pick a name, and start chatting. No install, no signup.
+5. They open the URL and register with a unique username, display name, an allowed office email, a designation, and recovery answers. They can later sign in with that handle or office email. No client installation or email verification is required.
 
 > 🔒 **HTTPS certificate note:** On a private LAN, browsers may show a certificate-authority warning until the LocalChat host's public CA certificate is trusted on the connecting device. Follow [the LAN HTTPS trust guide](docs/lan-https-trust.md). Do not proceed past a certificate warning unless you have verified you are connecting to your own trusted LocalChat host.
 
@@ -78,7 +77,7 @@ admin token pre-filled. From there:
 - Broadcast announcements to `#general`.
 - View and delete channels and uploaded files.
 - Change settings (port, max upload, history cap, autostart on boot,
-  allow LAN admin access).
+  allow LAN admin access, and the allowed office-email domains for registration).
 
 The admin API is **localhost-only by default** and gated by a per-install token.
 
@@ -92,8 +91,8 @@ replaced, or upgraded without losing your data — and without asking again.
 
 Inside the chosen folder you'll find:
 
-- `localchat.db` — single SQLite file holding users, channels, messages,
-  reactions, read receipts, bans, and the per-database `server_id`.
+- `localchat.db` — single SQLite file holding accounts and profile fields, channels, messages,
+  reactions, read receipts, bans, recovery-question hashes, and the per-database `server_id`.
 - `uploads/` — raw uploaded blobs (atomic writes, sha-prefixed names).
 - `tls/` — self-signed certificate + key (or your Let's Encrypt cert).
 - `logs/localchat.log` — rolling app log.
