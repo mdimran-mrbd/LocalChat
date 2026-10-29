@@ -126,10 +126,10 @@ These are prior user decisions that the new UI must reflect; they are requiremen
 
 - Each account has a unique email address, but registration does **not** send a verification email.
 - Email is immutable to ordinary users; only a server Admin can change it in Admin settings.
-- Users can sign in with either email or their unique generated `@handle`.
+- Users can sign in with either email or their unique generated `@username`.
 - The app generates the unique handle (example: `@imran07`); users should not be asked to invent one during registration unless the user explicitly changes this decision later.
 - Display name is editable, does not need to be unique, and is capitalized appropriately after save.
-- Users can be mentioned by display name or `@handle`.
+- Users can be mentioned by display name or `@username`.
 - Preserve designation selection and all existing supported account-security behavior.
 - Preserve end-to-end encrypted DM privacy. Never expose DM plaintext or extracted DM URLs in server-side indexes as part of auth work.
 - Do not change backend authentication semantics merely to make a visual prototype work. UI, API, database migrations, and compatibility tests must agree before shipping.
