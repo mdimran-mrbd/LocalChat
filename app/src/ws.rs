@@ -20,7 +20,7 @@ use tokio::sync::broadcast;
 use crate::channel::{Channel, ChannelKind, LOBBY_ID};
 use crate::message::{now_secs, FileInfo, MsgKind, WireMsg};
 use crate::state::AppState;
-use crate::user::{display_name_handle_base, normalize_display_name, validate_new_username, UserId, UserInfo};
+use crate::user::{normalize_display_name, validate_new_username, UserId, UserInfo};
 
 /// What to do with a freshly-supplied password once the join has been
 /// validated. Decided pre-commit so the rest of the join logic can run
@@ -119,6 +119,13 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
     let is_email_login = !is_registration && identifier.contains('@');
     let display_name_input = if join.display_name.trim().is_empty() { raw_identifier } else { join.display_name.trim() };
     let mut username = if is_registration {
+        if let Err(message) = validate_new_username(raw_identifier) {
+            let _ = sink.send(Message::Text(json!({
+                "ev":"error", "text":message, "code":"invalid_unique_username"
+            }).to_string())).await;
+            state.metrics.dec_connect();
+            return;
+        }
         if normalize_display_name(display_name_input).is_err() {
             let _ = sink.send(Message::Text(json!({
                 "ev":"error", "text":"Display name must be 1–48 characters and cannot contain control characters.",
@@ -127,22 +134,9 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
             state.metrics.dec_connect();
             return;
         }
-        // Generate a unique, stable handle from the display name. The suffix
-        // keeps handles unique without making display names globally unique.
-        let base = display_name_handle_base(display_name_input);
-        let mut suffix = 1_u32;
-        loop {
-            let candidate = format!("{}{:02}", base, suffix);
-            if state.db.find_user_credentials(&candidate).await.ok().flatten().is_none() {
-                break candidate.to_compact_string();
-            }
-            suffix = suffix.saturating_add(1);
-            if suffix == u32::MAX {
-                let _ = sink.send(Message::Text(r#"{"ev":"error","text":"Could not generate a unique handle. Contact the server administrator.","code":"handle_generation_failed"}"#.into())).await;
-                state.metrics.dec_connect();
-                return;
-            }
-        }
+        // User-chosen unique usernames are normalized to lowercase so casing
+        // can never create separate identities for the same account name.
+        raw_identifier.to_ascii_lowercase().to_compact_string()
     } else if is_email_login {
         if identifier.len() > 254 || identifier.chars().any(char::is_whitespace) {
             let _ = sink.send(Message::Text(r#"{"ev":"error","text":"Invalid login details.","code":"invalid_login"}"#.into())).await;
@@ -196,8 +190,8 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
         return;
     }
 
-    // Registration checks whether the generated handle is already taken.
-    // Login resolves either the unique @handle or office email through one
+    // Registration checks whether the chosen unique username is already taken.
+    // Login resolves either the unique username (optionally prefixed with @) or office email through one
     // case-insensitive query, including legacy rows whose normalized email
     // column was not populated by an earlier build.
     let lookup_result = if is_registration {
@@ -1751,7 +1745,7 @@ async fn handle_op(
             }
 
             if username_value.is_some() {
-                return Err("The @handle cannot be changed by users. Update your display name instead.".into());
+                return Err("The unique username cannot be changed by users. Update your display name instead.".into());
             }
             let display_name = if let Some(value) = display_name_value {
                 normalize_display_name(value).map_err(str::to_string)?
