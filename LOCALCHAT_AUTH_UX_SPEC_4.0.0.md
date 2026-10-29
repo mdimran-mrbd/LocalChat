@@ -70,11 +70,11 @@
 6. Full-width **Create account** primary button.
 7. Existing-account prompt with **Sign in**.
 
-### Generated handle
+### User-chosen unique username
 - Do not ask the user to create a username.
-- Explain that LocalChat assigns a unique `@username` after account creation and that it can be used to sign in and be mentioned in chats.
-- After successful registration, show a distinct **Account created** confirmation that reveals the assigned handle, provides a copy action, and explains that the display name is editable while the email is admin-managed.
-- Only show the generated handle if it is returned authoritatively by the backend. Never fabricate one client-side.
+- Let users choose their unique `@username` during registration. It can be used to sign in and be mentioned in chats.
+- Do not show a separate post-registration username confirmation or copy dialog; the user chooses and knows their own username.
+- The server must validate the chosen username and reject duplicates case-insensitively.
 
 ### Recovery questions
 - Preserve the existing question bank and answer-hashing behavior.
@@ -88,7 +88,7 @@
 - Validate required fields, email syntax, password policy, matching confirmation (if present), distinct recovery questions, and non-empty recovery answers before sending.
 - The server remains authoritative for uniqueness, handle generation, password policy, and account creation.
 - Present duplicate email, invalid input, connection failure, and server failure in human-readable inline states.
-- After success, show the generated handle and a clear next action: **Continue to sign in** or continue automatically only if the existing session contract supports it. Do not silently change authentication/session behavior as part of a visual redesign.
+- After success, continue using the existing session behavior; do not show a separate username confirmation dialog.
 
 ## 5. Screen C — Forgot password / account recovery
 
@@ -138,7 +138,7 @@ Every screen must be designed and tested for:
 Specific registration states:
 - Recovery question choices dynamically filtered to prevent duplicates.
 - Email already in use.
-- Registration succeeds and server returns generated handle.
+- Registration succeeds with the user-chosen unique username.
 - Registration succeeds but handle cannot be shown due to malformed/missing response: display a safe support/retry message, never invent a handle.
 
 Specific recovery states:
@@ -166,7 +166,7 @@ Specific recovery states:
 
 This segment is accepted only when:
 - Login, signup, and recovery form a visually consistent Emerald Studio experience.
-- Generated handle and display-name copy matches the approved identity model.
+- User-chosen username and display-name copy matches the approved identity model.
 - Three recovery questions cannot be duplicated through the UI and are still validated server-side.
 - Recovery UI matches the actual supported backend flow; no fake reset behavior exists.
 - Login, registration, password recovery, and authenticated password change remain distinct flows.
@@ -179,7 +179,7 @@ This segment is accepted only when:
 
 - Confirm exact current recovery API sequence, endpoint names, response states, rate limiting, and reset token/session semantics.
 - Confirm whether registration currently requires a confirm-password field and the authoritative password length/policy.
-- Confirm how the generated handle is returned and displayed after successful registration.
+- Confirm the user-chosen username is validated and saved without changing existing account IDs.
 - Confirm whether sign-in error responses can be surfaced safely without account enumeration.
 - Confirm that a user with no recovery answers can be handled safely and clearly.
 
