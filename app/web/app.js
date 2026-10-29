@@ -786,6 +786,8 @@ function setRegistrationStep(step) {
   const panels = [$("registrationIdentityPanel"), $("registrationSecurityPanel"), $("registrationPasswordPanel")];
   if (panels.some(panel => !panel)) return;
   panels.forEach((panel, index) => panel.classList.toggle("hidden", index + 1 !== step));
+  const copy={1:["Your information","Set up your LocalChat profile."],2:["Security questions","Choose three different questions to recover your account."],3:["Create your password","Use at least 4 characters and confirm it below."]}[step];
+  if(copy){$("registrationStepTitle").textContent=copy[0];$("registrationStepSubtitle").textContent=copy[1];}
   document.querySelectorAll("#join .auth-progress-step").forEach((node, index) => {
     node.classList.toggle("is-active", index + 1 === step);
     node.classList.toggle("is-complete", index + 1 < step);
@@ -816,6 +818,7 @@ $("registrationPasswordNextBtn")?.addEventListener("click", () => {
   setRegistrationStep(3);
 });
 $("registrationPasswordBackBtn")?.addEventListener("click",()=>setRegistrationStep(2));
+$("usernameHelp")?.addEventListener("click",()=>{const b=$("usernameHelp");b.setAttribute("aria-expanded",String(b.getAttribute("aria-expanded")!=="true"));});
 $("toggleRegistration")?.addEventListener("click",(event)=>{
   event.preventDefault(); _joinMode=_joinMode==="login"?"register":"login";
   const registering=_joinMode==="register";
@@ -834,6 +837,7 @@ $("toggleRegistration")?.addEventListener("click",(event)=>{
   if($("registrationDesignation")) $("registrationDesignation").required=false;
   $("accountPromptText").textContent=registering?"Already registered?":"Not registered yet?";
   $("toggleRegistration").textContent=registering?"Sign in here":"Create your account";
+  $("forgotPasswordLink")?.classList.toggle("hidden", registering);
   $("joinStatus").textContent=""; $("joinStatus").classList.remove("err","ok");
   if(registering) setRegistrationStep(1); else $("username").focus();
 });
