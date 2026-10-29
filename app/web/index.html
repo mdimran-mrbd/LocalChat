@@ -77,7 +77,7 @@
 
       <form id="joinForm" class="join-form join-form-scrollable">
         <label class="field">
-          <span id="loginIdentifierLabel">Office email or @unique_username</span>
+          <span id="loginIdentifierLabel">Email or @username</span>
           <input id="username" type="text" maxlength="254" required
                  autocomplete="username" spellcheck="false"
                  placeholder="Office email or @unique_username"/>
@@ -89,7 +89,7 @@
         </label>
         <div id="registrationFields" class="hidden">
           <label class="field">
-            <span>Office email (no verification email will be sent)</span>
+            <span>Work email · no verification email will be sent</span>
             <input id="officeEmail" type="email" maxlength="254" autocomplete="email" placeholder="you@company.example"/>
           </label>
           <label class="field">
@@ -103,7 +103,7 @@
             <span>Display name</span>
             <input id="registrationDisplayName" type="text" maxlength="48" autocomplete="name" placeholder="e.g. Razzak Islam"/>
           </label>
-          <p class="muted small">Choose your own unique username, such as <strong>imran01</strong>. Use 3–24 characters: English letters, numbers, underscores (_) or hyphens (-). No spaces; at least one number is required. Your username cannot be changed later. Display names are editable and do not need to be unique.</p>
+          <p class="muted small">LocalChat will generate your unique @username after account creation. You can use it to sign in and mention coworkers. Your display name is editable; your email can only be changed by a server administrator.</p>
           <div class="field">
             <span>Recovery question 1</span>
             <select id="recoveryQuestion1">
@@ -139,7 +139,7 @@
           </div>
         </div>
         <p class="muted small" style="margin:-4px 0 4px;font-size:12px;">
-          Use your account password to sign in on other browsers. Recovery answers are stored as password hashes.
+          Use your password to sign in on other devices. Recovery answers are stored as password hashes.
         </p>
         <button class="btn btn-primary btn-lg" type="submit">
           <span id="joinButtonLabel">Sign in</span>
@@ -160,6 +160,18 @@
         </span>
         <button type="button" id="themeToggleJoin" class="icon-btn" title="Toggle theme" aria-label="Toggle theme" onclick="toggleTheme()" hidden></button>
       </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════ REGISTRATION SUCCESS ═══════════════════ -->
+  <div id="registrationSuccessModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="registrationSuccessTitle" aria-describedby="registrationSuccessHelp">
+    <div class="modal-panel auth-success-panel">
+      <div class="auth-success-icon" aria-hidden="true">✓</div>
+      <h2 id="registrationSuccessTitle">Your account is ready</h2>
+      <p id="registrationSuccessHelp" class="muted">Your unique username has been created. Save it so you can sign in or be mentioned by coworkers.</p>
+      <div class="auth-assigned-username"><span id="registrationSuccessUsername">@username</span><button type="button" class="btn btn-ghost btn-sm" onclick="copyRegistrationUsername()" aria-label="Copy username">Copy</button></div>
+      <p class="muted small">Your display name can be edited in Settings. Only a server administrator can change your email.</p>
+      <footer class="modal-foot"><button type="button" class="btn btn-primary" onclick="closeModal('registrationSuccessModal')">Continue to LocalChat</button></footer>
     </div>
   </div>
 
