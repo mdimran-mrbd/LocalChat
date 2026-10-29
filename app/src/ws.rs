@@ -117,7 +117,7 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
     let raw_identifier = join.username.trim();
     let identifier = if !is_registration { raw_identifier.strip_prefix('@').unwrap_or(raw_identifier) } else { raw_identifier };
     let is_email_login = !is_registration && identifier.contains('@');
-    let display_name_input = if join.display_name.trim().is_empty() { raw_identifier } else { join.display_name.trim() };
+    let display_name_input = join.display_name.trim();
     let mut username = if is_registration {
         if let Err(message) = validate_new_username(raw_identifier) {
             let _ = sink.send(Message::Text(json!({
@@ -191,7 +191,7 @@ pub async fn handle(socket: WebSocket, state: Arc<AppState>, peer_ip: String, us
     }
 
     // Registration checks whether the chosen unique username is already taken.
-    // Login resolves either the unique username (optionally prefixed with @) or office email through one
+    // Login resolves either the @unique_username (with or without the @ prefix) or office email through one
     // case-insensitive query, including legacy rows whose normalized email
     // column was not populated by an earlier build.
     let lookup_result = if is_registration {
