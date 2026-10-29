@@ -810,6 +810,31 @@ async function submitRecovery(event) {
   }
 }
 
+async function copyRegistrationUsername() {
+  const value = $("registrationSuccessUsername")?.textContent?.trim() || "";
+  if (!value) return;
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+    } else {
+      const field = document.createElement("textarea");
+      field.value = value;
+      field.setAttribute("readonly", "");
+      field.style.position = "fixed";
+      field.style.opacity = "0";
+      document.body.append(field);
+      field.select();
+      const copied = document.execCommand("copy");
+      field.remove();
+      if (!copied) throw new Error("Clipboard unavailable");
+    }
+    toast("Username copied.");
+  } catch {
+    toast("Copy is unavailable here. Select and copy your username manually.", 4000);
+  }
+}
+Object.assign(window, { copyRegistrationUsername });
+
 // ── Login / registration flow ────────────────────────────────────────
 let _joinMode = "login";
 let _pendingRegistration = false;
