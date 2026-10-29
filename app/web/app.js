@@ -19,7 +19,7 @@ function userNameNode(user) {
     if (cached) profile = { ...cached, ...profile, designation: cached.designation || profile.designation };
   }
   const root = el("span", { class: "user-name-display" });
-  root.append(document.createTextNode(profile.display_name || profile.username || "Unknown"));
+  root.append(document.createTextNode(profile.display_name || "Unknown"));
   if (profile.designation) root.append(el("span", { class: "user-designation" }, " • " + profile.designation));
   return root;
 }
@@ -2484,7 +2484,7 @@ async function renderMessage(m, { follow, peer, ch }) {
           type: authorIsMe ? undefined : "button",
           class: "author" + (authorIsMe ? "" : " author-link"),
           style: `color:${m.color || "var(--brand)"}`,
-          title: authorIsMe ? m.username : `Message ${m.username}`,
+          title: authorIsMe ? "Your message" : "Open direct chat",
           onclick: authorIsMe ? undefined : (ev) => {
             ev.stopPropagation();
             openDmWithUserId(m.userId, m.username);
