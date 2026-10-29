@@ -729,89 +729,50 @@ const S = {
 })();
 
 async function loadRecoveryChallenge() {
-  const loginInput = $("recoveryLogin").value.trim();
-  const login = loginInput.startsWith("@") && !loginInput.includes("@", 1) ? loginInput.slice(1) : loginInput;
-  const status = $("recoveryStatus");
-  status.textContent = "";
-  status.classList.remove("err", "ok");
-  if (!login) { status.textContent = "Enter your username or office email."; status.classList.add("err"); return; }
-  const button = $("recoveryLoadBtn");
-  button.disabled = true;
-  try {
-    const response = await fetch("/api/recovery/challenge", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ login })
-    });
-    const data = await response.json();
-    if (!data.ok || !Array.isArray(data.questions)) {
-      status.textContent = data.message || "Recovery questions are not available for that account.";
-      status.classList.add("err");
-      return;
-    }
-    const select = $("recoveryQuestionSlot");
-    select.replaceChildren();
-    data.questions.forEach((questionId, slot) => {
-      const label = _recoveryQuestionLabels[Number(questionId) - 1] || "Recovery question";
-      select.add(new Option(label, String(slot)));
-    });
-    $("recoveryAnswerFields").classList.remove("hidden");
-    $("recoveryIdentifierField")?.classList.add("hidden");
-    status.textContent = "Choose one question and answer it.";
-    status.classList.add("ok");
-  } catch {
-    status.textContent = "Could not contact the server. Please try again.";
-    status.classList.add("err");
-  } finally {
-    button.disabled = false;
-  }
+  const loginInput=$("recoveryLogin").value.trim();
+  const login=loginInput.startsWith("@")&&!loginInput.includes("@",1)?loginInput.slice(1):loginInput;
+  const status=$("recoveryStatus"); status.textContent=""; status.classList.remove("err","ok");
+  if(!login){status.textContent="Enter your username or office email.";status.classList.add("err");$("recoveryLogin").focus();return;}
+  const button=$("recoveryLoadBtn");button.disabled=true;
+  try{
+    const response=await fetch("/api/recovery/challenge",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({login})});
+    const data=await response.json();
+    if(!data.ok||!Array.isArray(data.questions)){status.textContent=data.message||"Recovery questions are not available for that account.";status.classList.add("err");return;}
+    const select=$("recoveryQuestionSlot");select.replaceChildren();
+    data.questions.forEach((questionId,slot)=>select.add(new Option(_recoveryQuestionLabels[Number(questionId)-1]||"Recovery question",String(slot))));
+    $("recoveryIdentifierField")?.classList.add("hidden");button.classList.add("hidden");
+    $("recoveryQuestionStep")?.classList.remove("hidden");$("recoveryPasswordStep")?.classList.add("hidden");
+    status.textContent="";$("recoveryAnswer")?.focus();
+  }catch{status.textContent="Could not contact the server. Please try again.";status.classList.add("err");}
+  finally{button.disabled=false;}
 }
 
 async function submitRecovery(event) {
   event.preventDefault();
-  const status = $("recoveryStatus");
-  status.textContent = "";
-  status.classList.remove("err", "ok");
-  const loginInput = $("recoveryLogin").value.trim();
-  const login = loginInput.startsWith("@") && !loginInput.includes("@", 1) ? loginInput.slice(1) : loginInput;
-  const answer = $("recoveryAnswer").value.trim();
-  const newPassword = $("recoveryNewPassword").value;
-  if (!answer || newPassword.length < 4) {
-    status.textContent = "Enter your answer and a new password of at least 4 characters.";
-    status.classList.add("err"); return;
-  }
-  const button = $("recoverySubmitBtn");
-  button.disabled = true;
-  try {
-    const response = await fetch("/api/recovery/reset", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        login,
-        questionSlot: Number($("recoveryQuestionSlot").value),
-        answer,
-        newPassword
-      })
-    });
-    const data = await response.json();
-    if (data.ok) {
-      // Success immediately returns the user to sign-in; do not flash the
-      // server's informational recovery message as red error text.
-      status.textContent = "";
-      status.classList.remove("err", "ok");
-      $("username").value = login;
-      $("password").value = "";
-      closeModal("recoveryModal");
-    } else {
-      status.textContent = data.message || "Recovery failed.";
-      status.classList.add("err");
-      status.classList.remove("ok");
-    }
-  } catch {
-    status.textContent = "Could not contact the server. Please try again.";
-    status.classList.add("err");
-  } finally {
-    button.disabled = false;
-  }
+  const status=$("recoveryStatus");status.textContent="";status.classList.remove("err","ok");
+  const raw=$("recoveryLogin").value.trim(),login=raw.startsWith("@")&&!raw.includes("@",1)?raw.slice(1):raw;
+  const answer=$("recoveryAnswer").value.trim(),newPassword=$("recoveryNewPassword").value,repeatPassword=$("recoveryRepeatPassword").value;
+  if(!answer){status.textContent="Enter your saved recovery answer.";status.classList.add("err");$("recoveryAnswer").focus();return;}
+  if(newPassword.length<4){status.textContent="New password must be at least 4 characters.";status.classList.add("err");$("recoveryNewPassword").focus();return;}
+  if(newPassword!==repeatPassword){status.textContent="The passwords do not match.";status.classList.add("err");$("recoveryRepeatPassword").focus();return;}
+  const button=$("recoverySubmitBtn");button.disabled=true;
+  try{
+    const response=await fetch("/api/recovery/reset",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({login,questionSlot:Number($("recoveryQuestionSlot").value),answer,newPassword})});
+    const data=await response.json();
+    if(data.ok){status.textContent="";status.classList.remove("err","ok");$("username").value=login;$("password").value="";closeModal("recoveryModal");}
+    else{status.textContent=data.message||"Recovery failed.";status.classList.add("err");}
+  }catch{status.textContent="Could not contact the server. Please try again.";status.classList.add("err");}
+  finally{button.disabled=false;}
 }
+$("recoveryNextBtn")?.addEventListener("click",()=>{
+  const status=$("recoveryStatus");status.textContent="";status.classList.remove("err","ok");
+  if(!$("recoveryAnswer").value.trim()){status.textContent="Enter your saved recovery answer.";status.classList.add("err");$("recoveryAnswer").focus();return;}
+  $("recoveryQuestionStep")?.classList.add("hidden");$("recoveryPasswordStep")?.classList.remove("hidden");$("recoveryNewPassword")?.focus();
+});
+$("recoveryBackBtn")?.addEventListener("click",()=>{
+  $("recoveryPasswordStep")?.classList.add("hidden");$("recoveryQuestionStep")?.classList.remove("hidden");
+  $("recoveryStatus").textContent="";$("recoveryStatus").classList.remove("err","ok");$("recoveryAnswer")?.focus();
+});
 
 // ── Login / registration flow ────────────────────────────────────────
 let _joinMode = "login";
@@ -846,9 +807,11 @@ $("toggleRegistration")?.addEventListener("click",(event)=>{
   $("loginIdentifierField")?.classList.toggle("hidden",registering);
   const passwordField=$("passwordField");
   (registering ? $("registrationPasswordArea") : $("loginPasswordArea"))?.append(passwordField);
+  if (registering) $("registrationPasswordArea")?.append($("registrationRepeatPasswordField"));
   $("loginSubmitBtn")?.classList.toggle("hidden",registering);
   $("username").required=!registering; $("password").required=true;
   $("password").autocomplete=registering?"new-password":"current-password";
+  $("registrationRepeatPassword").value="";
   if($("registrationUsername")) $("registrationUsername").required=false;
   if($("registrationDisplayName")) $("registrationDisplayName").required=false;
   if($("officeEmail")) $("officeEmail").required=false;
@@ -882,7 +845,9 @@ for (const prefix of ["recoveryQuestion", "requiredQuestion"]) {
 $("forgotPasswordLink")?.addEventListener("click", (event) => {
   event.preventDefault();
   $("recoveryLogin").value = $("username").value.trim();
-  $("recoveryAnswerFields").classList.add("hidden");
+  $("recoveryQuestionStep")?.classList.add("hidden");
+  $("recoveryPasswordStep")?.classList.add("hidden");
+  $("recoveryLoadBtn")?.classList.remove("hidden");
   $("recoveryIdentifierField")?.classList.remove("hidden");
   $("recoveryStatus").textContent = "";
   openModal("recoveryModal");
@@ -894,6 +859,7 @@ $("joinForm").addEventListener("submit", (e) => {
   const registering = _joinMode === "register";
   const identifier = registering ? $("registrationUsername").value.trim().replace(/^@/, "") : $("username").value.trim();
   const password = $("password").value;
+  const repeatPassword = $("registrationRepeatPassword").value;
   const status = $("joinStatus");
   status.textContent = "";
   status.classList.remove("err", "ok");
@@ -925,6 +891,10 @@ $("joinForm").addEventListener("submit", (e) => {
       return;
     }
     registration = { displayName, officeEmail, designation, recoveryQuestions, recoveryAnswers };
+  }
+  if (registering && password !== repeatPassword) {
+    status.textContent = "The passwords do not match.";
+    status.classList.add("err"); $("registrationRepeatPassword").focus(); return;
   }
   if (!password || password.length < 4) {
     status.textContent = "Password must be at least 4 characters.";
