@@ -3750,3 +3750,10 @@ html[data-theme="dark"] #join select, html[data-theme="dark"] #recoveryModal sel
   #join .auth-security-questions { grid-template-columns:1fr; }
   #join .auth-security-questions .field:first-child { grid-column:auto; }
 }
+
+#join .join-form-scrollable { max-height:none !important; overflow:visible !important; padding-right:0; }
+#join .join-form { gap:10px; }
+#join .join-brand { margin-bottom:14px; }
+#join .join-foot { margin-top:12px; padding-top:12px; }
+#join .auth-registration-step .field-hint { margin-top:4px; line-height:1.3; }
+#join .auth-registration-step .field-hint ul { gap:1px; }
