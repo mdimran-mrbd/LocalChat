@@ -3705,3 +3705,48 @@ html[data-theme="dark"] #join input#officeEmail { border-color:#3b5045 !importan
 html[data-theme="dark"] #recoveryModal .auth-step-heading h3 { color:#e9f8ef; }
 html[data-theme="dark"] #recoveryModal .auth-step-heading p { color:#a6bbb0; }
 html[data-theme="dark"] #recoveryModal .auth-recovery-back { color:#65d8a6; }
+
+
+/* LocalChat 4.0.0 auth refinement — three-step registration, compact cards and consistent controls */
+#join .join-panel { width:min(100%, 560px); max-width:560px; }
+#join .join-form { width:100%; }
+#join #officeEmail { padding-left:14px !important; }
+#join .auth-registration-step { gap:10px; }
+#join .auth-step-heading { margin-bottom:0; }
+#join .auth-step-heading h2 { margin-top:0; }
+#join .auth-progress { display:flex; align-items:center; gap:8px; margin:2px 0 4px; width:100%; }
+#join .auth-progress-step { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px; min-width:78px; flex:0 0 auto; color:var(--fg-2,#6b7b73); font-size:10px; font-weight:650; text-align:center; }
+#join .auth-progress-icon { display:grid; place-items:center; width:30px; height:30px; border-radius:50%; border:1px solid var(--border,#dbe4de); background:var(--bg-1,#fff); color:var(--fg-2,#6b7b73); font-size:18px; line-height:1; transition:transform .18s ease,background .18s ease,color .18s ease; }
+#join .auth-progress-step.is-active { color:var(--brand,#087f5b); }
+#join .auth-progress-step.is-active .auth-progress-icon { width:38px; height:38px; font-size:23px; transform:scale(1.03); border-color:#087f5b; background:#087f5b; color:#fff; box-shadow:0 0 0 4px rgba(8,127,91,.13); }
+#join .auth-progress-step.is-complete .auth-progress-icon { background:#087f5b; color:#fff; border-color:#087f5b; }
+#join .auth-progress-track { height:2px; flex:1 1 24px; min-width:12px; background:var(--border,#dbe4de); border-radius:99px; margin-top:-17px; }
+#join .auth-progress-track.is-complete { background:#087f5b; }
+#join .auth-registration-step { padding:20px 22px 22px; border-radius:0 22px 22px 22px; background:var(--bg-1,#fff); border:1px solid var(--border,#e2e9e4); box-shadow:0 12px 34px rgba(12,54,36,.07); }
+#join .auth-registration-step .field { gap:6px; margin:0; }
+#join .auth-registration-step input, #join .auth-registration-step select { min-height:42px; padding-left:14px; padding-right:38px; border-radius:10px; }
+#join .auth-security-questions { grid-template-columns:1fr 1fr; gap:10px 12px; }
+#join .auth-security-questions .field:first-child { grid-column:1 / -1; }
+#join .auth-security-questions input { min-height:38px; }
+#join .auth-security-note { line-height:1.35; }
+#join #forgotPasswordLink { display:none !important; }
+#join #registrationPasswordPanel #passwordField .field-label-row { display:block; }
+#recoveryModal #recoveryNextBtn { background:#087f5b !important; border-color:#087f5b !important; color:#fff !important; }
+#recoveryModal #recoveryNextBtn:hover { background:#066649 !important; border-color:#066649 !important; }
+#join select, #recoveryModal select {
+  appearance:none !important; -webkit-appearance:none !important; -moz-appearance:none !important;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='m2.5 4.5 3.5 3 3.5-3' fill='none' stroke='%23778b80' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") !important;
+  background-repeat:no-repeat !important; background-position:right 13px center !important; background-size:12px 12px !important;
+}
+html[data-theme="dark"] #join .auth-registration-step { background:var(--bg-1,#18231e); border-color:var(--border,#34463c); box-shadow:0 12px 34px rgba(0,0,0,.2); }
+html[data-theme="dark"] #join .auth-progress-icon { background:var(--bg-1,#18231e); border-color:var(--border,#34463c); }
+html[data-theme="dark"] #join .auth-progress-step.is-active .auth-progress-icon,
+html[data-theme="dark"] #join .auth-progress-step.is-complete .auth-progress-icon { background:#0b9a6c; border-color:#0b9a6c; color:#fff; }
+html[data-theme="dark"] #join select, html[data-theme="dark"] #recoveryModal select { background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='m2.5 4.5 3.5 3 3.5-3' fill='none' stroke='%23b4c6bc' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") !important; }
+@media (max-width:600px) {
+  #join .join-panel { max-width:100%; }
+  #join .auth-registration-step { padding:16px 14px 18px; border-radius:0 18px 18px 18px; }
+  #join .auth-progress-step { min-width:60px; font-size:9px; }
+  #join .auth-security-questions { grid-template-columns:1fr; }
+  #join .auth-security-questions .field:first-child { grid-column:auto; }
+}
