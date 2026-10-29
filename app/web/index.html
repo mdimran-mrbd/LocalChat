@@ -77,10 +77,10 @@
 
       <form id="joinForm" class="join-form join-form-scrollable">
         <label class="field">
-          <span id="loginIdentifierLabel">Office email or @handle</span>
+          <span id="loginIdentifierLabel">Office email or unique username</span>
           <input id="username" type="text" maxlength="254" required
                  autocomplete="username" spellcheck="false"
-                 placeholder="Office email or @handle"/>
+                 placeholder="Office email or unique username"/>
         </label>
         <label class="field">
           <span>Password</span>
@@ -99,7 +99,11 @@
               <option value="AM">Assistant Manager - AM</option><option value="TL">Team Leader - TL</option><option value="STL">Senior Team Leader - STL</option><option value="QDE">Quality Development Executive - QDE</option><option value="LRD">Learning &amp; Resource Development Lead - LRD</option><option value="EE">Escalation Executive - EE</option><option value="CSA">Customer Service Advisor - CSA</option>
             </select>
           </label>
-          <p class="muted small">Your @handle will be generated automatically and will be unique. You can change your display name later; display names do not need to be unique.</p>
+          <label class="field">
+            <span>Display name</span>
+            <input id="registrationDisplayName" type="text" maxlength="48" autocomplete="name" placeholder="e.g. Razzak Islam"/>
+          </label>
+          <p class="muted small">Choose your own unique username, such as <strong>imran01</strong>. Use 3–24 characters: English letters, numbers, underscores (_) or hyphens (-). No spaces; at least one number is required. Your username cannot be changed later. Display names are editable and do not need to be unique.</p>
           <div class="field">
             <span>Recovery question 1</span>
             <select id="recoveryQuestion1">
