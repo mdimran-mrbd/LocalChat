@@ -776,6 +776,7 @@ $("recoveryBackBtn")?.addEventListener("click",()=>{
 
 // ── Login / registration flow ────────────────────────────────────────
 let _joinMode = "login";
+$("loginPasswordArea")?.append($("passwordField"));
 
 // Hidden registration controls must not block login form submission through
 // native HTML constraint validation. Only require designation in register mode.
