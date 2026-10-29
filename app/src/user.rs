@@ -52,7 +52,7 @@ pub struct UserInfo {
     /// Optional job designation selected once by each account.
     #[serde(default)]
     pub designation: CompactString,
-    /// Editable, non-unique user-facing name. The unique username remains the stable @handle.
+    /// Editable, non-unique user-facing name. The unique username remains the stable @unique_username.
     #[serde(default)]
     pub display_name: CompactString,
 }
