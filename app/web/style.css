@@ -3793,3 +3793,33 @@ html[data-theme="dark"] #join select, html[data-theme="dark"] #recoveryModal sel
 html[data-theme=dark] #join .username-help-popover{background:var(--bg-1,#18231e);color:var(--fg,#eaf4ee);border-color:var(--border,#34463c)}
 #join .auth-registration-step .field-hint{display:none!important}
 @media(max-height:800px){#join.screen-join{align-items:start;overflow-y:auto;padding-top:12px;padding-bottom:12px}#join .join-panel{padding-top:14px!important;padding-bottom:12px!important}#join .join-brand{margin-bottom:8px!important}#join .auth-registration-step{padding-top:10px!important;padding-bottom:10px!important}#join .auth-registration-step .field{margin-bottom:5px!important}}
+
+
+/* 4.0.0 auth header layout refinements */
+#join:not(.is-registering) .join-brand { display:flex!important; flex-direction:column!important; align-items:center!important; justify-content:center!important; gap:2px!important; text-align:center!important; }
+#join:not(.is-registering) .join-brand .brand-mark { margin:0 0 4px!important; }
+#join:not(.is-registering) .join-brand .brand-mark svg { width:42px!important;height:42px!important; }
+#join:not(.is-registering) .join-brand-copy { display:flex;flex-direction:column;align-items:center;gap:2px; }
+#join:not(.is-registering) .join-brand h1 { font-size:22px!important; }
+#join:not(.is-registering) .join-brand p { font-size:12px!important; }
+#join.is-registering .join-brand { justify-content:flex-start!important; text-align:left!important; padding-left:12px; gap:10px!important; }
+#join.is-registering .join-brand .brand-mark svg { width:34px!important;height:34px!important; }
+#join.is-registering .join-brand-copy { display:flex;flex-direction:column;align-items:flex-start;gap:1px; }
+#join.is-registering .join-brand h1 { font-size:19px!important; }
+#join.is-registering .join-brand p { font-size:11px!important; }
+#join .username-field:focus-within .username-help-popover { display:none!important; }
+#join .username-field:has(.username-help:hover) .username-help-popover,
+#join .username-field:has(.username-help:focus-visible) .username-help-popover,
+#join .username-help[aria-expanded=true]+.username-help-popover { display:block!important; }
+#recoveryModal #recoveryLoadBtn { background:#087f5b!important;border-color:#087f5b!important;color:#fff!important; }
+#recoveryModal #recoveryLoadBtn:hover { background:#066649!important;border-color:#066649!important; }
+#recoveryModal .auth-recovery-brand { text-align:left; }
+#recoveryModal .auth-recovery-branding { display:flex;align-items:center;gap:9px;margin:0 0 14px; }
+#recoveryModal .auth-recovery-logo { display:inline-flex;flex:0 0 auto; }
+#recoveryModal .auth-recovery-logo svg { width:34px;height:34px; }
+#recoveryModal .auth-recovery-brand-copy { display:flex;flex-direction:column;gap:2px; }
+#recoveryModal .auth-recovery-brand-copy strong { font-size:18px;line-height:1.1;color:var(--fg,#20352b); }
+#recoveryModal .auth-recovery-brand-copy small { font-size:10px;line-height:1.2;color:var(--fg-2,#718078); }
+#recoveryModal .auth-recovery-brand h2 { margin:0 0 4px; }
+#recoveryModal .auth-recovery-brand>p.muted { margin:0; }
+html[data-theme=dark] #recoveryModal .auth-recovery-brand-copy strong { color:var(--fg,#eaf4ee); }
