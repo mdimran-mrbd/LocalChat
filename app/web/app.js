@@ -812,34 +812,9 @@ async function submitRecovery(event) {
   }
 }
 
-async function copyRegistrationUsername() {
-  const value = $("registrationSuccessUsername")?.textContent?.trim() || "";
-  if (!value) return;
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(value);
-    } else {
-      const field = document.createElement("textarea");
-      field.value = value;
-      field.setAttribute("readonly", "");
-      field.style.position = "fixed";
-      field.style.opacity = "0";
-      document.body.append(field);
-      field.select();
-      const copied = document.execCommand("copy");
-      field.remove();
-      if (!copied) throw new Error("Clipboard unavailable");
-    }
-    toast("Username copied.");
-  } catch {
-    toast("Copy is unavailable here. Select and copy your username manually.", 4000);
-  }
-}
-Object.assign(window, { copyRegistrationUsername });
-
 // ── Login / registration flow ────────────────────────────────────────
 let _joinMode = "login";
-let _pendingRegistration = false;
+
 // Hidden registration controls must not block login form submission through
 // native HTML constraint validation. Only require designation in register mode.
 if ($("registrationDesignation")) $("registrationDesignation").required = false;
@@ -854,10 +829,13 @@ $("toggleRegistration")?.addEventListener("click", (event) => {
   if ($("registrationDesignation")) $("registrationDesignation").required = registering;
   const identifierField = $("username")?.closest(".field");
   if (identifierField) identifierField.classList.toggle("hidden", registering);
+  const chosenUsernameField = $("registrationUsername")?.closest(".field");
+  if (chosenUsernameField) chosenUsernameField.classList.toggle("hidden", !registering);
   $("loginIdentifierLabel").textContent = "Email or @username";
   $("username").placeholder = "Email or @username";
   $("username").maxLength = 254;
   $("username").required = !registering;
+  if ($("registrationUsername")) $("registrationUsername").required = registering;
   if ($("registrationDisplayName")) $("registrationDisplayName").required = registering;
   $("password").autocomplete = registering ? "new-password" : "current-password";
   $("joinButtonLabel").textContent = registering ? "Create account" : "Sign in";
@@ -898,14 +876,23 @@ $("forgotPasswordLink")?.addEventListener("click", (event) => {
 $("joinForm").addEventListener("submit", (e) => {
   e.preventDefault();
   const registering = _joinMode === "register";
-  const identifier = registering ? "" : $("username").value.trim();
+  const identifier = registering ? $("registrationUsername").value.trim().replace(/^@/, "") : $("username").value.trim();
   const password = $("password").value;
   const status = $("joinStatus");
   status.textContent = "";
   status.classList.remove("err", "ok");
-  if (!registering && !identifier) return;
+  if (!identifier) {
+    status.textContent = registering ? "Choose your unique username." : "Enter your email or @username.";
+    status.classList.add("err");
+    (registering ? $("registrationUsername") : $("username")).focus();
+    return;
+  }
   let registration = {};
   if (registering) {
+    if (!/^[A-Za-z0-9_-]{3,24}$/.test(identifier) || !/[0-9]/.test(identifier)) {
+      status.textContent = "Username must be 3–24 characters, use letters, numbers, _ or -, and include at least one number.";
+      status.classList.add("err"); $("registrationUsername").focus(); return;
+    }
     const displayName = $("registrationDisplayName").value.trim();
     if (!displayName || displayName.length > 48 || /[\u0000-\u001f\u007f]/.test(displayName)) {
       status.textContent = "Display name must be 1–48 characters and cannot contain control characters.";
@@ -929,8 +916,7 @@ $("joinForm").addEventListener("submit", (e) => {
     $("password").focus();
     return;
   }
-  if (!registering) lstore.set("username", identifier);
-  _pendingRegistration = registering;
+  lstore.set("username", identifier);
   connect(identifier, password, _joinMode, registration);
 });
 
@@ -1280,8 +1266,6 @@ function onError(e) {
 }
 
 async function onWelcome(e, password) {
-  const justRegistered = _pendingRegistration;
-  _pendingRegistration = false;
   S.me = e.user;
   S.session = e.session || null;
   await E2EE.unlockOrCreateBackup(password, e.e2eeKeyBackup || null);
@@ -1344,12 +1328,6 @@ async function onWelcome(e, password) {
     setTimeout(openRequiredProfileModal, 250);
   } else if (!e.user.designation) {
     setTimeout(openDesignationModal, 250);
-  }
-  if (justRegistered) {
-    try { lstore.set("username", "@" + e.user.username); } catch {}
-    const assigned = $("registrationSuccessUsername");
-    if (assigned) assigned.textContent = "@" + e.user.username;
-    setTimeout(() => openModal("registrationSuccessModal"), 350);
   }
 }
 
