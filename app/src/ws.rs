@@ -1558,6 +1558,7 @@ async fn handle_op(
                     members.push(json!({
                         "id": profile.id,
                         "username": profile.username,
+                        "display_name": profile.display_name,
                         "avatar": profile.avatar,
                         "color": profile.color,
                         "pubkey": profile.pubkey,
