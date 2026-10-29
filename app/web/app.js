@@ -755,6 +755,7 @@ async function loadRecoveryChallenge() {
       select.add(new Option(label, String(slot)));
     });
     $("recoveryAnswerFields").classList.remove("hidden");
+    $("recoveryIdentifierField")?.classList.add("hidden");
     status.textContent = "Choose one question and answer it.";
     status.classList.add("ok");
   } catch {
@@ -819,29 +820,43 @@ let _joinMode = "login";
 // native HTML constraint validation. Only require designation in register mode.
 if ($("registrationDesignation")) $("registrationDesignation").required = false;
 
-$("toggleRegistration")?.addEventListener("click", (event) => {
-  event.preventDefault();
-  _joinMode = _joinMode === "login" ? "register" : "login";
-  const registering = _joinMode === "register";
-  $("registrationFields")?.classList.toggle("hidden", !registering);
-  // A required control inside a visually hidden section still prevents the
-  // browser from dispatching the form submit event. Toggle it with the mode.
-  if ($("registrationDesignation")) $("registrationDesignation").required = registering;
-  const identifierField = $("username")?.closest(".field");
-  if (identifierField) identifierField.classList.toggle("hidden", registering);
-  const chosenUsernameField = $("registrationUsername")?.closest(".field");
-  if (chosenUsernameField) chosenUsernameField.classList.toggle("hidden", !registering);
-  $("loginIdentifierLabel").textContent = "Email or @username";
-  $("username").placeholder = "Email or @username";
-  $("username").maxLength = 254;
-  $("username").required = !registering;
-  if ($("registrationUsername")) $("registrationUsername").required = registering;
-  if ($("registrationDisplayName")) $("registrationDisplayName").required = registering;
-  $("password").autocomplete = registering ? "new-password" : "current-password";
-  $("joinButtonLabel").textContent = registering ? "Create account" : "Sign in";
-  $("toggleRegistration").textContent = registering ? "Back to sign in" : "Create an account";
-  $("joinStatus").textContent = "";
-  $("joinStatus").classList.remove("err", "ok");
+function setRegistrationStep(step) {
+  const identity = $("registrationIdentityPanel"), security = $("registrationSecurityPanel");
+  if (!identity || !security) return;
+  const onSecurity = step === 2;
+  identity.classList.toggle("hidden", onSecurity);
+  security.classList.toggle("hidden", !onSecurity);
+  (onSecurity ? $("password") : $("officeEmail"))?.focus();
+}
+$("registrationNextBtn")?.addEventListener("click", () => {
+  const email=$("officeEmail"), display=$("registrationDisplayName"), username=$("registrationUsername"), designation=$("registrationDesignation"), status=$("joinStatus");
+  status.textContent=""; status.classList.remove("err","ok");
+  if (!email.value.trim() || !email.checkValidity()) { status.textContent="Enter a valid work email address."; status.classList.add("err"); email.focus(); return; }
+  if (!display.value.trim() || display.value.trim().length>48 || /[\u0000-\u001f\u007f]/.test(display.value.trim())) { status.textContent="Enter your full display name (up to 48 characters)."; status.classList.add("err"); display.focus(); return; }
+  const handle=username.value.trim().replace(/^@/,"");
+  if (!/^[A-Za-z0-9_-]{3,24}$/.test(handle) || !/[0-9]/.test(handle)) { status.textContent="Username must be 3–24 characters, use English letters, numbers, _ or -, and include at least one number."; status.classList.add("err"); username.focus(); return; }
+  if (!designation.value) { status.textContent="Choose your designation to continue."; status.classList.add("err"); designation.focus(); return; }
+  username.value=handle; setRegistrationStep(2);
+});
+$("registrationBackBtn")?.addEventListener("click",()=>setRegistrationStep(1));
+$("toggleRegistration")?.addEventListener("click",(event)=>{
+  event.preventDefault(); _joinMode=_joinMode==="login"?"register":"login";
+  const registering=_joinMode==="register";
+  $("registrationFields")?.classList.toggle("hidden",!registering);
+  $("loginIdentifierField")?.classList.toggle("hidden",registering);
+  const passwordField=$("passwordField");
+  (registering ? $("registrationPasswordArea") : $("loginPasswordArea"))?.append(passwordField);
+  $("loginSubmitBtn")?.classList.toggle("hidden",registering);
+  $("username").required=!registering; $("password").required=true;
+  $("password").autocomplete=registering?"new-password":"current-password";
+  if($("registrationUsername")) $("registrationUsername").required=false;
+  if($("registrationDisplayName")) $("registrationDisplayName").required=false;
+  if($("officeEmail")) $("officeEmail").required=false;
+  if($("registrationDesignation")) $("registrationDesignation").required=false;
+  $("accountPromptText").textContent=registering?"Already registered?":"Not registered yet?";
+  $("toggleRegistration").textContent=registering?"Sign in here":"Create your account";
+  $("joinStatus").textContent=""; $("joinStatus").classList.remove("err","ok");
+  if(registering) setRegistrationStep(1); else $("username").focus();
 });
 
 // Keep the three recovery-question dropdowns mutually exclusive as the user chooses.
@@ -868,6 +883,7 @@ $("forgotPasswordLink")?.addEventListener("click", (event) => {
   event.preventDefault();
   $("recoveryLogin").value = $("username").value.trim();
   $("recoveryAnswerFields").classList.add("hidden");
+  $("recoveryIdentifierField")?.classList.remove("hidden");
   $("recoveryStatus").textContent = "";
   openModal("recoveryModal");
   $("recoveryLogin").focus();
