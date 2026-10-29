@@ -32,7 +32,7 @@ people share a network but not necessarily the internet:
 - **One binary, no install.** Drop `LocalChat.exe` on a desktop. Double-click.
   That's the whole setup.
 - **LAN-first and private.** Chat works without internet. When the host has internet, the host browser can check GitHub Releases for updates after the host opts in; installing an update always requires confirmation. No chat messages or user data are sent.
-- **Account-based identity.** Register with a display name and a unique office email from a domain allowed by the server administrator. Users choose a unique username for sign-in and mentions. Display names are editable and do not need to be unique; users can sign in with their unique username or office email. Email changes are restricted to the host's Admin dashboard. No email verification message is sent.
+- **Account-based identity.** Register with a unique username, display name, and office email from a domain allowed by the server administrator. Users choose a unique username for sign-in and mentions. Display names are editable and do not need to be unique; users can sign in with their unique username or office email. Email changes are restricted to the host's Admin dashboard. No email verification message is sent.
 - **End-to-end encrypted DMs.** The host process literally cannot read direct
   messages.
 - **Persistent.** Channels, members, message history, reactions and uploads
