@@ -14,9 +14,16 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const _AVATAR_COLORS = ["#6366f1","#8b5cf6","#ec4899","#ef4444","#f97316","#eab308","#22c55e","#14b8a6","#06b6d4","#3b82f6"];
 function userNameNode(user) {
   let profile = typeof user === "string" ? { username: user } : (user || {});
-  if (!profile.designation && S.userProfiles) {
+  if (S.userProfiles && profile.username) {
     const cached = [...S.userProfiles.values()].find(item => (item.username || "").toLowerCase() === (profile.username || "").toLowerCase());
-    if (cached) profile = { ...cached, ...profile, designation: cached.designation || profile.designation };
+    if (cached) profile = {
+      ...cached,
+      ...profile,
+      // DM/channel peer objects can contain only username/avatar fields. Keep
+      // the authoritative cached profile when optional fields are absent.
+      display_name: profile.display_name || cached.display_name,
+      designation: profile.designation || cached.designation,
+    };
   }
   const root = el("span", { class: "user-name-display" });
   root.append(document.createTextNode(profile.display_name || "Unknown"));
@@ -3462,6 +3469,15 @@ function updateMentionPicker() {
     ? [{ id: "__all__", username: "all", display_name: "all", color: "var(--brand)", avatar: "@", online: true, isAll: true }]
     : [];
   const candidates = [...allCandidate, ...[...S.users.values()]
+    .map((u) => {
+      const cached = S.userProfiles.get(u.id) ||
+        [...S.userProfiles.values()].find((p) => (p.username || "").toLowerCase() === (u.username || "").toLowerCase());
+      return cached ? {
+        ...u,
+        display_name: u.display_name || cached.display_name,
+        designation: u.designation || cached.designation,
+      } : u;
+    })
     .filter((u) => u.username && u.username.toLowerCase() !== (S.me?.username || "").toLowerCase())
     .filter((u) => u.username.toLowerCase().startsWith(query) || String(u.display_name || "").toLowerCase().startsWith(query))
     .sort((a, b) => String(a.display_name || a.username).localeCompare(String(b.display_name || b.username)))]
