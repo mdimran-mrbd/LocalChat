@@ -92,6 +92,11 @@
             <span>Work email · no verification email will be sent</span>
             <input id="officeEmail" type="email" maxlength="254" autocomplete="email" placeholder="you@company.example"/>
           </label>
+          <label class="field hidden">
+            <span>Choose a unique @username</span>
+            <input id="registrationUsername" type="text" maxlength="24" autocomplete="username" spellcheck="false" placeholder="e.g. imran07" aria-describedby="usernameRules"/>
+            <span id="usernameRules" class="field-hint">3–24 characters; letters, numbers, underscores or hyphens; include at least one number. Your username is unique and is used for sign-in and mentions.</span>
+          </label>
           <label class="field">
             <span>Designation</span>
             <select id="registrationDesignation" required>
@@ -103,7 +108,7 @@
             <span>Display name</span>
             <input id="registrationDisplayName" type="text" maxlength="48" autocomplete="name" placeholder="e.g. Razzak Islam"/>
           </label>
-          <p class="muted small">LocalChat will generate your unique @username after account creation. You can use it to sign in and mention coworkers. Your display name is editable; your email can only be changed by a server administrator.</p>
+          <p class="muted small">Your @username must be unique and will be used for sign-in and mentions. Your display name is editable; your email can only be changed by a server administrator.</p>
           <div class="field">
             <span>Recovery question 1</span>
             <select id="recoveryQuestion1">
@@ -160,18 +165,6 @@
         </span>
         <button type="button" id="themeToggleJoin" class="icon-btn" title="Toggle theme" aria-label="Toggle theme" onclick="toggleTheme()" hidden></button>
       </div>
-    </div>
-  </div>
-
-  <!-- ═══════════════════ REGISTRATION SUCCESS ═══════════════════ -->
-  <div id="registrationSuccessModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="registrationSuccessTitle" aria-describedby="registrationSuccessHelp">
-    <div class="modal-panel auth-success-panel">
-      <div class="auth-success-icon" aria-hidden="true">✓</div>
-      <h2 id="registrationSuccessTitle">Your account is ready</h2>
-      <p id="registrationSuccessHelp" class="muted">Your unique username has been created. Save it so you can sign in or be mentioned by coworkers.</p>
-      <div class="auth-assigned-username"><span id="registrationSuccessUsername">@username</span><button type="button" class="btn btn-ghost btn-sm" onclick="copyRegistrationUsername()" aria-label="Copy username">Copy</button></div>
-      <p class="muted small">Your display name can be edited in Settings. Only a server administrator can change your email.</p>
-      <footer class="modal-foot"><button type="button" class="btn btn-primary" onclick="closeModal('registrationSuccessModal')">Continue to LocalChat</button></footer>
     </div>
   </div>
 
@@ -456,12 +449,12 @@
   </div>
 
   <!-- Password recovery is separate from sign-in -->
-  <div id="recoveryModal" class="modal hidden" role="dialog" aria-labelledby="recoveryTitle" aria-modal="true">
-    <form class="modal-panel" onsubmit="submitRecovery(event)">
-      <header class="modal-head"><h3 id="recoveryTitle">Recover account</h3><button type="button" class="icon-btn" aria-label="Close" onclick="closeModal('recoveryModal')">×</button></header>
+  <div id="recoveryModal" class="modal auth-recovery-modal hidden" role="dialog" aria-labelledby="recoveryTitle" aria-modal="true">
+    <form class="modal-panel auth-recovery-panel" onsubmit="submitRecovery(event)">
+      <header class="auth-recovery-brand"><div class="auth-recovery-mark" aria-hidden="true">L</div><p class="eyebrow">LOCALCHAT ACCOUNT HELP</p><h2 id="recoveryTitle">Recover your account</h2><p class="muted">Verify your identity and choose a new password.</p></header>
       <div class="modal-body">
-        <p class="muted sm">Enter your username or office email, then answer one of your saved recovery questions. Repeated failures trigger a temporary lockout.</p>
-        <label class="field"><span>Username or office email</span><input id="recoveryLogin" required maxlength="254" autocomplete="username"/></label>
+        <p class="muted sm">Enter your email or @username, then answer one of your saved recovery questions. Repeated failures trigger a temporary lockout.</p>
+        <label class="field"><span>Email or @username</span><input id="recoveryLogin" required maxlength="254" autocomplete="username" placeholder="you@company.example or @username"/></label>
         <button type="button" id="recoveryLoadBtn" class="btn btn-secondary" onclick="loadRecoveryChallenge()">Continue</button>
         <div id="recoveryAnswerFields" class="hidden">
           <label class="field"><span>Recovery question</span><select id="recoveryQuestionSlot" required></select></label>
@@ -469,7 +462,8 @@
           <label class="field"><span>New password</span><input id="recoveryNewPassword" type="password" minlength="4" maxlength="128" required autocomplete="new-password" placeholder="At least 4 characters"/></label>
           <button type="submit" id="recoverySubmitBtn" class="btn btn-primary">Reset password</button>
         </div>
-        <div id="recoveryStatus" class="join-status"></div>
+        <div id="recoveryStatus" class="join-status" role="status" aria-live="polite"></div>
+        <button type="button" class="btn btn-ghost auth-recovery-back" onclick="closeModal('recoveryModal')">← Back to sign in</button>
       </div>
     </form>
   </div>
