@@ -1962,17 +1962,58 @@ function _sbToggle(key, open) {
 function _sbGroup(key, title, count, items) {
   const open = !_sbCollapsed.has(key);
   const det = el("details", { class: "sb-group", open: open ? "" : null });
-  const sum = el("summary", { class: "sb-group-head" }, [
-    el("span", { class: "sb-caret", html: `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>` }),
+  const sum = el("summary", { class: "sb-group-head", "aria-label": `${title}, ${count} conversations` }, [
+    el("span", { class: "sb-caret", "aria-hidden": "true", html: `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>` }),
     el("span", { class: "sb-group-title" }, title),
+    el("span", { class: "sb-group-count", "aria-hidden": "true" }, String(count)),
   ]);
   det.append(sum);
   if (!open) det.removeAttribute("open");
   det.addEventListener("toggle", () => _sbToggle(key, det.open));
   const ul = el("ul", { class: "chat-list" });
   for (const it of items) ul.append(it);
+  if (!items.length) ul.append(el("li", { class: "chat-section-empty muted xs" }, key === "pinned" ? "Pin a conversation to keep it here." : "No conversations yet."));
   det.append(ul);
   return det;
+}
+
+function _sidebarLatestMessage(channel) {
+  const messages = S.msgs.get(channel.id) || [];
+  const latest = [...messages].filter(m => m && !m.deleted && m.kind !== "system")
+    .sort((a, b) => Number(b.ts || 0) - Number(a.ts || 0))[0];
+  if (!latest) return { preview: "", time: "" };
+  const raw = String(latest.text || "");
+  if (raw.startsWith("e2e:v1:")) return { preview: "🔒 Encrypted message", time: latest.ts ? fmtTime(latest.ts) : "" };
+  if (latest.kind === "file" || latest.file) return { preview: "📎 Attachment", time: latest.ts ? fmtTime(latest.ts) : "" };
+  const preview = raw.replace(/\s+/g, " ").trim();
+  return { preview: preview ? (preview.length > 72 ? preview.slice(0, 69) + "…" : preview) : "Message", time: latest.ts ? fmtTime(latest.ts) : "" };
+}
+
+function _chatContextMenu(channel, options) {
+  const wrap = el("div", { class: "chat-actions" });
+  const trigger = el("button", {
+    class: "chat-more", type: "button", title: "Conversation actions",
+    "aria-label": `Actions for ${options.label}`, "aria-haspopup": "menu", "aria-expanded": "false",
+    onclick: (ev) => {
+      ev.stopPropagation();
+      const menu = wrap.querySelector(".chat-context-menu");
+      const willOpen = menu.hidden;
+      document.querySelectorAll(".chat-context-menu").forEach(node => { node.hidden = true; node.closest(".chat-actions")?.querySelector(".chat-more")?.setAttribute("aria-expanded", "false"); });
+      menu.hidden = !willOpen;
+      trigger.setAttribute("aria-expanded", willOpen ? "true" : "false");
+    },
+    html: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>'
+  });
+  const menu = el("div", { class: "chat-context-menu", role: "menu", hidden: true });
+  for (const action of options.actions) {
+    const button = el("button", {
+      type: "button", role: "menuitem", class: action.danger ? "is-danger" : "",
+      onclick: (ev) => { ev.stopPropagation(); menu.hidden = true; trigger.setAttribute("aria-expanded", "false"); action.run(ev); }
+    }, action.label);
+    menu.append(button);
+  }
+  wrap.append(trigger, menu);
+  return wrap;
 }
 
 function _channelItem(c) {
@@ -1982,60 +2023,82 @@ function _channelItem(c) {
   const isMember = !!(S.me && (c.members || []).includes(S.me.id));
   const isNotes = c.id.startsWith("notes:");
   const canDelete = !isNotes && c.kind === "group" && S.me && c.createdBy === S.me.id;
-  // Personal Notes are permanent and owner-only; ordinary groups can be deleted/left.
   const canLeave = !isNotes && c.kind === "group" && isMember && !canDelete;
-  const askDelete = canDelete ? (ev) => {
-    ev.stopPropagation();
-    ev.preventDefault();
-    confirmDialog({
-      title: "Delete channel",
-      body: `Delete channel #${c.name || c.id}?\n\nThis removes the channel and its history for everyone. This cannot be undone.`,
-      okText: "Delete",
-    }).then((ok) => { if (ok) deleteChannel(c.id); });
-  } : null;
-  const askLeave = canLeave ? (ev) => {
-    ev.stopPropagation();
-    ev.preventDefault();
-    confirmDialog({
-      title: "Leave channel",
-      body: c.isPrivate
-        ? `Leave private channel #${c.name || c.id}?\n\nYou'll need to be added back by a member to rejoin.`
-        : `Leave #${c.name || c.id}?\n\nYou can rejoin any time from the Channels list.`,
-      okText: "Leave",
-    }).then((ok) => { if (ok) leaveChannel(c.id); });
-  } : null;
+  const askDelete = () => confirmDialog({
+    title: "Delete channel",
+    body: `Delete channel #${c.name || c.id}?\n\nThis removes the channel and its history for everyone. This cannot be undone.`,
+    okText: "Delete",
+  }).then(ok => { if (ok) deleteChannel(c.id); });
+  const askLeave = () => confirmDialog({
+    title: "Leave channel",
+    body: c.isPrivate
+      ? `Leave private channel #${c.name || c.id}?\n\nYou'll need to be added back by a member to rejoin.`
+      : `Leave #${c.name || c.id}?\n\nYou can rejoin any time from the Channels list.`,
+    okText: "Leave",
+  }).then(ok => { if (ok) leaveChannel(c.id); });
+  const summary = _sidebarLatestMessage(c);
+  const label = `#${c.name || c.id}`;
+  const actions = [{ label: pinned ? "Unpin conversation" : "Pin conversation", run: () => toggleChatPin(c.id) }];
+  if (canDelete) actions.push({ label: "Delete channel", danger: true, run: askDelete });
+  if (canLeave) actions.push({ label: "Leave channel", danger: true, run: askLeave });
   return el("li", {
     class: "chat-item " + active,
     onclick: () => switchChannel(c.id),
-    oncontextmenu: askDelete || askLeave || undefined,
+    oncontextmenu: (ev) => { ev.preventDefault(); ev.stopPropagation(); const btn = ev.currentTarget.querySelector(".chat-more"); btn?.click(); },
   }, [
-    el("div", { class: "avatar", style: `background:var(--brand)` }, isNotes ? "📝" : "#"),
+    el("div", { class: "avatar chat-row-avatar", style: "background:var(--brand)" }, isNotes ? "📝" : "#"),
     el("div", { class: "chat-meta" }, [
-      el("div", { class: "chat-name" }, [pinned ? el("span", { class: "chat-pin-mark", title: "Pinned chat", "aria-hidden": "true", html: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 3 5 5-4 1-4 4-1 5-2-2-4 4-2-2 4-4-2-2 5-1 4-4 1-4Z"/><path d="m10 14-6 6"/></svg>' }) : null, c.name || c.id]),
-      el("div", { class: "chat-sub muted xs" },
-        isNotes ? "Personal notes · only you" : (c.kind === "lobby" ? "lobby · everyone" : (c.isPrivate ? "private channel" : "channel"))),
+      el("div", { class: "chat-row-top" }, [
+        el("div", { class: "chat-name" }, [c.name || c.id]),
+        summary.time ? el("time", { class: "chat-time", datetime: summary.time }, summary.time) : null,
+      ]),
+      el("div", { class: "chat-row-bottom" }, [
+        el("div", { class: "chat-sub muted xs" }, summary.preview || (isNotes ? "Personal notes · only you" : (c.kind === "lobby" ? "Lobby · everyone" : (c.isPrivate ? "Private channel" : "Channel")))),
+        c.kind === "group" && S.unreadIndicators.get(c.id)?.mention ? el("span", { class: "chat-unread-signal mention-signal", title: "Unread mention", "aria-label": "Unread mention" }, "@") : null,
+        c.kind === "group" && S.unreadIndicators.get(c.id)?.reply ? el("span", { class: "chat-unread-signal reply-signal", title: "Unread reply to you", "aria-label": "Unread reply to you" }, "↩") : null,
+        unread ? el("span", { class: "badge badge-unread" }, String(unread)) : null,
+      ]),
     ]),
-    c.kind === "group" && S.unreadIndicators.get(c.id)?.mention ? el("span", { class: "chat-unread-signal mention-signal", title: "Unread mention", "aria-label": "Unread mention" }, "@") : null,
-    c.kind === "group" && S.unreadIndicators.get(c.id)?.reply ? el("span", { class: "chat-unread-signal reply-signal", title: "Unread reply to you", "aria-label": "Unread reply to you" }, "↩") : null,
-    unread ? el("span", { class: "badge badge-unread" }, String(unread)) : null,
-    el("button", { class: "chat-pin" + (pinned ? " is-pinned" : ""), type: "button", title: pinned ? "Unpin chat" : "Pin chat", "aria-label": pinned ? "Unpin chat" : "Pin chat", onclick: (ev) => { ev.stopPropagation(); toggleChatPin(c.id); }, html: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 3 5 5-4 1-4 4-1 5-2-2-4 4-2-2 4-4-2-2 5-1 4-4 1-4Z"/><path d="m10 14-6 6"/></svg>' }),
-    canDelete ? el("button", {
-      class: "chat-del",
-      title: `Delete #${c.name || c.id}`,
-      "aria-label": "Delete channel",
-      onclick: askDelete,
-      html: `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>`,
-    }) : null,
-    canLeave ? el("button", {
-      class: "chat-del",
-      title: `Leave #${c.name || c.id}`,
-      "aria-label": "Leave channel",
-      onclick: askLeave,
-      html: `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>`,
-    }) : null,
+    pinned ? el("span", { class: "chat-pin-mark", title: "Pinned conversation", "aria-label": "Pinned" }, "◆") : null,
+    _chatContextMenu(c, { label, actions }),
   ]);
 }
 
+function _dmItem(c) {
+  const u = dmPeer(c);
+  const pinned = isChatPinned(c.id);
+  const active = c.id === S.active ? "active" : "";
+  const unread = S.unread.get(c.id) || 0;
+  const online = !!(u && !u.offline);
+  const peerName = u ? (u.display_name || u.username) : "Unknown";
+  const summary = _sidebarLatestMessage(c);
+  const askDelete = () => confirmDialog({
+    title: "Delete conversation",
+    body: `Delete your conversation with ${peerName}?\n\nThis removes the chat for both of you, including all messages. This cannot be undone.`,
+    okText: "Delete",
+  }).then(ok => { if (ok) deleteDm(c.id); });
+  const actions = [{ label: pinned ? "Unpin conversation" : "Pin conversation", run: () => toggleChatPin(c.id) },
+    { label: "Delete conversation", danger: true, run: askDelete }];
+  return el("li", {
+    class: "chat-item " + active,
+    onclick: () => switchChannel(c.id),
+    oncontextmenu: (ev) => { ev.preventDefault(); ev.stopPropagation(); ev.currentTarget.querySelector(".chat-more")?.click(); },
+  }, [
+    (() => { const node = el("div", { class: `avatar chat-row-avatar ${online ? "avatar-online" : "avatar-offline"}`, style: `background:${u?.color || "var(--brand)"}` }); renderAvatarContent(node, u?.avatar, u?.username?.[0] || "?"); node.append(el("span", { class: "presence-dot" })); return node; })(),
+    el("div", { class: "chat-meta" }, [
+      el("div", { class: "chat-row-top" }, [
+        el("div", { class: "chat-name" }, userNameNode(u || { username: peerName })),
+        summary.time ? el("time", { class: "chat-time" }, summary.time) : null,
+      ]),
+      el("div", { class: "chat-row-bottom" }, [
+        el("div", { class: "chat-sub muted xs" }, summary.preview || (online ? "Online" : "Offline")),
+        unread ? el("span", { class: "badge badge-unread" }, String(unread)) : null,
+      ]),
+    ]),
+    pinned ? el("span", { class: "chat-pin-mark", title: "Pinned conversation", "aria-label": "Pinned" }, "◆") : null,
+    _chatContextMenu(c, { label: peerName, actions }),
+  ]);
+}
 function deleteChannel(channelId) {
   sendOp({ op: "ch_delete", channel: channelId });
 }
@@ -2171,26 +2234,19 @@ function renderChannels() {
   const tab = S.sidebarTab || "mine";
   const q = (S.sidebarFilter || "").trim().toLowerCase();
   const matches = (s) => !q || (s || "").toLowerCase().includes(q);
+  const pinnedIds = (() => {
+    try { return (JSON.parse(lstore.get(chatPinsStorageKey()) || "[]") || []).filter(id => S.channels.has(id)); }
+    catch { return []; }
+  })();
 
-  // ── Channels ─────────────────────────────────────────────
-  const channels = [];
-  for (const c of S.channels.values()) {
-    if (c.kind === "dm") continue;
-    if (!matches(c.name || c.id)) continue;
-    channels.push(c);
-  }
+  const allChannels = [...S.channels.values()].filter(c => c.kind !== "dm");
+  const channels = allChannels.filter(c => matches(c.name || c.id));
   channels.sort((a, b) => {
-    const pinDiff = Number(isChatPinned(b.id)) - Number(isChatPinned(a.id));
-    if (pinDiff) return pinDiff;
     if (a.kind === "lobby") return -1;
     if (b.kind === "lobby") return 1;
     return (a.name || a.id).localeCompare(b.name || b.id);
   });
-
-  // ── DM channels (used inside Online/Offline groups for unread + history) ──
-  const dmList = [...S.channels.values()].filter((c) => c.kind === "dm");
-
-  // ── People (online + offline) ────────────────────────────
+  const dmList = [...S.channels.values()].filter(c => c.kind === "dm");
   const me = S.me;
   const myName = (me?.username || "").toLowerCase();
   const byName = new Map();
@@ -2202,51 +2258,38 @@ function renderChannels() {
     for (const n of c.dmUsers) {
       const ln = (n || "").toLowerCase();
       if (!ln || ln === myName || byName.has(ln)) continue;
-      byName.set(ln, {
-        user: { username: n, color: colorForName(n), avatar: n[0]?.toUpperCase() || "?", offline: true },
-        online: false,
-      });
+      byName.set(ln, { user: { username: n, color: colorForName(n), avatar: n[0]?.toUpperCase() || "?", offline: true }, online: false });
     }
   }
-  const onlinePeople  = [...byName.values()].filter((x) =>  x.online && matches(x.user.username)).sort((a,b)=> a.user.username.localeCompare(b.user.username));
-  const offlinePeople = [...byName.values()].filter((x) => !x.online && matches(x.user.username)).sort((a,b)=> a.user.username.localeCompare(b.user.username));
-
-  // For DM tab we want DM channels grouped by online/offline (since they're conversations)
-  const dmGroupedOnline  = dmList.filter((c) => {
-    const p = dmPeer(c); return !!(p && !p.offline) && matches(p?.username);
-  });
-  const dmGroupedOffline = dmList.filter((c) => {
-    const p = dmPeer(c); return !(p && !p.offline) && matches(p?.username);
-  });
-  const sortDm = (a, b) => Number(isChatPinned(b.id)) - Number(isChatPinned(a.id)) || (dmPeer(a)?.username || "").localeCompare(dmPeer(b)?.username || "");
+  const onlinePeople = [...byName.values()].filter(x => x.online && matches(x.user.username)).sort((a,b) => a.user.username.localeCompare(b.user.username));
+  const offlinePeople = [...byName.values()].filter(x => !x.online && matches(x.user.username)).sort((a,b) => a.user.username.localeCompare(b.user.username));
+  const dmGroupedOnline = dmList.filter(c => { const p = dmPeer(c); return !!(p && !p.offline) && matches(p?.username); });
+  const dmGroupedOffline = dmList.filter(c => { const p = dmPeer(c); return !(p && !p.offline) && matches(p?.username); });
+  const sortDm = (a,b) => (dmPeer(a)?.username || "").localeCompare(dmPeer(b)?.username || "");
   dmGroupedOnline.sort(sortDm); dmGroupedOffline.sort(sortDm);
 
-  // ── Render based on tab ──────────────────────────────────
   if (tab === "online") {
-    // Just online people — quick way to start a chat.
-    const items = onlinePeople.map((x) => {
-      // If a DM already exists with this peer, render the DM row (preserves unread).
-      const existing = dmGroupedOnline.find(
-        (c) => dmPeer(c)?.username?.toLowerCase() === x.user.username.toLowerCase()
-      );
+    const items = onlinePeople.map(x => {
+      const existing = dmGroupedOnline.find(c => dmPeer(c)?.username?.toLowerCase() === x.user.username.toLowerCase());
       return existing ? _dmItem(existing) : _personItem(x.user, true);
     });
     root.append(_sbGroup("online", "Online", items.length, items));
   } else if (tab === "mine") {
-    // My channels and personal (DM) chats I've actually opened.
-    root.append(_sbGroup("ch", "Channels", channels.length, channels.map(_channelItem)));
-    const personal = [...dmGroupedOnline, ...dmGroupedOffline].sort(sortDm);
+    const pinned = pinnedIds.filter(id => matches((S.channels.get(id)?.name || dmPeer(S.channels.get(id))?.username || id)))
+      .map(id => S.channels.get(id)).filter(Boolean);
+    const pinnedSet = new Set(pinnedIds);
+    const unpinnedChannels = channels.filter(c => !pinnedSet.has(c.id));
+    const personal = [...dmGroupedOnline, ...dmGroupedOffline].filter(c => !pinnedSet.has(c.id)).sort(sortDm);
+    if (pinned.length) root.append(_sbGroup("pinned", "Pinned", pinned.length, pinned.map(c => c.kind === "dm" ? _dmItem(c) : _channelItem(c))));
+    root.append(_sbGroup("ch", "Channels", unpinnedChannels.length, unpinnedChannels.map(_channelItem)));
     root.append(_sbGroup("personal", "Personal", personal.length, personal.map(_dmItem)));
   } else {
-    // All: channels + every DM + every person.
     root.append(_sbGroup("ch", "Channels", channels.length, channels.map(_channelItem)));
-    const onlinePeopleNoDm = onlinePeople.filter((x) =>
-      !dmGroupedOnline.some((c) => dmPeer(c)?.username?.toLowerCase() === x.user.username.toLowerCase()));
-    const offlinePeopleNoDm = offlinePeople.filter((x) =>
-      !dmGroupedOffline.some((c) => dmPeer(c)?.username?.toLowerCase() === x.user.username.toLowerCase()));
-    const onlineItems  = [...dmGroupedOnline.map(_dmItem),  ...onlinePeopleNoDm.map((x) => _personItem(x.user, true))];
-    const offlineItems = [...dmGroupedOffline.map(_dmItem), ...offlinePeopleNoDm.map((x) => _personItem(x.user, false))];
-    root.append(_sbGroup("online",  "Online",  onlineItems.length,  onlineItems));
+    const onlinePeopleNoDm = onlinePeople.filter(x => !dmGroupedOnline.some(c => dmPeer(c)?.username?.toLowerCase() === x.user.username.toLowerCase()));
+    const offlinePeopleNoDm = offlinePeople.filter(x => !dmGroupedOffline.some(c => dmPeer(c)?.username?.toLowerCase() === x.user.username.toLowerCase()));
+    const onlineItems = [...dmGroupedOnline.map(_dmItem), ...onlinePeopleNoDm.map(x => _personItem(x.user, true))];
+    const offlineItems = [...dmGroupedOffline.map(_dmItem), ...offlinePeopleNoDm.map(x => _personItem(x.user, false))];
+    root.append(_sbGroup("online", "Online", onlineItems.length, onlineItems));
     root.append(_sbGroup("offline", "Offline", offlineItems.length, offlineItems));
   }
 
@@ -2261,11 +2304,8 @@ function renderChannels() {
     ]));
     root.append(_sbGroup("message-search-results", "Message matches", results.length, resultItems));
   }
-  if (!root.children.length) {
-    root.append(el("div", { class: "chat-empty muted xs" }, "Nothing here yet."));
-  }
+  if (!root.children.length) root.append(el("div", { class: "chat-empty muted xs" }, "Nothing here yet."));
 }
-
 function setSidebarTab(tab) {
   if (tab === "all") tab = "mine";
   S.sidebarTab = tab;
