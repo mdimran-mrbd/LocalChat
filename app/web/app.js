@@ -2270,7 +2270,9 @@ function setSidebarTab(tab) {
   if (tab === "all") tab = "mine";
   S.sidebarTab = tab;
   document.querySelectorAll(".sb-tab").forEach((b) => {
-    b.classList.toggle("active", b.dataset.tab === tab);
+    const selected = b.dataset.tab === tab;
+    b.classList.toggle("active", selected);
+    b.setAttribute("aria-selected", selected ? "true" : "false");
   });
   renderChannels();
 }
