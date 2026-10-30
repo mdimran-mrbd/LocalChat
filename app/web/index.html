@@ -113,7 +113,7 @@
             <svg viewBox="0 0 32 32" width="24" height="24" aria-hidden="true">
               <defs>
                 <linearGradient id="lcGrad2" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
-                  <stop offset="0" stop-color="#6366f1"/><stop offset="1" stop-color="#8b5cf6"/>
+                  <stop offset="0" stop-color="#087f5b"/><stop offset="1" stop-color="#16a779"/>
                 </linearGradient>
               </defs>
               <rect width="32" height="32" rx="8" fill="url(#lcGrad2)"/>
@@ -127,7 +127,7 @@
             <div class="h6">LocalChat</div>
           </div>
         </div>
-        <span class="status-pill" id="statusPill" title="Connection status">
+        <span class="status-pill" id="statusPill" title="Connection status" role="status" aria-live="polite">
           <span class="dot"></span><span class="txt">offline</span>
         </span>
         <button type="button" class="icon-btn sb-info-btn" id="aboutBtn" title="About LocalChat" aria-label="About" onclick="openModal('aboutModal')">
@@ -135,10 +135,11 @@
         </button>
       </div>
 
-      <nav class="sb-scroll">
-        <div class="sb-tabs" role="tablist">
-          <button type="button" class="sb-tab active" data-tab="mine"   onclick="setSidebarTab('mine')">My Chats</button>
-          <button type="button" class="sb-tab"        data-tab="online" onclick="setSidebarTab('online')">Online</button>
+      <nav class="sb-scroll" aria-label="Chat navigation">
+        <div class="sb-section-kicker">WORKSPACE</div>
+        <div class="sb-tabs" role="tablist" aria-label="Conversation view">
+          <button type="button" class="sb-tab active" data-tab="mine" role="tab" aria-selected="true" onclick="setSidebarTab('mine')">My Chats</button>
+          <button type="button" class="sb-tab"        data-tab="online" role="tab" aria-selected="false" onclick="setSidebarTab('online')">Online</button>
           <div class="sb-tabs-actions">
             <button type="button" class="icon-btn sb-tabs-add" id="sbNewBtn" title="New chat" aria-label="New chat" aria-haspopup="menu" aria-expanded="false" onclick="toggleNewMenu(event)">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
@@ -167,9 +168,9 @@
           </div>
         </div>
 
-        <div class="sb-search">
+        <div class="sb-search" role="search" aria-label="Search chats and messages">
           <svg class="sb-search-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>
-          <input id="sbSearch" type="search" placeholder="Search chats; press Enter for messages…" autocomplete="off" oninput="setSidebarFilter(this.value)" onkeydown="handleSidebarSearchKeydown(event)"/>
+          <input id="sbSearch" type="search" aria-label="Search chats and messages" placeholder="Search chats and messages…" autocomplete="off" oninput="setSidebarFilter(this.value)" onkeydown="handleSidebarSearchKeydown(event)"/>
           <button type="button" class="sb-search-clear" id="sbSearchClear" title="Clear" aria-label="Clear search" hidden onclick="setSidebarFilter('')">×</button>
         </div>
 
