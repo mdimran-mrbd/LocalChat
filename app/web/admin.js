@@ -399,7 +399,7 @@ function paintUsers(host) {
   const q = S.user.filter;
   let list = S.data.users;
   if (S.user.onlineOnly) list = list.filter((u) => u.online);
-  if (q) list = list.filter((u) => (u.username || "").toLowerCase().includes(q) || (u.ip || u.lastIp || "").toLowerCase().includes(q));
+  if (q) list = list.filter((u) => (u.username || "").toLowerCase().includes(q) || (u.displayName || "").toLowerCase().includes(q) || (u.ip || u.lastIp || "").toLowerCase().includes(q));
   if (!list.length) {
     host.replaceChildren(emptyState("No users", q ? "Nothing matches your filter." : "Nobody is connected right now."));
     return;
@@ -436,7 +436,8 @@ function userRow(u) {
     (() => { const isImage = typeof u.avatar === "string" && u.avatar.startsWith("/uploads/") && !u.avatar.slice(9).includes("/"); const node = el("div", { class: "ad-avatar" + (isImage ? " has-avatar-image" : ""), style: `background:${u.color || colorForName(u.username || "")}`, title: u.username }); node.append(avatarContentAdmin(u.avatar, initial)); node.append(el("span", { class: "ad-presence-dot " + (online ? "on" : "off"), title: online ? "Online" : "Offline" })); return node; })(),
     el("div", { class: "ad-row-meta" }, [
       el("div", { class: "ad-row-title" }, [
-        document.createTextNode(u.username || "—"),
+        document.createTextNode(u.displayName || u.username || "—"),
+        el("span", { class: "ad-tag", title: "Unique login handle" }, "@" + (u.username || "—")),
         el("span", { class: "ad-tag", title: "User ID" }, "#" + u.id),
         el("span", { class: "ad-tag ad-tag-" + (online ? "ok" : "info") }, online ? "online" : "offline"),
       ]),
@@ -449,6 +450,16 @@ function userRow(u) {
         try { await api(`/kick/${u.id}`, { method: "POST" }); toast("Kicked " + u.username); refreshAll(); }
         catch (err) { toast("Error: " + err.message); }
       } }, "Kick") : null,
+      el("button", { class: "btn btn-ghost btn-sm", type: "button", onclick: async () => {
+        try {
+          const current = await api(`/user-email/${u.id}`);
+          const officeEmail = window.prompt(`Office email for ${u.displayName || u.username}`, current.officeEmail || "");
+          if (officeEmail === null) return;
+          const result = await api(`/user-email/${u.id}`, { method: "POST", body: JSON.stringify({ officeEmail }) });
+          toast("Office email updated for " + (u.displayName || u.username));
+          u.officeEmail = result.officeEmail;
+        } catch (err) { toast("Could not update email: " + err.message); }
+      } }, "Change email"),
       el("button", { class: "btn btn-ghost btn-sm", type: "button", onclick: async () => {
         const ok = await confirmDialog({
           title: "Reset password?",
@@ -1065,6 +1076,8 @@ function renderSettingsGeneral() {
       formField("Max upload size (MB)", el("input", { id: "s_max_upload", type: "number", min: 1, max: 5000, value: s.maxUploadMb ?? 500 })),
       formField("History in RAM (per channel)", el("input", { id: "s_history", type: "number", min: 16, max: 1000, value: s.historyRam ?? 64 })),
       formField("Rotate history file at (MB)", el("input", { id: "s_rotate", type: "number", min: 1, max: 1000, value: s.rotateMb ?? 10 })),
+      formField("Allowed office-email domains", el("textarea", { id: "s_office_domains", rows: 4, placeholder: "company.example\\nanother-office.example", value: (s.officeEmailDomains || []).join("\n") }),
+        "One domain per line, without @. An empty list disables new registrations."),
       el("div", { class: "ad-form-actions" }, [
         el("button", { class: "btn btn-primary", type: "submit" }, "Save"),
         el("span", { id: "settingsStatus", class: "muted sm" }),
@@ -1082,8 +1095,12 @@ async function saveGeneralSettings(e) {
       maxUploadMb: clampInt($("s_max_upload").value, 1, 5000, 500),
       historyRam: clampInt($("s_history").value, 16, 1000, 64),
       rotateMb: clampInt($("s_rotate").value, 1, 1000, 10),
+      officeEmailDomains: $("s_office_domains").value.split(/\r?\n/).map((d) => d.trim().replace(/^@/, "").toLowerCase()).filter(Boolean),
     };
     const r = await api("/settings", { method: "POST", body: JSON.stringify(body) });
+    // Refresh the normalized persisted allowlist so the saved domains remain visible.
+    const refreshed = await api("/settings");
+    if (Array.isArray(refreshed.officeEmailDomains)) $("s_office_domains").value = refreshed.officeEmailDomains.join("\n");
     $("settingsStatus").textContent = r.restart_required
       ? "Saved. Restart the server to apply the port change."
       : "Saved.";

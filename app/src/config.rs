@@ -30,6 +30,12 @@ pub struct Config {
     #[serde(skip)]
     pub banned_ips: Vec<String>,
 
+    /// Office-email domains allowed for self-registration, normalized lowercase
+    /// without an @ prefix (e.g. ["company.example"]). Empty disables new
+    /// registrations until the host configures an allowlist.
+    #[serde(default)]
+    pub office_email_domains: Vec<String>,
+
     /// If true, server tries to start on Windows boot (HKCU Run key).
     #[serde(default)]
     pub autostart: bool,
@@ -54,6 +60,7 @@ impl Default for Config {
             rotate_mb: default_rotate_mb(),
             banned_users: Vec::new(),
             banned_ips: Vec::new(),
+            office_email_domains: Vec::new(),
             autostart: false,
         }
     }
