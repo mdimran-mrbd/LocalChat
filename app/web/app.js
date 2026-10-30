@@ -1014,6 +1014,9 @@ function updateBrowserNotificationButton() {
   const snoozed = granted && !enabled && Date.now() < _browserNotificationSnoozedUntil;
   button.classList.toggle("active", enabled);
   button.classList.toggle("snoozed", snoozed);
+  button.classList.toggle("blocked", supported && Notification.permission === "denied");
+  button.classList.toggle("unsupported", !supported);
+  button.dataset.state = !supported ? "unsupported" : Notification.permission === "denied" ? "blocked" : snoozed ? "snoozed" : enabled ? "enabled" : "disabled";
   button.title = !supported ? "Browser notifications are not supported here"
     : !granted ? (Notification.permission === "denied" ? "Notifications blocked by browser" : "Enable browser notifications")
     : snoozed ? "Notifications snoozed" : "Browser notifications enabled";
@@ -1299,17 +1302,18 @@ async function onWelcome(e, password) {
     adminLink.hidden = !onHost;
   }
   $("meChip").innerHTML = "";
-  const ownAvatar = el("div", { class: "avatar xs", style: `background:${e.user.color}` });
+  $("meChip").classList.add("account-card");
+  const ownAvatar = el("div", { class: "avatar account-avatar", style: `background:${e.user.color}` });
   renderAvatarContent(ownAvatar, e.user.avatar, e.user.username?.[0] || "?");
-  $("meChip").append(
-    ownAvatar,
-    el("div", { class: "me-info" }, [el("div", { class: "name" }, userNameNode(e.user))]),
-    el("button", {
-      id: "settingsOpenBtn", class: "icon-btn settings-open-btn", title: "Settings", "aria-label": "Open settings",
-      onclick: openSettingsPanel,
-      html: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2" fill="var(--bg-1)"/><circle cx="15" cy="12" r="2" fill="var(--bg-1)"/><circle cx="8" cy="18" r="2" fill="var(--bg-1)"/></svg>`,
-    }),
-  );
+  const accountInfo = el("div", { class: "me-info account-identity" }, [
+    el("div", { class: "name account-display-name" }, userNameNode(e.user)),
+    el("div", { class: "account-handle" }, e.user.username ? "@" + e.user.username.replace(/^@/, "") : ""),
+  ]);
+  $("meChip").append(ownAvatar, accountInfo, el("button", {
+    id: "settingsOpenBtn", class: "icon-btn settings-open-btn", type: "button", title: "Settings", "aria-label": "Open settings",
+    onclick: openSettingsPanel,
+    html: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="m19.4 15 .1.1a1.8 1.8 0 0 1-2.5 2.5l-.1-.1a1.8 1.8 0 0 0-3 .9v.2a1.8 1.8 0 0 1-3.6 0v-.2a1.8 1.8 0 0 0-3-.9l-.1.1a1.8 1.8 0 1 1-2.5-2.5l.1-.1a1.8 1.8 0 0 0-.9-3h-.2a1.8 1.8 0 0 1 0-3.6h.2a1.8 1.8 0 0 0 .9-3l-.1-.1a1.8 1.8 0 1 1 2.5-2.5l.1.1a1.8 1.8 0 0 0 3-.9v-.2a1.8 1.8 0 0 1 3.6 0v.2a1.8 1.8 0 0 0 3 .9l.1-.1a1.8 1.8 0 0 1 2.5 2.5l-.1.1a1.8 1.8 0 0 0 .9 3h.2a1.8 1.8 0 0 1 0 3.6h-.2a1.8 1.8 0 0 0-.9 3Z"/></svg>`,
+  }));
   const notificationControl = $("browserNotificationControl");
   const notificationSlot = $("settingsNotificationsSlot");
   if (notificationControl && notificationSlot && notificationControl.parentElement !== notificationSlot) notificationSlot.append(notificationControl);
@@ -1367,8 +1371,10 @@ function onUsers(list) {
     if (ownAvatar) { ownAvatar.style.background = updatedMe.color || "var(--brand)"; renderAvatarContent(ownAvatar, updatedMe.avatar, updatedMe.username?.[0] || "?"); }
     if ($("settingsPanel")?.classList.contains("open")) renderProfileAvatarSettings();
     if (avatarChanged && $("profileAvatarStatus")) { $("profileAvatarStatus").textContent = "Profile picture updated."; $("profileAvatarStatus").classList.remove("err"); $("profileAvatarStatus").classList.add("ok"); }
-    const ownName = $("meChip")?.querySelector(".me-info .name");
+    const ownName = $("meChip")?.querySelector(".account-display-name");
     if (ownName) ownName.replaceChildren(userNameNode(updatedMe));
+    const ownHandle = $("meChip")?.querySelector(".account-handle");
+    if (ownHandle) ownHandle.textContent = updatedMe.username ? "@" + updatedMe.username.replace(/^@/, "") : "";
     if (updatedMe.designation) closeModal("designationModal");
     if (profileChanged && $("settingsPanel")?.classList.contains("open")) {
       $("profileUsername").value = updatedMe.display_name || updatedMe.username || "";

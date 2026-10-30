@@ -3935,3 +3935,48 @@ html[data-theme="dark"] .sb-brand .brand-mark.sm {
 .sb-section-empty { list-style:none;padding:10px 14px 12px;color:var(--fg-3);font-size:11px; }
 @media (hover:none) { .chat-more { opacity:1; } }
 @media (prefers-reduced-motion:reduce) { .chat-more { transition:none; } }
+
+/* LocalChat 4.0.0 · Account footer refinement (Stage 3). */
+.sb-foot { padding:10px 10px max(10px,env(safe-area-inset-bottom)); border-top:1px solid var(--border); }
+.sb-foot-row { display:flex; align-items:center; gap:8px; min-width:0; }
+.sb-foot-row .me-chip.account-card { display:flex; align-items:center; gap:10px; min-width:0; flex:1 1 auto; width:auto; padding:9px 8px; border:1px solid var(--border); border-radius:12px; background:var(--bg-2); transition:border-color .16s ease,background .16s ease; }
+.sb-foot-row .me-chip.account-card:hover { background:var(--bg-hover); border-color:var(--border-strong); }
+.account-avatar { width:38px; height:38px; flex:0 0 38px; font-size:14px; }
+.account-identity { min-width:0; flex:1 1 auto; display:flex; flex-direction:column; gap:2px; }
+.account-display-name { min-width:0; font-size:12.5px; font-weight:650 !important; line-height:1.35; }
+.account-display-name .user-designation { font-size:10px; }
+.account-handle { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--fg-2); font-size:11px; line-height:1.3; }
+.settings-open-btn { width:32px; height:32px; padding:0; flex:0 0 32px; border-radius:9px; color:var(--fg-2); }
+.settings-open-btn:hover,.settings-open-btn:focus-visible { color:var(--brand); background:var(--brand-soft); }
+.browser-notification-control { flex:0 0 38px; }
+.browser-notification-button { width:38px; height:38px; border:1px solid var(--border); border-radius:11px; background:var(--bg-2); color:var(--fg-2); position:relative; }
+.browser-notification-button:hover,.browser-notification-button:focus-visible { background:var(--bg-hover); color:var(--fg-0); }
+.browser-notification-button.active { color:var(--ok); border-color:color-mix(in srgb,var(--ok) 35%,var(--border)); }
+.browser-notification-button.snoozed { color:var(--warn,#d97706); border-color:color-mix(in srgb,var(--warn,#d97706) 38%,var(--border)); }
+.browser-notification-button.blocked { color:#dc6262; border-color:color-mix(in srgb,#dc6262 38%,var(--border)); }
+.browser-notification-button.unsupported { color:var(--fg-3); }
+.browser-notification-button[data-state="enabled"]::after,.browser-notification-button[data-state="snoozed"]::after,.browser-notification-button[data-state="blocked"]::after { content:""; position:absolute; width:7px; height:7px; right:5px; top:5px; border:1.5px solid var(--bg-2); border-radius:50%; background:currentColor; }
+.browser-notification-menu { right:0; bottom:calc(100% + 10px); }
+.settings-head { padding:22px 20px 18px; }
+.settings-head h2 { letter-spacing:-.025em; }
+.settings-content { padding:10px 20px 28px; }
+.settings-section { padding:18px 0; }
+.settings-section h3 { color:var(--fg-0); font-size:12px; font-weight:700; letter-spacing:.045em; text-transform:uppercase; }
+.settings-section-heading { margin-bottom:14px; }
+.settings-action { min-height:42px; border-radius:10px; transition:background .15s ease,border-color .15s ease,color .15s ease; }
+.settings-action:focus-visible,.settings-open-btn:focus-visible,.browser-notification-button:focus-visible { outline:2px solid var(--brand); outline-offset:2px; }
+.settings-logout-footer { padding:14px 20px max(18px,env(safe-area-inset-bottom)); }
+.settings-logout-btn { max-width:none; border-radius:10px; }
+[data-theme="light"] .sb-foot-row .me-chip.account-card { background:#f8fafb; border-color:#e2e8f0; }
+[data-theme="light"] .sb-foot-row .me-chip.account-card:hover { background:#f1f5f4; border-color:#cbd5e1; }
+[data-theme="light"] .browser-notification-button { background:#f8fafb; border-color:#e2e8f0; }
+@media (max-width:520px) {
+ .sb-foot { padding:8px 8px max(8px,env(safe-area-inset-bottom)); }
+ .sb-foot-row { gap:6px; }
+ .sb-foot-row .me-chip.account-card { gap:8px; padding:8px 6px; }
+ .account-avatar { width:34px; height:34px; flex-basis:34px; }
+ .settings-open-btn { width:30px; height:30px; flex-basis:30px; }
+ .browser-notification-control { flex-basis:36px; }
+ .browser-notification-button { width:36px; height:36px; }
+}
+@media (prefers-reduced-motion:reduce) { .sb-foot-row .me-chip.account-card,.settings-action { transition:none; } }
