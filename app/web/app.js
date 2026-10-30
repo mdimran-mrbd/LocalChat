@@ -2310,7 +2310,7 @@ function renderChannels() {
     ]));
     root.append(_sbGroup("message-search-results", "Message matches", results.length, resultItems));
   }
-  if (!root.children.length) root.append(el("div", { class: "chat-empty muted xs" }, "Nothing here yet."));
+  if (!root.children.length) root.append(el("div", { class: "chat-empty muted xs", role: "status" }, q ? "No chats or messages match your search. Try another name or keyword." : tab === "online" ? "No one is online right now. You’ll see people here when they connect." : "No conversations to show yet. Start a channel or direct message to begin."));
 }
 function setSidebarTab(tab) {
   if (tab === "all") tab = "mine";
@@ -3125,7 +3125,7 @@ function switchChannel(id) {
   renderStream();
   scheduleReadReceipt();
   $("msgInput").focus();
-  if (window.matchMedia("(max-width: 780px)").matches) $("sidebar").classList.remove("open");
+  if (window.matchMedia("(max-width: 780px)").matches) closeSidebar({ restoreFocus: false });
 }
 
 function dmPeer(ch) {
@@ -3896,19 +3896,45 @@ function sendInvites() {
 
 Object.assign(window, { openInviteModal, renderInviteList, sendInvites });
 
-function toggleSidebar() { $("sidebar").classList.toggle("open"); }
-// Auto-close mobile sidebar on outside tap / Escape.
-document.addEventListener("click", (e) => {
+let _sidebarOpener = null;
+function _isMobileSidebar() { return window.matchMedia("(max-width: 780px)").matches; }
+function openSidebar() {
+  const sb = $("sidebar"), backdrop = $("sidebarBackdrop");
+  if (!sb || !_isMobileSidebar()) return;
+  _sidebarOpener = document.activeElement;
+  sb.classList.add("open"); backdrop?.classList.add("open");
+  sb.setAttribute("aria-hidden", "false");
+  document.body.classList.add("sidebar-open");
+  $("sidebarCloseBtn")?.focus({ preventScroll: true });
+}
+function closeSidebar({ restoreFocus = true } = {}) {
+  const sb = $("sidebar"), backdrop = $("sidebarBackdrop");
+  if (!sb) return;
+  sb.classList.remove("open"); backdrop?.classList.remove("open");
+  sb.setAttribute("aria-hidden", _isMobileSidebar() ? "true" : "false");
+  document.body.classList.remove("sidebar-open");
+  if (restoreFocus && _sidebarOpener?.isConnected) _sidebarOpener.focus({ preventScroll: true });
+  _sidebarOpener = null;
+}
+function toggleSidebar() {
   const sb = $("sidebar");
-  if (!sb || !sb.classList.contains("open")) return;
-  if (!window.matchMedia("(max-width: 780px)").matches) return;
-  if (e.target.closest("#sidebar")) return;
-  if (e.target.closest('[onclick*="toggleSidebar"]')) return;
-  sb.classList.remove("open");
-});
+  if (!sb) return;
+  if (sb.classList.contains("open")) closeSidebar();
+  else openSidebar();
+}
+$("sidebarBackdrop")?.addEventListener("click", () => closeSidebar());
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") $("sidebar")?.classList.remove("open");
+  const sb = $("sidebar");
+  if (!sb?.classList.contains("open") || !_isMobileSidebar()) return;
+  if (e.key === "Escape") { e.preventDefault(); closeSidebar(); return; }
+  if (e.key !== "Tab") return;
+  const focusable = [...sb.querySelectorAll('button:not([disabled]):not([hidden]),a[href]:not([hidden]),input:not([disabled]):not([hidden]),[tabindex]:not([tabindex="-1"]):not([hidden])')].filter(node => node.getClientRects().length);
+  if (!focusable.length) { e.preventDefault(); $("sidebarCloseBtn")?.focus(); return; }
+  const first = focusable[0], last = focusable[focusable.length - 1];
+  if (e.shiftKey && (document.activeElement === first || !sb.contains(document.activeElement))) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && (document.activeElement === last || !sb.contains(document.activeElement))) { e.preventDefault(); first.focus(); }
 });
+window.addEventListener("resize", () => { if (!_isMobileSidebar()) closeSidebar({ restoreFocus: false }); });
 updateBrowserNotificationButton();
 // Re-confirm read state when the tab becomes visible again.
 document.addEventListener("visibilitychange", () => {

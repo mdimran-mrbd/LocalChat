@@ -3980,3 +3980,25 @@ html[data-theme="dark"] .sb-brand .brand-mark.sm {
  .browser-notification-button { width:36px; height:36px; }
 }
 @media (prefers-reduced-motion:reduce) { .sb-foot-row .me-chip.account-card,.settings-action { transition:none; } }
+
+
+/* LocalChat 4.0.0 — Stage 4: responsive sidebar, states and accessibility. */
+.sidebar-backdrop { display:none; }
+.sidebar-close-btn { display:none; }
+.sidebar :focus-visible { outline:2px solid var(--brand); outline-offset:2px; }
+.sb-group > summary:focus-visible,.chat-item:focus-visible,.sb-search input:focus-visible { outline:2px solid var(--brand); outline-offset:2px; }
+.sb-section-empty,.chat-empty { display:block; margin:5px 10px; padding:12px 11px; border:1px dashed var(--border); border-radius:10px; color:var(--fg-2); font-size:11px; line-height:1.5; }
+.sb-group-count { font-variant-numeric:tabular-nums; }
+@media (max-width:780px) {
+ .sidebar { width:min(340px,calc(100vw - 44px)); max-width:88vw; padding-top:env(safe-area-inset-top); padding-bottom:env(safe-area-inset-bottom); transform:translate3d(-105%,0,0); transition:transform .24s cubic-bezier(.2,.75,.25,1),visibility .24s; visibility:hidden; will-change:transform; }
+ .sidebar.open { transform:translate3d(0,0,0); visibility:visible; }
+ .sidebar-backdrop { display:block; position:fixed; inset:0; z-index:39; background:rgba(10,20,16,.46); opacity:0; visibility:hidden; transition:opacity .2s ease,visibility .2s; -webkit-tap-highlight-color:transparent; }
+ .sidebar-backdrop.open { opacity:1; visibility:visible; }
+ .sidebar-close-btn { display:inline-flex; align-items:center; justify-content:center; position:absolute; top:calc(9px + env(safe-area-inset-top)); right:9px; z-index:3; width:32px; height:32px; border:1px solid var(--border); border-radius:9px; background:var(--bg-2); color:var(--fg-1); font-size:22px; line-height:1; }
+ .sb-header { padding-right:48px; }
+ .sb-scroll { overscroll-behavior:contain; }
+ body.sidebar-open { overflow:hidden; touch-action:none; }
+}
+@media (max-width:380px) { .sidebar { width:calc(100vw - 34px); max-width:calc(100vw - 34px); } .sb-header { gap:7px; } .sb-header .status-pill { font-size:9px; padding-inline:6px; } }
+@media (max-height:560px) and (max-width:780px) { .sidebar { overflow-y:auto; } .sb-scroll { flex:1 0 auto; } .sb-foot { position:sticky; bottom:0; } }
+@media (prefers-reduced-motion:reduce) { .sidebar,.sidebar-backdrop { transition:none !important; } }
