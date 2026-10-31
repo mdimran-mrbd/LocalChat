@@ -1301,19 +1301,15 @@ async function onWelcome(e, password) {
     const onHost = h === "localhost" || h === "127.0.0.1" || h === "[::1]" || h === "::1";
     adminLink.hidden = !onHost;
   }
-  $("meChip").innerHTML = "";
-  $("meChip").classList.add("account-card");
-  const ownAvatar = el("div", { class: "avatar account-avatar", style: `background:${e.user.color}` });
-  renderAvatarContent(ownAvatar, e.user.avatar, e.user.username?.[0] || "?");
-  const accountInfo = el("div", { class: "me-info account-identity" }, [
-    el("div", { class: "name account-display-name" }, userNameNode(e.user)),
-    el("div", { class: "account-handle" }, e.user.username ? "@" + e.user.username.replace(/^@/, "") : ""),
-  ]);
-  $("meChip").append(ownAvatar, accountInfo, el("button", {
-    id: "settingsOpenBtn", class: "icon-btn settings-open-btn", type: "button", title: "Settings", "aria-label": "Open settings",
-    onclick: openSettingsPanel,
-    html: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="m19.4 15 .1.1a1.8 1.8 0 0 1-2.5 2.5l-.1-.1a1.8 1.8 0 0 0-3 .9v.2a1.8 1.8 0 0 1-3.6 0v-.2a1.8 1.8 0 0 0-3-.9l-.1.1a1.8 1.8 0 1 1-2.5-2.5l.1-.1a1.8 1.8 0 0 0-.9-3h-.2a1.8 1.8 0 0 1 0-3.6h.2a1.8 1.8 0 0 0 .9-3l-.1-.1a1.8 1.8 0 1 1 2.5-2.5l.1.1a1.8 1.8 0 0 0 3-.9v-.2a1.8 1.8 0 0 1 3.6 0v.2a1.8 1.8 0 0 0 3 .9l.1-.1a1.8 1.8 0 0 1 2.5 2.5l-.1.1a1.8 1.8 0 0 0 .9 3h.2a1.8 1.8 0 0 1 0 3.6h-.2a1.8 1.8 0 0 0-.9 3Z"/></svg>`,
-  }));
+  $("meChip").innerHTML = ""; $("meChip").className = "nav-profile";
+  const ownAvatar=el("div",{class:"avatar account-avatar",style:`background:${e.user.color}`,title:e.user.display_name||e.user.username});
+  renderAvatarContent(ownAvatar,e.user.avatar,e.user.username?.[0]||"?");
+  $("meChip").append(ownAvatar,el("span",{class:"presence-dot online",title:"Connected"}));
+  $("meChip").onclick=openSettingsPanel; $("meChip").onkeydown=ev=>{if(ev.key==="Enter"||ev.key===" "){ev.preventDefault();openSettingsPanel();}};
+  $("meChip").setAttribute("role","button"); $("meChip").setAttribute("tabindex","0");
+  $("meChip").setAttribute("aria-label",`Profile and settings for ${e.user.display_name||e.user.username}`);
+  const syncOwnPresence=()=>{const dot=$("meChip")?.querySelector(".presence-dot");if(!dot)return;const p=$("statusPill");const connected=!!p?.classList.contains("ok"),connecting=!!p?.classList.contains("warn");dot.className="presence-dot "+(connected?"online":connecting?"disconnected":"offline");dot.title=connected?"Online":connecting?"Disconnected · reconnecting":"Offline";};
+  syncOwnPresence(); const statusNode=$("statusPill"); if(statusNode&&!statusNode.dataset.profileObserver){new MutationObserver(syncOwnPresence).observe(statusNode,{attributes:true,childList:true,subtree:true});statusNode.dataset.profileObserver="1";}
   const notificationControl = $("browserNotificationControl");
   const notificationSlot = $("settingsNotificationsSlot");
   if (notificationControl && notificationSlot && notificationControl.parentElement !== notificationSlot) notificationSlot.append(notificationControl);
@@ -2044,7 +2040,7 @@ function _channelItem(c) {
   }).then(ok => { if (ok) leaveChannel(c.id); });
   const summary = _sidebarLatestMessage(c);
   const label = `#${c.name || c.id}`;
-  const actions = [{ label: pinned ? "Unpin conversation" : "Pin conversation", run: () => toggleChatPin(c.id) }];
+  const actions = [{ label: pinned ? "Unpin conversation" : "Pin conversation", run: () => toggleChatPin(c.id) }, { label: isChatFavourite(c.id) ? "Remove from favourites" : "Add to favourites", run: () => toggleChatFavourite(c.id) }];
   if (canDelete) actions.push({ label: "Delete channel", danger: true, run: askDelete });
   if (canLeave) actions.push({ label: "Leave channel", danger: true, run: askLeave });
   return el("li", {
@@ -2084,7 +2080,7 @@ function _dmItem(c) {
     okText: "Delete",
   }).then(ok => { if (ok) deleteDm(c.id); });
   const actions = [{ label: pinned ? "Unpin conversation" : "Pin conversation", run: () => toggleChatPin(c.id) },
-    { label: "Delete conversation", danger: true, run: askDelete }];
+    { label: isChatFavourite(c.id) ? "Remove from favourites" : "Add to favourites", run: () => toggleChatFavourite(c.id) },\n    { label: "Delete conversation", danger: true, run: askDelete }];
   return el("li", {
     class: "chat-item " + active,
     onclick: () => switchChannel(c.id),
@@ -2216,6 +2212,9 @@ function _personItem(u, online) {
   ]);
 }
 
+function favouriteChatsStorageKey(){return "favourite-chats:"+(S.me?.id||"anonymous");}
+function isChatFavourite(id){try{return(JSON.parse(lstore.get(favouriteChatsStorageKey())||"[]")||[]).includes(id);}catch{return false;}}
+function toggleChatFavourite(id){let ids=[];try{ids=JSON.parse(lstore.get(favouriteChatsStorageKey())||"[]")||[];}catch{}ids=ids.filter(x=>S.channels.has(x));ids=ids.includes(id)?ids.filter(x=>x!==id):[...ids,id];lstore.set(favouriteChatsStorageKey(),JSON.stringify(ids));renderChannels();}
 function chatPinsStorageKey() { return "pinned-chats:" + (S.me?.id || "anonymous"); }
 function isChatPinned(channelId) {
   try { return (JSON.parse(lstore.get(chatPinsStorageKey()) || "[]") || []).includes(channelId); } catch { return false; }
@@ -2233,84 +2232,17 @@ function toggleChatPin(channelId) {
   renderChannels();
 }
 
-function renderChannels() {
-  const root = $("sbGroups");
-  if (!root) return;
-  root.innerHTML = "";
-  const tab = S.sidebarTab || "mine";
-  const q = (S.sidebarFilter || "").trim().toLowerCase();
-  const matches = (s) => !q || (s || "").toLowerCase().includes(q);
-  const pinnedIds = (() => {
-    try { return (JSON.parse(lstore.get(chatPinsStorageKey()) || "[]") || []).filter(id => S.channels.has(id)); }
-    catch { return []; }
-  })();
-
-  const allChannels = [...S.channels.values()].filter(c => c.kind !== "dm");
-  const channels = allChannels.filter(c => matches(c.name || c.id));
-  channels.sort((a, b) => {
-    if (a.kind === "lobby") return -1;
-    if (b.kind === "lobby") return 1;
-    return (a.name || a.id).localeCompare(b.name || b.id);
-  });
-  const dmList = [...S.channels.values()].filter(c => c.kind === "dm");
-  const me = S.me;
-  const myName = (me?.username || "").toLowerCase();
-  const byName = new Map();
-  for (const u of S.users.values()) {
-    if (!me || u.id !== me.id) byName.set((u.username || "").toLowerCase(), { user: u, online: true });
-  }
-  for (const c of dmList) {
-    if (!c.dmUsers) continue;
-    for (const n of c.dmUsers) {
-      const ln = (n || "").toLowerCase();
-      if (!ln || ln === myName || byName.has(ln)) continue;
-      byName.set(ln, { user: { username: n, color: colorForName(n), avatar: n[0]?.toUpperCase() || "?", offline: true }, online: false });
-    }
-  }
-  const onlinePeople = [...byName.values()].filter(x => x.online && matches(x.user.username)).sort((a,b) => a.user.username.localeCompare(b.user.username));
-  const offlinePeople = [...byName.values()].filter(x => !x.online && matches(x.user.username)).sort((a,b) => a.user.username.localeCompare(b.user.username));
-  const dmGroupedOnline = dmList.filter(c => { const p = dmPeer(c); return !!(p && !p.offline) && matches(p?.username); });
-  const dmGroupedOffline = dmList.filter(c => { const p = dmPeer(c); return !(p && !p.offline) && matches(p?.username); });
-  const sortDm = (a,b) => (dmPeer(a)?.username || "").localeCompare(dmPeer(b)?.username || "");
-  dmGroupedOnline.sort(sortDm); dmGroupedOffline.sort(sortDm);
-
-  if (tab === "online") {
-    const items = onlinePeople.map(x => {
-      const existing = dmGroupedOnline.find(c => dmPeer(c)?.username?.toLowerCase() === x.user.username.toLowerCase());
-      return existing ? _dmItem(existing) : _personItem(x.user, true);
-    });
-    root.append(_sbGroup("online", "Online", items.length, items));
-  } else if (tab === "mine") {
-    const pinned = pinnedIds.filter(id => matches((S.channels.get(id)?.name || dmPeer(S.channels.get(id))?.username || id)))
-      .map(id => S.channels.get(id)).filter(Boolean);
-    const pinnedSet = new Set(pinnedIds);
-    const unpinnedChannels = channels.filter(c => !pinnedSet.has(c.id));
-    const personal = [...dmGroupedOnline, ...dmGroupedOffline].filter(c => !pinnedSet.has(c.id)).sort(sortDm);
-    if (pinned.length) root.append(_sbGroup("pinned", "Pinned", pinned.length, pinned.map(c => c.kind === "dm" ? _dmItem(c) : _channelItem(c))));
-    root.append(_sbGroup("ch", "Channels", unpinnedChannels.length, unpinnedChannels.map(_channelItem)));
-    root.append(_sbGroup("personal", "Personal", personal.length, personal.map(_dmItem)));
-  } else {
-    root.append(_sbGroup("ch", "Channels", channels.length, channels.map(_channelItem)));
-    const onlinePeopleNoDm = onlinePeople.filter(x => !dmGroupedOnline.some(c => dmPeer(c)?.username?.toLowerCase() === x.user.username.toLowerCase()));
-    const offlinePeopleNoDm = offlinePeople.filter(x => !dmGroupedOffline.some(c => dmPeer(c)?.username?.toLowerCase() === x.user.username.toLowerCase()));
-    const onlineItems = [...dmGroupedOnline.map(_dmItem), ...onlinePeopleNoDm.map(x => _personItem(x.user, true))];
-    const offlineItems = [...dmGroupedOffline.map(_dmItem), ...offlinePeopleNoDm.map(x => _personItem(x.user, false))];
-    root.append(_sbGroup("online", "Online", onlineItems.length, onlineItems));
-    root.append(_sbGroup("offline", "Offline", offlineItems.length, offlineItems));
-  }
-
-  if (S.sidebarMessageResults.length && q) {
-    const results = S.sidebarMessageResults.filter(item => String(item.snippet || item.message?.text || item.message?.file?.name || "").toLowerCase().includes(q));
-    const resultItems = results.slice(0, 20).map(item => el("li", { class: "chat-item search-result-item", title: "Open matching message", onclick: () => openSidebarSearchResult(item) }, [
-      el("div", { class: "avatar", style: "background:var(--brand)" }, "#"),
-      el("div", { class: "chat-meta" }, [
-        el("div", { class: "chat-name" }, item.channelName || item.channelId || "Channel"),
-        el("div", { class: "chat-sub muted xs" }, `${item.message?.username || "Member"}: ${String(item.snippet || item.message?.text || item.message?.file?.name || "Attachment").slice(0, 90)}`),
-      ]),
-    ]));
-    root.append(_sbGroup("message-search-results", "Message matches", results.length, resultItems));
-  }
-  if (!root.children.length) root.append(el("div", { class: "chat-empty muted xs", role: "status" }, q ? "No chats or messages match your search. Try another name or keyword." : tab === "online" ? "No one is online right now. You’ll see people here when they connect." : "No conversations to show yet. Start a channel or direct message to begin."));
+function renderChannels(){
+ const root=$("sbGroups");if(!root)return;root.innerHTML="";const tab=S.sidebarTab||"mine",q=(S.sidebarFilter||"").trim().toLowerCase(),matches=s=>!q||(s||"").toLowerCase().includes(q);
+ const pinnedIds=(()=>{try{return(JSON.parse(lstore.get(chatPinsStorageKey())||"[]")||[]).filter(id=>S.channels.has(id));}catch{return[];}})(),favIds=(()=>{try{return(JSON.parse(lstore.get(favouriteChatsStorageKey())||"[]")||[]).filter(id=>S.channels.has(id));}catch{return[];}})();
+ const all=[...S.channels.values()].filter(c=>c.kind!=="dm"||dmPeer(c)),channels=all.filter(c=>c.kind!=="dm"&&matches(c.name||c.id)),personal=all.filter(c=>c.kind==="dm"&&matches(dmPeer(c)?.display_name||dmPeer(c)?.username||"")),online=personal.filter(c=>{const p=dmPeer(c);return !!p&&!p.offline;}),people=[...S.users.values()].filter(u=>u.id!==S.me?.id&&!u.offline&&matches(u.display_name||u.username));
+ let list=[];if(tab==="online"){list=[...new Set([...online,...people.map(u=>personal.find(c=>dmPeer(c)?.id===u.id)).filter(Boolean)])];}else if(tab==="channels")list=channels;else if(tab==="personal")list=personal;else if(tab==="favourites")list=all.filter(c=>favIds.includes(c.id)&&matches(c.kind==="dm"?(dmPeer(c)?.display_name||dmPeer(c)?.username):(c.name||c.id)));else list=[...channels,...personal];
+ const recent=c=>Math.max(0,...(S.msgs.get(c.id)||[]).filter(m=>m&&!m.deleted).map(m=>Number(m.ts||0)));list.sort((a,b)=>recent(b)-recent(a));
+ const pins=list.filter(c=>pinnedIds.includes(c.id)),other=list.filter(c=>!pinnedIds.includes(c.id));
+ if(tab==="online"){const extra=people.filter(u=>!personal.some(c=>dmPeer(c)?.id===u.id));const rows=[...pins,...other].map(c=>c.kind==="dm"?_dmItem(c):_channelItem(c)).concat(extra.map(u=>_personItem(u,true)));root.append(_sbGroup("online","Online",rows.length,rows));}
+ else{if(pins.length)root.append(_sbGroup("pinned","Pinned chats",pins.length,pins.map(c=>c.kind==="dm"?_dmItem(c):_channelItem(c))));root.append(_sbGroup("other-chats","Other Chats",other.length,other.map(c=>c.kind==="dm"?_dmItem(c):_channelItem(c))));}
+ if(S.sidebarMessageResults.length&&q){const results=S.sidebarMessageResults.filter(x=>String(x.snippet||x.message?.text||x.message?.file?.name||"").toLowerCase().includes(q));const rows=results.slice(0,20).map(x=>el("li",{class:"chat-item search-result-item",title:"Open matching message",onclick:()=>openSidebarSearchResult(x)},[el("div",{class:"avatar",style:"background:var(--brand)"},"#"),el("div",{class:"chat-meta"},[el("div",{class:"chat-name"},x.channelName||x.channelId||"Channel"),el("div",{class:"chat-sub muted xs"},`${x.message?.username||"Member"}: ${String(x.snippet||x.message?.text||x.message?.file?.name||"Attachment").slice(0,90)}`)])]));root.append(_sbGroup("message-search-results","Message matches",results.length,rows));}
+ if(!root.querySelector(".chat-item"))root.append(el("div",{class:"chat-empty muted xs",role:"status"},q?"No chats or messages match your search. Try another name or keyword.":tab==="online"?"No one is online right now. You’ll see people here when they connect.":tab==="favourites"?"No favourites yet. Use a conversation menu to add favourites.":"No conversations to show yet. Start a new chat or channel."));
 }
 function setSidebarTab(tab) {
   if (tab === "all") tab = "mine";
@@ -2320,6 +2252,7 @@ function setSidebarTab(tab) {
     b.classList.toggle("active", selected);
     b.setAttribute("aria-selected", selected ? "true" : "false");
   });
+  document.querySelectorAll("[data-rail-tab]").forEach(b=>b.classList.toggle("active",b.dataset.railTab===tab));
   renderChannels();
 }
 
