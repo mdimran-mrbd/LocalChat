@@ -2080,7 +2080,8 @@ function _dmItem(c) {
     okText: "Delete",
   }).then(ok => { if (ok) deleteDm(c.id); });
   const actions = [{ label: pinned ? "Unpin conversation" : "Pin conversation", run: () => toggleChatPin(c.id) },
-    { label: isChatFavourite(c.id) ? "Remove from favourites" : "Add to favourites", run: () => toggleChatFavourite(c.id) },\n    { label: "Delete conversation", danger: true, run: askDelete }];
+    { label: isChatFavourite(c.id) ? "Remove from favourites" : "Add to favourites", run: () => toggleChatFavourite(c.id) },
+    { label: "Delete conversation", danger: true, run: askDelete }];
   return el("li", {
     class: "chat-item " + active,
     onclick: () => switchChannel(c.id),
