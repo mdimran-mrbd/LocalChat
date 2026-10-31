@@ -4035,3 +4035,9 @@ html[data-theme="dark"] .sb-brand .brand-mark.sm {
 @media(max-width:780px){.app{grid-template-columns:54px minmax(0,1fr)}.nav-ribbon{padding-left:5px;padding-right:5px}.nav-ribbon .nav-rail-btn{width:40px;height:40px}
 .sidebar{position:fixed;left:54px;top:0;bottom:0;width:min(340px,calc(100vw - 54px));z-index:41;transform:translateX(-110%);transition:transform var(--transition);box-shadow:var(--shadow-lg)}
 .sidebar.open{transform:translateX(0)}.sidebar-backdrop{left:54px}.nav-notification-control{display:block}}
+
+/* LocalChat 4.0.0 — settings utility actions */
+.settings-utility-action{gap:10px;margin-top:8px}
+.settings-utility-action:first-of-type{margin-top:0}
+.settings-utility-action svg{flex:0 0 auto;color:var(--fg-2)}
+.settings-utility-action span{min-width:0}
