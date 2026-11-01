@@ -1305,9 +1305,9 @@ async function onWelcome(e, password) {
   const ownAvatar=el("div",{class:"avatar account-avatar",style:`background:${e.user.color}`,title:e.user.display_name||e.user.username});
   renderAvatarContent(ownAvatar,e.user.avatar,e.user.username?.[0]||"?");
   $("meChip").append(ownAvatar,el("span",{class:"presence-dot online",title:"Connected"}));
-  $("meChip").onclick=openSettingsPanel; $("meChip").onkeydown=ev=>{if(ev.key==="Enter"||ev.key===" "){ev.preventDefault();openSettingsPanel();}};
-  $("meChip").setAttribute("role","button"); $("meChip").setAttribute("tabindex","0");
-  $("meChip").setAttribute("aria-label",`Profile and settings for ${e.user.display_name||e.user.username}`);
+  $("meChip").removeAttribute("role"); $("meChip").removeAttribute("tabindex");
+  $("meChip").setAttribute("aria-label","Your presence status");
+  $("meChip").title="Your presence status";
   const syncOwnPresence=()=>{const dot=$("meChip")?.querySelector(".presence-dot");if(!dot)return;const p=$("statusPill");const connected=!!p?.classList.contains("ok"),connecting=!!p?.classList.contains("warn");dot.className="presence-dot "+(connected?"online":connecting?"disconnected":"offline");dot.title=connected?"Online":connecting?"Disconnected · reconnecting":"Offline";};
   syncOwnPresence(); const statusNode=$("statusPill"); if(statusNode&&!statusNode.dataset.profileObserver){new MutationObserver(syncOwnPresence).observe(statusNode,{attributes:true,childList:true,subtree:true});statusNode.dataset.profileObserver="1";}
   const notificationControl = $("browserNotificationControl");
@@ -1325,7 +1325,15 @@ async function onWelcome(e, password) {
       sendOp({ op: "ch_info", channel: channel.id });
     }
   }
-  switchChannel(e.lobby || "pub:general");
+  const initialChannel = e.lobby || "pub:general";
+  // Fetch only the newest message for each other conversation so previews
+  // are visible immediately without loading every chat's full history.
+  for (const channel of S.channels.values()) {
+    if (channel.id !== initialChannel && channel.kind !== "lobby") {
+      sendOp({ op: "history", channel: channel.id, limit: 1 });
+    }
+  }
+  switchChannel(initialChannel);
   sendOp({ op: "saved_list" });
   S.lobby = e.lobby || "pub:general";
   _requiredProfileFlags = e.profileCompletion || null;
@@ -1534,6 +1542,18 @@ async function onHistory({ channel, messages, reactions, pins }) {
   );
   S.msgs.set(channel, filtered);
   S.hasHistory.add(channel);
+  const historyChannel = S.channels.get(channel);
+  if (historyChannel?.kind === "dm" && filtered.length) {
+    const latestPreviewMessage = [...filtered].filter(m => m && !m.deleted && m.kind !== "system")
+      .sort((a,b) => Number(b.ts || 0) - Number(a.ts || 0))[0];
+    const peer = dmPeer(historyChannel);
+    if (latestPreviewMessage?.text?.startsWith("e2e:v1:") && peer?.pubkey) {
+      try {
+        const previewText = await E2EE.tryDecrypt(peer.id, peer.pubkey, latestPreviewMessage.text);
+        if (previewText != null) latestPreviewMessage._sidebarPreview = previewText;
+      } catch {}
+    }
+  }
   // Drop any queued file ops that the server already accepted (their
   // resulting WireMsg is now visible in history).
   for (const m of filtered) {
@@ -1552,6 +1572,7 @@ async function onHistory({ channel, messages, reactions, pins }) {
   }
   S.reactions.set(channel, rmap);
   S.pins.set(channel, Array.isArray(pins) ? pins : []);
+  renderChannels();
   if (S.active === channel) { await renderStream(); updateMentionBadge(); }
   if (_ciPendingJump && _ciPendingJump.channelId === channel) {
     if (filtered.some(m => Number(m.id) === Number(_ciPendingJump.messageId))) {
@@ -1984,7 +2005,7 @@ function _sidebarLatestMessage(channel) {
   const latest = [...messages].filter(m => m && !m.deleted && m.kind !== "system")
     .sort((a, b) => Number(b.ts || 0) - Number(a.ts || 0))[0];
   if (!latest) return { preview: "", time: "" };
-  const raw = String(latest.text || "");
+  const raw = String(latest._sidebarPreview ?? latest.text ?? "");
   if (raw.startsWith("e2e:v1:")) return { preview: "🔒 Encrypted message", time: latest.ts ? fmtTime(latest.ts) : "" };
   if (latest.kind === "file" || latest.file) return { preview: "📎 Attachment", time: latest.ts ? fmtTime(latest.ts) : "" };
   const preview = raw.replace(/\s+/g, " ").trim();
@@ -3717,6 +3738,12 @@ function createChannel(e) {
   closeModal("createModal");
   $("newChName").value = ""; $("newChPrivate").checked = false;
 }
+
+function openNewChatMenu() {
+  const modal = $("newChatChoiceModal");
+  if (modal) modal.classList.remove("hidden");
+}
+Object.assign(window, { openNewChatMenu });
 
 function openDmPicker() {
   const list = $("dmPickList"); list.innerHTML = "";
