@@ -2016,7 +2016,7 @@ function _sidebarLatestMessage(channel) {
   return { preview: preview ? (preview.length > 72 ? preview.slice(0, 69) + "…" : preview) : "Message", time: latest.ts ? fmtTime(latest.ts) : "" };
 }
 
-const _CHAT_PIN_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 3 5 5-4 1-4 4-1 5-2-2-4 4-2-2 4-4-2-2 5-1 4-4 1-4Z"/><path d="m10 14-6 6"/></svg>';
+const _CHAT_PIN_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6l-1 6 3 3v2H7v-2l3-3-1-6Z"/><path d="M12 14v7"/></svg>';
 function _chatContextMenu(channel, options) {
   const wrap = el("div", { class: "chat-actions" });
   const trigger = el("button", {
@@ -2107,7 +2107,7 @@ function _channelItem(c) {
     onclick: () => switchChannel(c.id),
     oncontextmenu: (ev) => { ev.preventDefault(); ev.stopPropagation(); ev.currentTarget.querySelector(".chat-more")?.click(); }
   }, [
-    el("div", { class: "avatar chat-row-avatar", style: "background:var(--brand)" }, isNotes ? "📝" : "#"),
+    el("div", { class: "avatar chat-row-avatar", style: "background:#087f5b" }, isNotes ? "📝" : "#"),
     el("div", { class: "chat-meta" }, [
       el("div", { class: "chat-row-top" }, [
         el("div", { class: "chat-name" }, [isNotes ? (S.me?.display_name || S.me?.username || "My") + " (Me)" : (isGeneral ? "Block G" : (c.name || c.id))]),
