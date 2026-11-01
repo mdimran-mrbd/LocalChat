@@ -1304,12 +1304,11 @@ async function onWelcome(e, password) {
   $("meChip").innerHTML = ""; $("meChip").className = "nav-profile";
   const ownAvatar=el("div",{class:"avatar account-avatar",style:`background:${e.user.color}`,title:e.user.display_name||e.user.username});
   renderAvatarContent(ownAvatar,e.user.avatar,e.user.username?.[0]||"?");
-  $("meChip").append(ownAvatar,el("span",{class:"presence-dot online",title:"Connected"}));
-  $("meChip").removeAttribute("role"); $("meChip").removeAttribute("tabindex");
-  $("meChip").setAttribute("aria-label","Your presence status");
-  $("meChip").title="Your presence status";
-  const syncOwnPresence=()=>{const dot=$("meChip")?.querySelector(".presence-dot");if(!dot)return;const p=$("statusPill");const connected=!!p?.classList.contains("ok"),connecting=!!p?.classList.contains("warn");dot.className="presence-dot "+(connected?"online":connecting?"disconnected":"offline");dot.title=connected?"Online":connecting?"Disconnected · reconnecting":"Offline";};
-  syncOwnPresence(); const statusNode=$("statusPill"); if(statusNode&&!statusNode.dataset.profileObserver){new MutationObserver(syncOwnPresence).observe(statusNode,{attributes:true,childList:true,subtree:true});statusNode.dataset.profileObserver="1";}
+  $("meChip").append(ownAvatar);
+  $("meChip").type="button";
+  $("meChip").setAttribute("aria-label","Open profile and settings");
+  $("meChip").title="Profile and settings";
+  $("meChip").onclick=()=>openSettingsPanel();
   const notificationControl = $("browserNotificationControl");
   const notificationSlot = $("settingsNotificationsSlot");
   if (notificationControl && notificationSlot && notificationControl.parentElement !== notificationSlot) notificationSlot.append(notificationControl);
@@ -2044,6 +2043,17 @@ function _chatContextMenu(channel, options) {
     }, action.label));
   }
   wrap.append(trigger, menu);
+  if (!document.documentElement.dataset.chatMenuDismissBound) {
+    document.addEventListener("pointerdown", (ev) => {
+      if (ev.target.closest && ev.target.closest(".chat-actions")) return;
+      document.querySelectorAll(".chat-context-menu:not([hidden])").forEach(node => { node.hidden = true; node.closest(".chat-actions")?.querySelector(".chat-more")?.setAttribute("aria-expanded", "false"); });
+    });
+    document.addEventListener("keydown", (ev) => {
+      if (ev.key !== "Escape") return;
+      document.querySelectorAll(".chat-context-menu:not([hidden])").forEach(node => { node.hidden = true; node.closest(".chat-actions")?.querySelector(".chat-more")?.setAttribute("aria-expanded", "false"); });
+    });
+    document.documentElement.dataset.chatMenuDismissBound = "1";
+  }
   return wrap;
 }
 function _chatRowIndicators(channel, unread, pinned, label, actions, extraSignals = []) {
@@ -2061,7 +2071,8 @@ function _chatRowIndicators(channel, unread, pinned, label, actions, extraSignal
 
 function _channelItem(c) {
   const active = c.id === S.active ? "active" : "";
-  const pinned = isChatPinned(c.id);
+  const isGeneral = c.kind === "lobby" || c.id === S.lobby || c.id === "pub:general";
+  const pinned = isGeneral || isChatPinned(c.id);
   const unread = S.unread.get(c.id) || 0;
   const isMember = !!(S.me && (c.members || []).includes(S.me.id));
   const isNotes = c.id.startsWith("notes:");
@@ -2080,9 +2091,9 @@ function _channelItem(c) {
     okText: "Leave",
   }).then(ok => { if (ok) leaveChannel(c.id); });
   const summary = _sidebarLatestMessage(c);
-  const label = "#" + (c.name || c.id);
+  const label = isGeneral ? "Block G" : "#" + (c.name || c.id);
   const actions = [
-    { label: pinned ? "Unpin conversation" : "Pin conversation", run: () => toggleChatPin(c.id) },
+    ...(isGeneral ? [] : [{ label: pinned ? "Unpin conversation" : "Pin conversation", run: () => toggleChatPin(c.id) }]),
     { label: isChatFavourite(c.id) ? "Remove from favourites" : "Add to favourites", run: () => toggleChatFavourite(c.id) }
   ];
   if (canDelete) actions.push({ label: "Delete channel", danger: true, run: askDelete });
@@ -2099,7 +2110,7 @@ function _channelItem(c) {
     el("div", { class: "avatar chat-row-avatar", style: "background:var(--brand)" }, isNotes ? "📝" : "#"),
     el("div", { class: "chat-meta" }, [
       el("div", { class: "chat-row-top" }, [
-        el("div", { class: "chat-name" }, [c.name || c.id]),
+        el("div", { class: "chat-name" }, [isNotes ? (S.me?.display_name || S.me?.username || "My") + " (Me)" : (isGeneral ? "Block G" : (c.name || c.id))]),
         summary.time ? el("time", { class: "chat-time", datetime: summary.time }, summary.time) : null
       ]),
       el("div", { class: "chat-row-bottom" }, [
@@ -2264,6 +2275,8 @@ function isChatPinned(channelId) {
   try { return (JSON.parse(lstore.get(chatPinsStorageKey()) || "[]") || []).includes(channelId); } catch { return false; }
 }
 function toggleChatPin(channelId) {
+  const channel = S.channels.get(channelId);
+  if (channel && (channel.kind === "lobby" || channel.id === S.lobby || channel.id === "pub:general")) { toast("Block G is always pinned."); return; }
   let pinned = [];
   try { pinned = JSON.parse(lstore.get(chatPinsStorageKey()) || "[]") || []; } catch {}
   pinned = pinned.filter(id => S.channels.has(id));
