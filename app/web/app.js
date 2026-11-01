@@ -2290,16 +2290,39 @@ function toggleChatPin(channelId) {
 }
 
 function renderChannels(){
- const root=$("sbGroups");if(!root)return;root.innerHTML="";const tab=S.sidebarTab||"mine",q=(S.sidebarFilter||"").trim().toLowerCase(),matches=s=>!q||(s||"").toLowerCase().includes(q);
- const pinnedIds=(()=>{try{return(JSON.parse(lstore.get(chatPinsStorageKey())||"[]")||[]).filter(id=>S.channels.has(id));}catch{return[];}})(),favIds=(()=>{try{return(JSON.parse(lstore.get(favouriteChatsStorageKey())||"[]")||[]).filter(id=>S.channels.has(id));}catch{return[];}})();
- const all=[...S.channels.values()].filter(c=>c.kind!=="dm"||dmPeer(c)),channels=all.filter(c=>c.kind!=="dm"&&matches(c.name||c.id)),personal=all.filter(c=>c.kind==="dm"&&matches(dmPeer(c)?.display_name||dmPeer(c)?.username||"")),online=personal.filter(c=>{const p=dmPeer(c);return !!p&&!p.offline;}),people=[...S.users.values()].filter(u=>u.id!==S.me?.id&&!u.offline&&matches(u.display_name||u.username));
- let list=[];if(tab==="online"){list=[...new Set([...online,...people.map(u=>personal.find(c=>dmPeer(c)?.id===u.id)).filter(Boolean)])];}else if(tab==="channels")list=channels;else if(tab==="personal")list=personal;else if(tab==="favourites")list=all.filter(c=>favIds.includes(c.id)&&matches(c.kind==="dm"?(dmPeer(c)?.display_name||dmPeer(c)?.username):(c.name||c.id)));else list=[...channels,...personal];
- const recent=c=>Math.max(0,...(S.msgs.get(c.id)||[]).filter(m=>m&&!m.deleted).map(m=>Number(m.ts||0)));list.sort((a,b)=>recent(b)-recent(a));
- const pins=list.filter(c=>pinnedIds.includes(c.id)),other=list.filter(c=>!pinnedIds.includes(c.id));
- if(tab==="online"){const extra=people.filter(u=>!personal.some(c=>dmPeer(c)?.id===u.id));const rows=[...pins,...other].map(c=>c.kind==="dm"?_dmItem(c):_channelItem(c)).concat(extra.map(u=>_personItem(u,true)));root.append(_sbGroup("online","Online",rows.length,rows));}
- else{if(pins.length)root.append(_sbGroup("pinned","Pinned chats",pins.length,pins.map(c=>c.kind==="dm"?_dmItem(c):_channelItem(c))));root.append(_sbGroup("other-chats","Other Chats",other.length,other.map(c=>c.kind==="dm"?_dmItem(c):_channelItem(c))));}
- if(S.sidebarMessageResults.length&&q){const results=S.sidebarMessageResults.filter(x=>String(x.snippet||x.message?.text||x.message?.file?.name||"").toLowerCase().includes(q));const rows=results.slice(0,20).map(x=>el("li",{class:"chat-item search-result-item",title:"Open matching message",onclick:()=>openSidebarSearchResult(x)},[el("div",{class:"avatar",style:"background:var(--brand)"},"#"),el("div",{class:"chat-meta"},[el("div",{class:"chat-name"},x.channelName||x.channelId||"Channel"),el("div",{class:"chat-sub muted xs"},`${x.message?.username||"Member"}: ${String(x.snippet||x.message?.text||x.message?.file?.name||"Attachment").slice(0,90)}`)])]));root.append(_sbGroup("message-search-results","Message matches",results.length,rows));}
- if(!root.querySelector(".chat-item"))root.append(el("div",{class:"chat-empty muted xs",role:"status"},q?"No chats or messages match your search. Try another name or keyword.":tab==="online"?"No one is online right now. You’ll see people here when they connect.":tab==="favourites"?"No favourites yet. Use a conversation menu to add favourites.":"No conversations to show yet. Start a new chat or channel."));
+ const root=$("sbGroups");if(!root)return;root.innerHTML="";
+ const tab=S.sidebarTab||"mine",q=(S.sidebarFilter||"").trim().toLowerCase(),matches=s=>!q||(s||"").toLowerCase().includes(q);
+ const pinnedIds=(()=>{try{return(JSON.parse(lstore.get(chatPinsStorageKey())||"[]")||[]).filter(id=>S.channels.has(id));}catch{return[];}})();
+ const favIds=(()=>{try{return(JSON.parse(lstore.get(favouriteChatsStorageKey())||"[]")||[]).filter(id=>S.channels.has(id));}catch{return[];}})();
+ const all=[...S.channels.values()].filter(c=>c.kind!=="dm"||dmPeer(c));
+ const general=all.find(c=>c.kind==="lobby"||c.id===S.lobby||c.id==="pub:general");
+ const notes=all.find(c=>c.id.startsWith("notes:"));
+ const channels=all.filter(c=>c.kind!=="dm"&&c!==general&&c!==notes&&matches(c.name||c.id));
+ const personal=all.filter(c=>c.kind==="dm"&&matches(dmPeer(c)?.display_name||dmPeer(c)?.username||""));
+ const online=personal.filter(c=>{const p=dmPeer(c);return !!p&&!p.offline;});
+ const people=[...S.users.values()].filter(u=>u.id!==S.me?.id&&!u.offline&&matches(u.display_name||u.username));
+ let list=[];
+ if(tab==="online")list=online;
+ else if(tab==="channels")list=channels;
+ else if(tab==="personal")list=personal;
+ else if(tab==="favourites")list=all.filter(c=>favIds.includes(c.id)&&matches(c.kind==="dm"?(dmPeer(c)?.display_name||dmPeer(c)?.username):(c.name||c.id)));
+ else list=[...channels,...personal];
+ const recent=c=>Math.max(0,...(S.msgs.get(c.id)||[]).filter(m=>m&&!m.deleted).map(m=>Number(m.ts||0)));
+ list.sort((a,b)=>Number(pinnedIds.includes(b.id))-Number(pinnedIds.includes(a.id))||recent(b)-recent(a));
+ const rows=[];
+ if(tab!=="online"&&tab!=="personal"&&tab!=="favourites"){
+   if(general&&matches("Block G"))rows.push(_channelItem(general));
+   if(notes&&matches((S.me?.display_name||S.me?.username||"My")+" (Me)"))rows.push(_channelItem(notes));
+ }
+ rows.push(...list.filter(c=>c!==general&&c!==notes).map(c=>c.kind==="dm"?_dmItem(c):_channelItem(c)));
+ if(tab==="online"){const extra=people.filter(u=>!personal.some(c=>dmPeer(c)?.id===u.id));rows.push(...extra.map(u=>_personItem(u,true)));}
+ if(rows.length){const ul=el("ul",{class:"chat-list chat-list-flat"});rows.forEach(row=>ul.append(row));root.append(ul);}
+ if(S.sidebarMessageResults.length&&q){
+   const results=S.sidebarMessageResults.filter(x=>String(x.snippet||x.message?.text||x.message?.file?.name||"").toLowerCase().includes(q));
+   const resultRows=results.slice(0,20).map(x=>el("li",{class:"chat-item search-result-item",title:"Open matching message",onclick:()=>openSidebarSearchResult(x)},[el("div",{class:"avatar",style:"background:var(--brand)"},"#"),el("div",{class:"chat-meta"},[el("div",{class:"chat-name"},x.channelName||x.channelId||"Channel"),el("div",{class:"chat-sub muted xs"},(x.message?.username||"Member")+": "+String(x.snippet||x.message?.text||x.message?.file?.name||"Attachment").slice(0,90))])]));
+   if(resultRows.length)root.append(_sbGroup("message-search-results","Message matches",results.length,resultRows));
+ }
+ if(!root.querySelector(".chat-item"))root.append(el("div",{class:"chat-empty muted xs",role:"status"},q?"No chats or messages match your search. Try another name or keyword.":tab==="online"?"No one is online right now. You will see people here when they connect.":tab==="favourites"?"No favourites yet. Use a conversation menu to add favourites.":"No conversations to show yet. Start a new chat or channel."));
 }
 function setSidebarTab(tab) {
   if (tab === "all") tab = "mine";
