@@ -1330,6 +1330,7 @@ async function onWelcome(e, password) {
   // are visible immediately without loading every chat's full history.
   for (const channel of S.channels.values()) {
     if (channel.id !== initialChannel && channel.kind !== "lobby") {
+      _previewOnlyHistory.add(channel.id);
       sendOp({ op: "history", channel: channel.id, limit: 1 });
     }
   }
@@ -1540,8 +1541,12 @@ async function onHistory({ channel, messages, reactions, pins }) {
   const filtered = (messages || []).filter((m) =>
     !(m.kind === "system" && /\b(joined|left) the chat\b/.test(m.text || ""))
   );
+  const previewOnly = _previewOnlyHistory.delete(channel);
+  // A one-message preview must never replace a full history that was loaded
+  // because the user opened the conversation before this response arrived.
+  if (previewOnly && S.hasHistory.has(channel)) return;
   S.msgs.set(channel, filtered);
-  S.hasHistory.add(channel);
+  if (!previewOnly) S.hasHistory.add(channel);
   const historyChannel = S.channels.get(channel);
   if (historyChannel?.kind === "dm" && filtered.length) {
     const latestPreviewMessage = [...filtered].filter(m => m && !m.deleted && m.kind !== "system")
@@ -3083,6 +3088,8 @@ function isAtBottom(box) {
 }
 
 // ── Channel switching ────────────────────────────────────────────────
+const _previewOnlyHistory = new Set();
+
 function switchChannel(id) {
   S.active = id;
   updateMentionBadge();
