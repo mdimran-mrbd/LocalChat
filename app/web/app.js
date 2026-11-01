@@ -2012,31 +2012,46 @@ function _sidebarLatestMessage(channel) {
   return { preview: preview ? (preview.length > 72 ? preview.slice(0, 69) + "…" : preview) : "Message", time: latest.ts ? fmtTime(latest.ts) : "" };
 }
 
+const _CHAT_PIN_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 3 5 5-4 1-4 4-1 5-2-2-4 4-2-2 4-4-2-2 5-1 4-4 1-4Z"/><path d="m10 14-6 6"/></svg>';
 function _chatContextMenu(channel, options) {
   const wrap = el("div", { class: "chat-actions" });
   const trigger = el("button", {
     class: "chat-more", type: "button", title: "Conversation actions",
-    "aria-label": `Actions for ${options.label}`, "aria-haspopup": "menu", "aria-expanded": "false",
+    "aria-label": "Actions for " + options.label, "aria-haspopup": "menu", "aria-expanded": "false",
     onclick: (ev) => {
       ev.stopPropagation();
       const menu = wrap.querySelector(".chat-context-menu");
       const willOpen = menu.hidden;
-      document.querySelectorAll(".chat-context-menu").forEach(node => { node.hidden = true; node.closest(".chat-actions")?.querySelector(".chat-more")?.setAttribute("aria-expanded", "false"); });
+      document.querySelectorAll(".chat-context-menu").forEach(node => {
+        node.hidden = true;
+        node.closest(".chat-actions")?.querySelector(".chat-more")?.setAttribute("aria-expanded", "false");
+      });
       menu.hidden = !willOpen;
       trigger.setAttribute("aria-expanded", willOpen ? "true" : "false");
     },
-    html: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>'
+    html: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>'
   });
   const menu = el("div", { class: "chat-context-menu", role: "menu", hidden: true });
   for (const action of options.actions) {
-    const button = el("button", {
+    menu.append(el("button", {
       type: "button", role: "menuitem", class: action.danger ? "is-danger" : "",
       onclick: (ev) => { ev.stopPropagation(); menu.hidden = true; trigger.setAttribute("aria-expanded", "false"); action.run(ev); }
-    }, action.label);
-    menu.append(button);
+    }, action.label));
   }
   wrap.append(trigger, menu);
   return wrap;
+}
+function _chatRowIndicators(channel, unread, pinned, label, actions, extraSignals = []) {
+  const row = el("div", { class: "chat-indicators", "aria-label": "Conversation status and actions" });
+  if (unread) row.append(el("span", { class: "badge badge-unread", title: unread + " unread messages" }, String(unread)));
+  for (const signal of extraSignals) if (signal) row.append(signal);
+  if (channel.notificationMode === "mute") {
+    row.append(el("span", { class: "chat-state-icon chat-muted-indicator", title: "Notifications muted", "aria-label": "Notifications muted",
+      html: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-10.9-3.5M6 8c0 4.5-1.1 6.4-2.1 7.5-.5.5-.2 1.5.6 1.5h10.2M18 13v2.5c0 1.2.8 1.5 1.4 1.5M10 21h4M3 3l18 18"/></svg>' }));
+  }
+  if (pinned) row.append(el("span", { class: "chat-state-icon chat-pinned-indicator", title: "Pinned conversation", "aria-label": "Pinned conversation", html: _CHAT_PIN_ICON }));
+  row.append(_chatContextMenu(channel, { label, actions }));
+  return row;
 }
 
 function _channelItem(c) {
@@ -2049,41 +2064,44 @@ function _channelItem(c) {
   const canLeave = !isNotes && c.kind === "group" && isMember && !canDelete;
   const askDelete = () => confirmDialog({
     title: "Delete channel",
-    body: `Delete channel #${c.name || c.id}?\n\nThis removes the channel and its history for everyone. This cannot be undone.`,
+    body: "Delete channel #" + (c.name || c.id) + "?\n\nThis removes the channel and its history for everyone. This cannot be undone.",
     okText: "Delete",
   }).then(ok => { if (ok) deleteChannel(c.id); });
   const askLeave = () => confirmDialog({
     title: "Leave channel",
     body: c.isPrivate
-      ? `Leave private channel #${c.name || c.id}?\n\nYou'll need to be added back by a member to rejoin.`
-      : `Leave #${c.name || c.id}?\n\nYou can rejoin any time from the Channels list.`,
+      ? "Leave private channel #" + (c.name || c.id) + "?\n\nYou'll need to be added back by a member to rejoin."
+      : "Leave #" + (c.name || c.id) + "?\n\nYou can rejoin any time from the Channels list.",
     okText: "Leave",
   }).then(ok => { if (ok) leaveChannel(c.id); });
   const summary = _sidebarLatestMessage(c);
-  const label = `#${c.name || c.id}`;
-  const actions = [{ label: pinned ? "Unpin conversation" : "Pin conversation", run: () => toggleChatPin(c.id) }, { label: isChatFavourite(c.id) ? "Remove from favourites" : "Add to favourites", run: () => toggleChatFavourite(c.id) }];
+  const label = "#" + (c.name || c.id);
+  const actions = [
+    { label: pinned ? "Unpin conversation" : "Pin conversation", run: () => toggleChatPin(c.id) },
+    { label: isChatFavourite(c.id) ? "Remove from favourites" : "Add to favourites", run: () => toggleChatFavourite(c.id) }
+  ];
   if (canDelete) actions.push({ label: "Delete channel", danger: true, run: askDelete });
   if (canLeave) actions.push({ label: "Leave channel", danger: true, run: askLeave });
+  const signals = [
+    c.kind === "group" && S.unreadIndicators.get(c.id)?.mention ? el("span", { class: "chat-unread-signal mention-signal", title: "Unread mention", "aria-label": "Unread mention" }, "@") : null,
+    c.kind === "group" && S.unreadIndicators.get(c.id)?.reply ? el("span", { class: "chat-unread-signal reply-signal", title: "Unread reply to you", "aria-label": "Unread reply to you" }, "↩") : null
+  ];
   return el("li", {
     class: "chat-item " + active,
     onclick: () => switchChannel(c.id),
-    oncontextmenu: (ev) => { ev.preventDefault(); ev.stopPropagation(); const btn = ev.currentTarget.querySelector(".chat-more"); btn?.click(); },
+    oncontextmenu: (ev) => { ev.preventDefault(); ev.stopPropagation(); ev.currentTarget.querySelector(".chat-more")?.click(); }
   }, [
     el("div", { class: "avatar chat-row-avatar", style: "background:var(--brand)" }, isNotes ? "📝" : "#"),
     el("div", { class: "chat-meta" }, [
       el("div", { class: "chat-row-top" }, [
         el("div", { class: "chat-name" }, [c.name || c.id]),
-        summary.time ? el("time", { class: "chat-time", datetime: summary.time }, summary.time) : null,
+        summary.time ? el("time", { class: "chat-time", datetime: summary.time }, summary.time) : null
       ]),
       el("div", { class: "chat-row-bottom" }, [
         el("div", { class: "chat-sub muted xs" }, summary.preview || (isNotes ? "Personal notes · only you" : (c.kind === "lobby" ? "Lobby · everyone" : (c.isPrivate ? "Private channel" : "Channel")))),
-        c.kind === "group" && S.unreadIndicators.get(c.id)?.mention ? el("span", { class: "chat-unread-signal mention-signal", title: "Unread mention", "aria-label": "Unread mention" }, "@") : null,
-        c.kind === "group" && S.unreadIndicators.get(c.id)?.reply ? el("span", { class: "chat-unread-signal reply-signal", title: "Unread reply to you", "aria-label": "Unread reply to you" }, "↩") : null,
-        unread ? el("span", { class: "badge badge-unread" }, String(unread)) : null,
-      ]),
-    ]),
-    pinned ? el("span", { class: "chat-pin-mark", title: "Pinned conversation", "aria-label": "Pinned" }, "◆") : null,
-    _chatContextMenu(c, { label, actions }),
+        _chatRowIndicators(c, unread, pinned, label, actions, signals)
+      ])
+    ])
   ]);
 }
 
@@ -2153,35 +2171,34 @@ function _dmItem(c) {
   const active = c.id === S.active ? "active" : "";
   const unread = S.unread.get(c.id) || 0;
   const online = !!(u && !u.offline);
-  const peerName = u ? u.username : "unknown";
-  const askDelete = (ev) => {
-    ev.stopPropagation();
-    ev.preventDefault();
-    confirmDialog({
-      title: "Delete conversation",
-      body: `Delete your conversation with ${peerName}?\n\nThis removes the chat for both of you, including all messages. This cannot be undone.`,
-      okText: "Delete",
-    }).then((ok) => { if (ok) deleteDm(c.id); });
-  };
+  const peerName = u ? (u.display_name || u.username) : "Unknown";
+  const summary = _sidebarLatestMessage(c);
+  const askDelete = () => confirmDialog({
+    title: "Delete conversation",
+    body: "Delete your conversation with " + peerName + "?\n\nThis removes the chat for both of you, including all messages. This cannot be undone.",
+    okText: "Delete"
+  }).then(ok => { if (ok) deleteDm(c.id); });
+  const actions = [
+    { label: pinned ? "Unpin conversation" : "Pin conversation", run: () => toggleChatPin(c.id) },
+    { label: isChatFavourite(c.id) ? "Remove from favourites" : "Add to favourites", run: () => toggleChatFavourite(c.id) },
+    { label: "Delete conversation", danger: true, run: askDelete }
+  ];
   return el("li", {
     class: "chat-item " + active,
     onclick: () => switchChannel(c.id),
-    oncontextmenu: askDelete,
+    oncontextmenu: (ev) => { ev.preventDefault(); ev.stopPropagation(); ev.currentTarget.querySelector(".chat-more")?.click(); }
   }, [
-    (() => { const node = el("div", { class: `avatar ${online ? "avatar-online" : "avatar-offline"}`, style: `background:${u?.color || "var(--brand)"}` }); renderAvatarContent(node, u?.avatar, u?.username?.[0] || "?"); node.append(el("span", { class: "presence-dot" })); return node; })(),
+    (() => { const node = el("div", { class: "avatar chat-row-avatar " + (online ? "avatar-online" : "avatar-offline"), style: "background:" + (u?.color || "var(--brand)") }); renderAvatarContent(node, u?.avatar, u?.username?.[0] || "?"); node.append(el("span", { class: "presence-dot" })); return node; })(),
     el("div", { class: "chat-meta" }, [
-      el("div", { class: "chat-name" }, [pinned ? el("span", { class: "chat-pin-mark", title: "Pinned chat", "aria-hidden": "true", html: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 3 5 5-4 1-4 4-1 5-2-2-4 4-2-2 4-4-2-2 5-1 4-4 1-4Z"/><path d="m10 14-6 6"/></svg>' }) : null, userNameNode(u || { username: peerName })]),
-      el("div", { class: "chat-sub muted xs" }, online ? "online" : "offline"),
-    ]),
-    unread ? el("span", { class: "badge badge-unread" }, String(unread)) : null,
-    el("button", { class: "chat-pin" + (pinned ? " is-pinned" : ""), type: "button", title: pinned ? "Unpin chat" : "Pin chat", "aria-label": pinned ? "Unpin chat" : "Pin chat", onclick: (ev) => { ev.stopPropagation(); toggleChatPin(c.id); }, html: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 3 5 5-4 1-4 4-1 5-2-2-4 4-2-2 4-4-2-2 5-1 4-4 1-4Z"/><path d="m10 14-6 6"/></svg>' }),
-    el("button", {
-      class: "chat-del",
-      title: `Delete conversation with ${peerName}`,
-      "aria-label": "Delete conversation",
-      onclick: askDelete,
-      html: `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>`,
-    }),
+      el("div", { class: "chat-row-top" }, [
+        el("div", { class: "chat-name" }, userNameNode(u || { username: peerName })),
+        summary.time ? el("time", { class: "chat-time" }, summary.time) : null
+      ]),
+      el("div", { class: "chat-row-bottom" }, [
+        el("div", { class: "chat-sub muted xs" }, summary.preview || (online ? "Online" : "Offline")),
+        _chatRowIndicators(c, unread, pinned, peerName, actions)
+      ])
+    ])
   ]);
 }
 
