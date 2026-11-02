@@ -110,22 +110,27 @@
   <div id="app" class="app hidden">
     <div id="sidebarBackdrop" class="sidebar-backdrop" aria-hidden="true"></div>
     <nav class="nav-ribbon" aria-label="Primary navigation">
-      <button class="nav-ribbon-brand" type="button" title="LocalChat" aria-label="LocalChat" onclick="setSidebarTab('mine');if(window.innerWidth<=780)openSidebar()"><span class="brand-mark sm"><svg viewBox="0 0 32 32" width="25" height="25"><rect width="32" height="32" rx="9" fill="#fff"/><path d="M7 9a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3h-6l-5 4v-4h-1a3 3 0 0 1-3-3z" fill="#087f5b"/><circle cx="13" cy="13" r="1.2" fill="#fff"/><circle cx="17" cy="13" r="1.2" fill="#fff"/><circle cx="21" cy="13" r="1.2" fill="#fff"/></svg></span></button>
+      <button class="nav-ribbon-brand" type="button" title="LocalChat" aria-label="LocalChat" onclick="setSidebarTab('all');if(window.innerWidth<=780)openSidebar()"><span class="brand-mark sm"><svg viewBox="0 0 32 32" width="25" height="25"><rect width="32" height="32" rx="9" fill="#fff"/><path d="M7 9a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3h-6l-5 4v-4h-1a3 3 0 0 1-3-3z" fill="#087f5b"/><circle cx="13" cy="13" r="1.2" fill="#fff"/><circle cx="17" cy="13" r="1.2" fill="#fff"/><circle cx="21" cy="13" r="1.2" fill="#fff"/></svg></span></button>
       <div class="nav-ribbon-primary">
-        <button class="nav-rail-btn" type="button" title="New chat" aria-label="New chat" onclick="openNewChatMenu()"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
-        <button class="nav-rail-btn active" type="button" data-rail-tab="mine" title="My Chats" aria-label="My Chats" onclick="setSidebarTab('mine');if(window.innerWidth<=780)openSidebar()"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H8l-4 4zM8 9h8M8 12h5"/></svg></button>
-        <button class="nav-rail-btn" type="button" data-rail-tab="online" title="Online" aria-label="Online" onclick="setSidebarTab('online');if(window.innerWidth<=780)openSidebar()"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3"/><path d="M5 20a7 7 0 0 1 14 0"/></svg></button>
+        <button class="nav-rail-btn nav-rail-labeled" type="button" data-rail-channel="lobby" title="Lobby" aria-label="Lobby" onclick="openRibbonChannel('lobby')"><svg viewBox="0 0 24 24"><path d="M3 10.5 12 4l9 6.5V20H3z"/><path d="M8 20v-6h8v6"/></svg><span>Lobby</span></button>
+        <button class="nav-rail-btn nav-rail-labeled" type="button" data-rail-channel="notes" title="Notes" aria-label="Notes (Admin (Me))" onclick="openRibbonChannel('notes')"><svg viewBox="0 0 24 24"><path d="M5 3h10l4 4v14H5z"/><path d="M14 3v5h5M8 12h8M8 16h6"/></svg><span>Notes</span></button>
+        <button class="nav-rail-btn nav-rail-labeled" type="button" title="New Chat" aria-label="New Chat" onclick="openNewChatMenu()"><svg viewBox="0 0 24 24"><path d="M20 11.5a7.5 7.5 0 0 1-8 7.5 8.5 8.5 0 0 1-3.5-.8L4 20l1.3-3.5A7.2 7.2 0 0 1 4 12c0-4.2 3.6-7.5 8-7.5s8 3.1 8 7z"/><path d="M12 8v7M8.5 11.5h7"/></svg><span>New Chat</span></button>
+        <button class="nav-rail-btn nav-rail-labeled" type="button" data-rail-tab="mine" title="My Chats" aria-label="My Chats" onclick="setSidebarTab('all');if(window.innerWidth<=780)openSidebar()"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H8l-4 4zM8 9h8M8 12h5"/></svg><span>My Chats</span></button>
+        <button class="nav-rail-btn nav-rail-labeled" type="button" data-rail-tab="online" title="Online" aria-label="Online" onclick="setSidebarTab('online');if(window.innerWidth<=780)openSidebar()"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3"/><path d="M5 20a7 7 0 0 1 14 0"/></svg><span>Online</span></button>
       </div><div class="nav-ribbon-spacer"></div>
-      <div class="nav-ribbon-bottom">
-        <button id="meChip" class="nav-profile" type="button" title="Profile and settings" aria-label="Open profile and settings"></button>
-      </div>
+      <div class="nav-ribbon-bottom"><button id="meChip" class="nav-profile" type="button" title="Profile and settings" aria-label="Open profile and settings"></button></div>
       <div id="browserNotificationControl" class="browser-notification-control nav-notification-control"><button id="browserNotificationsBtn" class="icon-btn browser-notification-button" type="button" title="Browser notifications" aria-label="Browser notifications" aria-haspopup="true" aria-expanded="false"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg></button><div id="browserNotificationMenu" class="browser-notification-menu" role="menu" aria-label="Browser notification controls" hidden><button type="button" role="menuitem" data-notification-action="enable">Enable browser notifications</button><button type="button" role="menuitem" data-notification-action="resume" hidden>Resume notifications now</button><div class="browser-notification-menu-label">Snooze notifications</div><button type="button" role="menuitem" data-snooze-minutes="5">For 5 minutes</button><button type="button" role="menuitem" data-snooze-minutes="30">For 30 minutes</button><button type="button" role="menuitem" data-snooze-minutes="60">For 1 hour</button><button type="button" role="menuitem" data-snooze-minutes="480">For 8 hours</button></div></div>
-    </nav>
-    <aside class="sidebar" id="sidebar" aria-label="Chat list" aria-hidden="false">
+    </nav>    <aside class="sidebar" id="sidebar" aria-label="Chat list" aria-hidden="false">
       <button type="button" id="sidebarCloseBtn" class="icon-btn sidebar-close-btn" aria-label="Close chat list" title="Close chat list" onclick="closeSidebar()">×</button>
       <header class="chatlist-head"><div class="chatlist-title-row"><h1>Chats</h1><span class="status-pill" id="statusPill" title="Connection status" role="status" aria-live="polite"><span class="dot"></span><span class="txt">offline</span></span></div>
         <div class="sb-search" role="search" aria-label="Search chats and messages"><svg class="sb-search-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg><input id="sbSearch" type="search" aria-label="Search chats and messages" placeholder="Search chats and messages…" autocomplete="off" oninput="setSidebarFilter(this.value)" onkeydown="handleSidebarSearchKeydown(event)"/><button type="button" class="sb-search-clear" id="sbSearchClear" title="Clear" aria-label="Clear search" hidden onclick="setSidebarFilter('')">×</button></div>
-        <div class="sb-tabs chatlist-filters" role="tablist" aria-label="Filter conversations"><button type="button" class="sb-tab active" data-tab="all" role="tab" aria-selected="true" onclick="setSidebarTab('all')">All</button><button type="button" class="sb-tab" data-tab="channels" role="tab" aria-selected="false" onclick="setSidebarTab('channels')">Channels</button><button type="button" class="sb-tab" data-tab="personal" role="tab" aria-selected="false" onclick="setSidebarTab('personal')">Personal</button><button type="button" class="sb-tab" data-tab="favourites" role="tab" aria-selected="false" onclick="setSidebarTab('favourites')">Favourites</button><button type="button" class="sb-tab" data-tab="online" role="tab" aria-selected="false" onclick="setSidebarTab('online')">Online</button></div>
+        <div class="sb-tabs chatlist-filters" id="chatlistFilters" role="tablist" aria-label="Filter conversations">
+          <button type="button" class="sb-tab active" data-tab="all" role="tab" aria-selected="true" onclick="setSidebarTab('all')">All</button>
+          <button type="button" class="sb-tab" data-tab="channels" role="tab" aria-selected="false" onclick="setSidebarTab('channels')">Channel</button>
+          <button type="button" class="sb-tab" data-tab="personal" role="tab" aria-selected="false" onclick="setSidebarTab('personal')">Personal</button>
+          <button type="button" class="sb-tab" data-tab="favourites" role="tab" aria-selected="false" onclick="setSidebarTab('favourites')">Favourite</button>
+          <button type="button" class="sb-tabs-add" id="customFilterAdd" title="Create custom filter" aria-label="Create custom filter" onclick="openCustomFilterModal()"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+        </div>
       </header><nav class="sb-scroll" aria-label="Conversations"><div id="sbGroups" class="sb-groups"></div></nav>
     </aside>
     <!-- ───────── Main panel ───────── -->
@@ -668,5 +673,16 @@
   </div>
 
   <script src="/app.js?v=20261102-chatlist-refine2"></script>
+  <div id="customFilterModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="customFilterTitle">
+    <div class="custom-filter-panel">
+      <div class="custom-filter-heading"><div><span class="custom-filter-eyebrow">PERSONALIZE YOUR CHAT LIST</span><h2 id="customFilterTitle">Create custom filter</h2><p>Choose the conversations you want to see together.</p></div><button type="button" class="icon-btn" aria-label="Close" onclick="closeCustomFilterModal()">×</button></div>
+      <label class="custom-filter-field"><span>Filter name</span><input id="customFilterName" type="text" maxlength="32" placeholder="e.g. Management Team" autocomplete="off"></label>
+      <div class="custom-filter-search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input id="customFilterSearch" type="search" placeholder="Search conversations..." autocomplete="off" oninput="renderCustomFilterChoices()"></div>
+      <div class="custom-filter-kind" role="group" aria-label="Filter conversation types"><button type="button" class="active" data-custom-kind="all" onclick="setCustomFilterKind('all')">All</button><button type="button" data-custom-kind="channels" onclick="setCustomFilterKind('channels')">Channel</button><button type="button" data-custom-kind="personal" onclick="setCustomFilterKind('personal')">Personal</button></div>
+      <div class="custom-filter-selection-head"><strong>Select chats</strong><span id="customFilterSelectedCount">0 selected</span></div>
+      <div id="customFilterChoices" class="custom-filter-choices"></div>
+      <div class="custom-filter-footer"><button type="button" class="btn btn-ghost" onclick="closeCustomFilterModal()">Cancel</button><button type="button" class="btn btn-primary" id="customFilterSaveBtn" onclick="saveCustomFilter()">Create filter</button></div>
+    </div>
+  </div>
 </body>
 </html>
