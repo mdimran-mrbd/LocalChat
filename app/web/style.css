@@ -4296,3 +4296,82 @@ html[data-theme="dark"] .sb-brand .brand-mark.sm {
 .custom-filter-footer .btn-primary{background:#16804e}
 .custom-filter-footer .btn-primary:hover{background:#0e6b40}
 @media(max-width:780px){.nav-ribbon{display:none}.app{grid-template-columns:1fr}.custom-filter-panel{padding:18px;max-height:86vh}}
+
+/* Emerald Studio — cohesive account settings panel, light and dark themes */
+.settings-panel{--settings-emerald:#138653;--settings-emerald-strong:#087247;--settings-emerald-soft:rgba(19,134,83,.12);--settings-panel-bg:#f7faf8;--settings-card:#fff;--settings-line:#e3ece6;--settings-ink:#172b22;--settings-muted:#7b8d82;background:var(--settings-panel-bg);color:var(--settings-ink);border-color:var(--settings-line)}
+.settings-head{background:var(--settings-card);border-bottom:1px solid var(--settings-line)}
+.settings-head h2{color:var(--settings-ink)}
+.settings-head p{color:var(--settings-muted)}
+.settings-content-emerald{padding:0 20px 18px;display:flex;flex-direction:column}
+.settings-content-emerald .settings-section{border-color:var(--settings-line);padding:18px 0}
+.settings-content-emerald .settings-section h3{color:var(--settings-ink)}
+.profile-identity-section{padding-top:22px!important}
+.profile-hero{display:flex;flex-direction:column;align-items:center;text-align:center}
+.profile-photo-wrap{position:relative;width:112px;height:112px;margin:0 auto 12px}
+.profile-photo-wrap .profile-avatar-preview{width:112px;height:112px;flex:0 0 112px;border-radius:50%;font-size:48px;overflow:hidden;box-shadow:0 0 0 4px var(--settings-emerald-soft),0 0 0 1px var(--settings-line)}
+.profile-photo-edit{position:absolute;right:0;bottom:1px;width:34px;height:34px;display:grid;place-items:center;border-radius:50%;color:#fff;background:rgba(8,75,49,.72);border:2px solid var(--settings-panel-bg);backdrop-filter:blur(8px);cursor:pointer}
+.profile-photo-edit:hover{background:var(--settings-emerald)}
+.profile-avatar-picker{width:100%;margin:8px 0 16px;padding:13px;border:1px solid var(--settings-line);border-radius:14px;background:var(--settings-card);text-align:left}
+.profile-avatar-picker[hidden]{display:none!important}
+.profile-avatar-picker-head{display:flex;align-items:center;justify-content:space-between;gap:8px;color:var(--settings-ink);font-size:12px}
+.profile-avatar-upload{padding:6px 10px;border-radius:8px;background:var(--settings-emerald-soft);color:var(--settings-emerald-strong);font-size:11px;font-weight:700}
+.profile-avatar-picker>p{margin:10px 0 6px;color:var(--settings-muted);font-size:10px}
+.profile-avatar-presets{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:6px;margin-top:8px}
+.profile-avatar-preset{width:100%;height:34px;border:1px solid var(--settings-line);border-radius:9px;background:var(--settings-panel-bg);font-size:21px;display:grid;place-items:center;cursor:pointer}
+.profile-avatar-preset:hover,.profile-avatar-preset.active{border-color:var(--settings-emerald);background:var(--settings-emerald-soft)}
+.profile-username{margin:0 0 5px;color:var(--settings-muted);font-size:11px;font-weight:550;letter-spacing:.15px}
+.profile-identity-form{width:100%;display:flex;flex-direction:column;align-items:center;gap:5px}
+.profile-identity-edit-row,.profile-designation-row{width:100%;display:flex;align-items:center;justify-content:center;gap:4px;position:relative}
+.profile-display-name-input{width:auto!important;max-width:calc(100% - 30px);min-width:0;padding:0!important;border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;color:var(--settings-ink)!important;font-size:21px!important;line-height:1.35;font-weight:780!important;text-align:center;outline:none}
+.profile-display-name-input:disabled{opacity:1;cursor:default}
+.profile-display-name-input:not(:disabled){border-bottom:1px solid var(--settings-emerald)!important}
+.profile-edit-icon{width:25px;height:25px;flex:0 0 25px;display:grid;place-items:center;border:0;border-radius:7px;background:transparent;color:var(--settings-muted);opacity:.7}
+.profile-edit-icon:hover{background:var(--settings-emerald-soft);color:var(--settings-emerald)}
+.profile-designation-select{width:auto!important;max-width:calc(100% - 30px);padding:2px 18px 2px 3px!important;border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;color:var(--settings-muted)!important;font-size:12px!important;font-weight:700!important;text-align:center;text-align-last:center;appearance:none;cursor:default}
+.profile-designation-select:disabled{opacity:1}
+.profile-designation-select:not(:disabled){padding:6px 10px!important;border:1px solid var(--settings-line)!important;border-radius:9px!important;background:var(--settings-card)!important;cursor:pointer;appearance:auto;text-align-last:left}
+.profile-edit-actions{display:flex;justify-content:center;gap:7px;margin:3px 0 5px}
+.profile-edit-actions[hidden]{display:none!important}
+#profileSettingsStatus{min-height:0;margin:3px 0 0;font-size:11px}
+.settings-preferences-section{display:flex;flex-direction:column;gap:3px}
+.settings-content-emerald .settings-section-heading{margin:0 0 6px;font-size:12px;font-weight:750;letter-spacing:.04em;text-transform:uppercase;color:var(--settings-muted)}
+.settings-preference-row{display:flex;align-items:center;gap:11px;min-height:60px;padding:8px 0}
+.settings-preference-icon,.settings-link-icon{width:34px;height:34px;flex:0 0 34px;display:grid;place-items:center;border-radius:10px;background:var(--settings-emerald-soft);color:var(--settings-emerald)}
+.settings-preference-icon svg,.settings-link-icon svg{width:18px;height:18px}
+.settings-preference-copy{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.settings-preference-copy strong{font-size:12px;font-weight:700;color:var(--settings-ink)}
+.settings-preference-copy small{font-size:10px;color:var(--settings-muted)}
+.settings-switch{width:42px;height:24px;flex:0 0 42px;padding:3px;border-radius:999px;background:#aab8af;transition:background .18s}
+.settings-switch span{display:block;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2);transition:transform .18s}
+.settings-switch.is-on{background:var(--settings-emerald)}
+.settings-switch.is-on span{transform:translateX(18px)}
+#settingsNotificationsSlot{flex:0 0 auto}
+#settingsNotificationsSlot .browser-notification-control{position:relative;width:auto}
+#settingsNotificationsSlot .browser-notification-button{width:42px;height:24px;min-width:42px;padding:3px;display:flex;align-items:center;justify-content:flex-start;border:0;border-radius:999px;background:#aab8af;color:transparent;position:relative}
+#settingsNotificationsSlot .browser-notification-button svg{display:none}
+#settingsNotificationsSlot .browser-notification-button::before{content:"";width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2);transition:transform .18s}
+#settingsNotificationsSlot .browser-notification-button.active{background:var(--settings-emerald)}
+#settingsNotificationsSlot .browser-notification-button.active::before{transform:translateX(18px)}
+#settingsNotificationsSlot .browser-notification-menu{position:absolute!important;z-index:30;top:32px;right:0;left:auto;width:210px!important;display:flex;flex-direction:column;gap:5px;padding:10px!important;border:1px solid var(--settings-line)!important;border-radius:12px;background:var(--settings-card)!important;box-shadow:0 12px 30px rgba(0,0,0,.15)!important}
+#settingsNotificationsSlot .browser-notification-menu[hidden]{display:none!important}
+#settingsNotificationsSlot .browser-notification-menu-label{margin:5px 0 1px;color:var(--settings-muted);font-size:10px;font-weight:700}
+#settingsNotificationsSlot .browser-notification-menu button{min-height:32px;padding:7px 9px;border:0;border-radius:7px;background:transparent;color:var(--settings-ink);font-size:11px;text-align:left}
+#settingsNotificationsSlot .browser-notification-menu button:hover{background:var(--settings-emerald-soft);color:var(--settings-emerald-strong)}
+.settings-links-section{padding:8px 0!important}
+.settings-link-row{width:100%;min-height:52px;display:flex;align-items:center;gap:11px;padding:7px 0;color:var(--settings-ink);text-align:left;font-size:12px;font-weight:650}
+.settings-link-row:hover{color:var(--settings-emerald)}
+.settings-link-chevron{width:16px;height:16px;margin-left:auto;fill:none;stroke:var(--settings-muted);stroke-width:1.8}
+.settings-panel-bottom-links{padding:5px 0 2px}
+.settings-admin-link{display:inline-block;color:var(--settings-muted);font-size:10px;text-decoration:underline;text-underline-offset:3px}
+.settings-admin-link:hover{color:var(--settings-emerald)}
+.settings-logout-footer{padding:12px 20px max(14px,env(safe-area-inset-bottom));border-top:1px solid var(--settings-line);background:var(--settings-card)}
+.settings-logout-btn{width:100%;min-height:42px;display:flex;align-items:center;justify-content:center;gap:9px;border:1px solid rgba(190,50,50,.2);border-radius:11px;background:rgba(190,50,50,.07);color:#c34b4b;font-size:12px;font-weight:700}
+.settings-logout-btn:hover{background:rgba(190,50,50,.13)}
+[data-theme="dark"] .settings-panel{--settings-panel-bg:#101d18;--settings-card:#162820;--settings-line:#294337;--settings-ink:#edf7f0;--settings-muted:#9aafa2;--settings-emerald:#55c58a;--settings-emerald-strong:#72d69f;--settings-emerald-soft:rgba(64,185,119,.15);background:var(--settings-panel-bg);color:var(--settings-ink);border-color:var(--settings-line)}
+[data-theme="dark"] .settings-head{background:var(--settings-card);border-color:var(--settings-line)}
+[data-theme="dark"] .profile-avatar-picker{background:var(--settings-card);border-color:var(--settings-line)}
+[data-theme="dark"] .profile-avatar-preset{background:#1d3328;border-color:var(--settings-line)}
+[data-theme="dark"] .profile-avatar-preset:hover,[data-theme="dark"] .profile-avatar-preset.active{background:var(--settings-emerald-soft);border-color:var(--settings-emerald)}
+[data-theme="dark"] .profile-designation-select:not(:disabled){background:var(--settings-card)!important;border-color:var(--settings-line)!important;color:var(--settings-ink)!important}
+[data-theme="dark"] #settingsNotificationsSlot .browser-notification-menu{background:var(--settings-card)!important;border-color:var(--settings-line)!important}
+@media(max-width:480px){.settings-content-emerald{padding-left:16px;padding-right:16px}.profile-avatar-presets{grid-template-columns:repeat(6,minmax(0,1fr))}}
