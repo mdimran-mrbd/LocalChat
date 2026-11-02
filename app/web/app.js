@@ -44,6 +44,7 @@ function renderAvatarContent(node, avatar, fallback = "?") {
   const isEmoji = typeof avatar === "string" && !isImage && /\p{Extended_Pictographic}/u.test(avatar);
   node.classList.toggle("has-avatar-image", isImage);
   node.classList.toggle("has-avatar-emoji", isEmoji);
+  if (isEmoji) { node.style.background = "transparent"; node.style.display = "grid"; node.style.placeItems = "center"; } else { node.style.removeProperty("display"); node.style.removeProperty("place-items"); }
 }
 function colorForName(name) {
   if (!name) return _AVATAR_COLORS[0];
@@ -2292,8 +2293,77 @@ function toggleChatPin(channelId) {
   renderChannels();
 }
 
+function customFiltersStorageKey(){return "custom-chat-filters:"+(S.me?.id||"anonymous");}
+function getCustomFilters(){try{const value=JSON.parse(lstore.get(customFiltersStorageKey())||"[]");return Array.isArray(value)?value:[];}catch{return[];}}
+function saveCustomFilters(items){lstore.set(customFiltersStorageKey(),JSON.stringify(items));}
+let _customFilterDraft=new Set(),_customFilterKind="all";
+function renderCustomFilterTabs(){
+ const bar=$("chatlistFilters");if(!bar)return;
+ bar.querySelectorAll("[data-custom-filter]").forEach(node=>node.remove());
+ const add=$("customFilterAdd");
+ getCustomFilters().forEach(item=>{
+   const b=el("button",{type:"button",class:"sb-tab"+(S.sidebarTab==="custom:"+item.id?" active":""),"data-custom-filter":item.id,role:"tab","aria-selected":S.sidebarTab==="custom:"+item.id?"true":"false",title:item.name,onclick:()=>setSidebarTab("custom:"+item.id)},item.name);
+   bar.insertBefore(b,add);
+ });
+}
+function openRibbonChannel(kind){
+ const channels=[...S.channels.values()];
+ const channel=kind==="lobby"?channels.find(c=>c.kind==="lobby"||c.id===S.lobby||c.id==="pub:general"):channels.find(c=>c.id.startsWith("notes:"));
+ if(channel)switchChannel(channel.id);else toast(kind==="lobby"?"Lobby is not available yet.":"Your Notes chat is not available yet.");
+}
+function setSidebarTab(tab) {
+  S.sidebarTab = tab;
+  document.querySelectorAll(".sb-tab").forEach((b) => {
+    const selected = (b.dataset.tab||"") === tab || (b.dataset.customFilter && "custom:"+b.dataset.customFilter===tab);
+    b.classList.toggle("active", selected);
+    b.setAttribute("aria-selected", selected ? "true" : "false");
+  });
+  document.querySelectorAll("[data-rail-tab]").forEach(b=>b.classList.toggle("active",(tab==="all"&&b.dataset.railTab==="mine")||b.dataset.railTab===tab));
+  renderChannels();
+}
+function openCustomFilterModal(){
+ _customFilterDraft=new Set();_customFilterKind="all";
+ $("customFilterName").value="";$("customFilterSearch").value="";
+ $("customFilterTitle").textContent="Create custom filter";$("customFilterSaveBtn").textContent="Create filter";
+ document.querySelectorAll("[data-custom-kind]").forEach(b=>b.classList.toggle("active",b.dataset.customKind==="all"));
+ renderCustomFilterChoices();$("customFilterModal").classList.remove("hidden");$("customFilterName").focus();
+}
+function closeCustomFilterModal(){$("customFilterModal")?.classList.add("hidden");}
+function setCustomFilterKind(kind){_customFilterKind=kind;document.querySelectorAll("[data-custom-kind]").forEach(b=>b.classList.toggle("active",b.dataset.customKind===kind));renderCustomFilterChoices();}
+function renderCustomFilterChoices(){
+ const root=$("customFilterChoices");if(!root)return;root.innerHTML="";
+ const query=($("customFilterSearch")?.value||"").trim().toLowerCase();
+ const items=[...S.channels.values()].filter(c=>c.kind!=="lobby"&&c.id!==S.lobby&&c.id!=="pub:general"&&!c.id.startsWith("notes:")&&(c.kind!=="dm"||dmPeer(c)));
+ const filtered=items.filter(c=>(_customFilterKind==="all"||(_customFilterKind==="channels"?c.kind!=="dm":c.kind==="dm"))).filter(c=>{
+  const name=c.kind==="dm"?(dmPeer(c)?.display_name||dmPeer(c)?.username||"Private chat"):(c.name||c.id);
+  return !query||name.toLowerCase().includes(query);
+ }).sort((a,b)=>String(a.name||dmPeer(a)?.display_name||"").localeCompare(String(b.name||dmPeer(b)?.display_name||"")));
+ filtered.forEach(c=>{
+  const name=c.kind==="dm"?(dmPeer(c)?.display_name||dmPeer(c)?.username||"Private chat"):(c.name||c.id);
+  const checked=_customFilterDraft.has(c.id);
+  const row=el("label",{class:"custom-filter-choice"+(checked?" selected":"")},[
+   el("span",{class:"custom-filter-choice-icon"},c.kind==="dm"?"●":"#"),
+   el("span",{class:"custom-filter-choice-name"},name),
+   el("input",{type:"checkbox",checked:checked?"checked":null,"aria-label":"Select "+name,onchange:e=>{if(e.target.checked)_customFilterDraft.add(c.id);else _customFilterDraft.delete(c.id);renderCustomFilterChoices();}}),
+   el("span",{class:"custom-filter-check", "aria-hidden":"true"},"✓")
+  ]);root.append(row);
+ });
+ if(!filtered.length)root.append(el("div",{class:"custom-filter-empty"},query?"No conversations match your search.":"No conversations available in this category."));
+ $("customFilterSelectedCount").textContent=_customFilterDraft.size+" selected";
+}
+function saveCustomFilter(){
+ const name=($("customFilterName").value||"").trim();
+ if(!name){toast("Enter a name for this filter.");$("customFilterName").focus();return;}
+ if(!_customFilterDraft.size){toast("Select at least one conversation.");return;}
+ const items=getCustomFilters();
+ if(items.some(x=>x.name.toLowerCase()===name.toLowerCase())){toast("A custom filter with that name already exists.");return;}
+ const id="cf-"+Date.now().toString(36);
+ items.push({id,name,channelIds:[..._customFilterDraft]});saveCustomFilters(items);
+ closeCustomFilterModal();renderCustomFilterTabs();setSidebarTab("custom:"+id);toast("Custom filter created.");
+}
 function renderChannels(){
  const root=$("sbGroups");if(!root)return;root.innerHTML="";
+ renderCustomFilterTabs();
  const tab=S.sidebarTab||"all",q=(S.sidebarFilter||"").trim().toLowerCase(),matches=s=>!q||(s||"").toLowerCase().includes(q);
  const pinnedIds=(()=>{try{return(JSON.parse(lstore.get(chatPinsStorageKey())||"[]")||[]).filter(id=>S.channels.has(id));}catch{return[];}})();
  const favIds=(()=>{try{return(JSON.parse(lstore.get(favouriteChatsStorageKey())||"[]")||[]).filter(id=>S.channels.has(id));}catch{return[];}})();
@@ -2302,42 +2372,24 @@ function renderChannels(){
  const notes=all.find(c=>c.id.startsWith("notes:"));
  const channels=all.filter(c=>c.kind!=="dm"&&c!==general&&c!==notes&&matches(c.name||c.id));
  const personal=all.filter(c=>c.kind==="dm"&&matches(dmPeer(c)?.display_name||dmPeer(c)?.username||""));
- const online=personal.filter(c=>{const p=dmPeer(c);return !!p&&!p.offline;});
- const people=[...S.users.values()].filter(u=>u.id!==S.me?.id&&!u.offline&&matches(u.display_name||u.username));
  let list=[];
- if(tab==="online")list=online;
- else if(tab==="channels")list=channels;
+ if(tab==="channels")list=channels;
  else if(tab==="personal")list=personal;
  else if(tab==="favourites")list=all.filter(c=>favIds.includes(c.id)&&matches(c.kind==="dm"?(dmPeer(c)?.display_name||dmPeer(c)?.username):(c.name||c.id)));
+ else if(tab==="online")list=personal.filter(c=>{const p=dmPeer(c);return !!p&&!p.offline;});
+ else if(tab.startsWith("custom:")){const custom=getCustomFilters().find(x=>x.id===tab.slice(7));list=custom?all.filter(c=>custom.channelIds.includes(c.id)&&matches(c.kind==="dm"?(dmPeer(c)?.display_name||dmPeer(c)?.username):(c.name||c.id))):[];}
  else list=[...channels,...personal];
  const recent=c=>Math.max(0,...(S.msgs.get(c.id)||[]).filter(m=>m&&!m.deleted).map(m=>Number(m.ts||0)));
  list.sort((a,b)=>Number(pinnedIds.includes(b.id))-Number(pinnedIds.includes(a.id))||recent(b)-recent(a));
- const rows=[];
- if(tab!=="online"&&tab!=="personal"&&tab!=="favourites"){
-   if(general&&matches("Lobby"))rows.push(_channelItem(general));
-   if(notes&&matches((S.me?.display_name||S.me?.username||"My")+" (Me)"))rows.push(_channelItem(notes));
- }
- rows.push(...list.filter(c=>c!==general&&c!==notes).map(c=>c.kind==="dm"?_dmItem(c):_channelItem(c)));
- if(tab==="online"){const extra=people.filter(u=>!personal.some(c=>dmPeer(c)?.id===u.id));rows.push(...extra.map(u=>_personItem(u,true)));}
+ const rows=list.filter(c=>c!==general&&c!==notes).map(c=>c.kind==="dm"?_dmItem(c):_channelItem(c));
  if(rows.length){const ul=el("ul",{class:"chat-list chat-list-flat"});rows.forEach(row=>ul.append(row));root.append(ul);}
  if(S.sidebarMessageResults.length&&q){
    const results=S.sidebarMessageResults.filter(x=>String(x.snippet||x.message?.text||x.message?.file?.name||"").toLowerCase().includes(q));
    const resultRows=results.slice(0,20).map(x=>el("li",{class:"chat-item search-result-item",title:"Open matching message",onclick:()=>openSidebarSearchResult(x)},[el("div",{class:"avatar",style:"background:var(--brand)"},"#"),el("div",{class:"chat-meta"},[el("div",{class:"chat-name"},x.channelName||x.channelId||"Channel"),el("div",{class:"chat-sub muted xs"},(x.message?.username||"Member")+": "+String(x.snippet||x.message?.text||x.message?.file?.name||"Attachment").slice(0,90))])]));
    if(resultRows.length)root.append(_sbGroup("message-search-results","Message matches",results.length,resultRows));
  }
- if(!root.querySelector(".chat-item"))root.append(el("div",{class:"chat-empty muted xs",role:"status"},q?"No chats or messages match your search. Try another name or keyword.":tab==="online"?"No one is online right now. You will see people here when they connect.":tab==="favourites"?"No favourites yet. Use a conversation menu to add favourites.":"No conversations to show yet. Start a new chat or channel."));
+ if(!root.querySelector(".chat-item"))root.append(el("div",{class:"chat-empty muted xs",role:"status"},q?"No chats or messages match your search. Try another name or keyword.":tab==="favourites"?"No favourites yet. Use a conversation menu to add favourites.":tab.startsWith("custom:")?"No selected conversations are available in this filter.":"No conversations to show yet. Start a new chat or channel."));
 }
-function setSidebarTab(tab) {
-  S.sidebarTab = tab;
-  document.querySelectorAll(".sb-tab").forEach((b) => {
-    const selected = b.dataset.tab === tab;
-    b.classList.toggle("active", selected);
-    b.setAttribute("aria-selected", selected ? "true" : "false");
-  });
-  document.querySelectorAll("[data-rail-tab]").forEach(b=>b.classList.toggle("active",b.dataset.railTab===tab));
-  renderChannels();
-}
-
 function handleSidebarSearchKeydown(event) {
   if (event.key !== "Enter") return;
   event.preventDefault();
