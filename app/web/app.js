@@ -3184,6 +3184,10 @@ const _previewOnlyHistory = new Set();
 
 function switchChannel(id) {
   S.active = id;
+  const activeChannel=S.channels.get(id);
+  const isLobby=!!activeChannel&&(activeChannel.kind==="lobby"||activeChannel.id===S.lobby||activeChannel.id==="pub:general");
+  const isNotes=!!activeChannel&&activeChannel.id.startsWith("notes:");
+  document.querySelectorAll("[data-rail-channel]").forEach(b=>b.classList.toggle("active",(b.dataset.railChannel==="lobby"&&isLobby)||(b.dataset.railChannel==="notes"&&isNotes)));
   updateMentionBadge();
   S.unread.set(id, 0);
   S.unreadIndicators.delete(id);
