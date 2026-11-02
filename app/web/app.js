@@ -2091,7 +2091,7 @@ function _channelItem(c) {
     okText: "Leave",
   }).then(ok => { if (ok) leaveChannel(c.id); });
   const summary = _sidebarLatestMessage(c);
-  const label = isGeneral ? "Block G" : "#" + (c.name || c.id);
+  const label = isGeneral ? "Lobby" : (isNotes ? (S.me?.display_name || S.me?.username || "My") + " (Me)" : "#" + (c.name || c.id));
   const actions = [
     ...(isGeneral ? [] : [{ label: pinned ? "Unpin conversation" : "Pin conversation", run: () => toggleChatPin(c.id) }]),
     { label: isChatFavourite(c.id) ? "Remove from favourites" : "Add to favourites", run: () => toggleChatFavourite(c.id) }
@@ -2110,7 +2110,7 @@ function _channelItem(c) {
     el("div", { class: "avatar chat-row-avatar", style: "background:#087f5b" }, isNotes ? "📝" : "#"),
     el("div", { class: "chat-meta" }, [
       el("div", { class: "chat-row-top" }, [
-        el("div", { class: "chat-name" }, [isNotes ? (S.me?.display_name || S.me?.username || "My") + " (Me)" : (isGeneral ? "Block G" : (c.name || c.id))]),
+        el("div", { class: "chat-name" }, [isNotes ? (S.me?.display_name || S.me?.username || "My") + " (Me)" : (isGeneral ? "Lobby" : (c.name || c.id))]),
         summary.time ? el("time", { class: "chat-time", datetime: summary.time }, summary.time) : null
       ]),
       el("div", { class: "chat-row-bottom" }, [
@@ -2311,7 +2311,7 @@ function renderChannels(){
  list.sort((a,b)=>Number(pinnedIds.includes(b.id))-Number(pinnedIds.includes(a.id))||recent(b)-recent(a));
  const rows=[];
  if(tab!=="online"&&tab!=="personal"&&tab!=="favourites"){
-   if(general&&matches("Block G"))rows.push(_channelItem(general));
+   if(general&&matches("Lobby"))rows.push(_channelItem(general));
    if(notes&&matches((S.me?.display_name||S.me?.username||"My")+" (Me)"))rows.push(_channelItem(notes));
  }
  rows.push(...list.filter(c=>c!==general&&c!==notes).map(c=>c.kind==="dm"?_dmItem(c):_channelItem(c)));
