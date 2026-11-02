@@ -41,7 +41,7 @@ function renderAvatarContent(node, avatar, fallback = "?") {
   node.replaceChildren(avatarContent(avatar, fallback));
   if (presence) node.append(presence);
   const isImage = typeof avatar === "string" && avatar.startsWith("/uploads/") && !avatar.slice(9).includes("/");
-  const isEmoji = typeof avatar === "string" && !isImage && /\\p{Extended_Pictographic}/u.test(avatar);
+  const isEmoji = typeof avatar === "string" && !isImage && /\p{Extended_Pictographic}/u.test(avatar);
   node.classList.toggle("has-avatar-image", isImage);
   node.classList.toggle("has-avatar-emoji", isEmoji);
 }
@@ -3970,7 +3970,7 @@ window.addEventListener("focus", scheduleReadReceipt);
 const PROFILE_AVATAR_PRESETS = ["😀","😎","🥰","🤩","😇","🤗","🥳","🫶","🐱","🐼","🦊","🐸","🐙","🦄","🐧","🐨","🐯","🦋","🌟","🌈","🚀","🍀","🌻","⚡"];
 function renderProfileAvatarSettings() {
   const preview = $("profileAvatarPreview");
-  if (preview) { preview.style.background = /\\p{Extended_Pictographic}/u.test(S.me?.avatar || "") ? "transparent" : (S.me?.color || "var(--brand)"); renderAvatarContent(preview, S.me?.avatar, S.me?.username?.[0] || "?"); }
+  if (preview) { preview.style.background = /\p{Extended_Pictographic}/u.test(S.me?.avatar || "") ? "transparent" : (S.me?.color || "var(--brand)"); renderAvatarContent(preview, S.me?.avatar, S.me?.username?.[0] || "?"); }
   document.querySelectorAll(".profile-avatar-preset").forEach(button => {
     const active = button.dataset.avatar === S.me?.avatar;
     button.classList.toggle("active", active); button.setAttribute("aria-pressed", active ? "true" : "false");
