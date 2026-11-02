@@ -4122,3 +4122,39 @@ html[data-theme="dark"] .sb-brand .brand-mark.sm {
 .sidebar .chat-item.active::before{display:none!important}
 .sidebar .chat-list-flat{padding:0 2px!important}
 @media(max-width:780px){:root{--sidebar-w:calc(100vw - 54px)}.sidebar{width:min(490px,calc(100vw - 54px))!important}}
+
+
+/* Follow-up chat-list corrections */
+.chatlist-filters .sb-tab,
+.chatlist-filters .sb-tab[data-tab="personal"],
+.chatlist-filters .sb-tab[data-tab="favourites"],
+.chatlist-filters .sb-tab[data-tab="online"],
+.chatlist-filters .sb-tab[data-tab="channels"]{
+  flex:0 0 auto!important;
+  width:max-content!important;
+  min-width:0!important;
+  max-width:100%;
+  white-space:nowrap!important;
+}
+.chatlist-filters .sb-tab:last-child{margin-left:0!important}
+.chatlist-head .sb-search input,
+.chatlist-head .sb-search input:focus,
+.chatlist-head .sb-search input:focus-visible{
+  outline:0!important;
+  box-shadow:none!important;
+  border:0!important;
+}
+.chatlist-head .sb-search:focus-within{
+  outline:0!important;
+  box-shadow:none!important;
+}
+.sidebar .chat-item .chat-indicators{position:relative;z-index:2}
+.sidebar .chat-item .chat-pinned-indicator,
+.sidebar .chat-item .chat-pinned-indicator svg,
+.sidebar .chat-item .chat-state-icon{
+  opacity:1!important;visibility:visible!important;display:inline-flex!important;
+}
+.sidebar .chat-item:hover .chat-indicators,
+.sidebar .chat-item:focus-within .chat-indicators{padding-right:22px!important}
+.sidebar .chat-actions{z-index:3}
+.sidebar .chat-more{z-index:4}
