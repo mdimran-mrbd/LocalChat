@@ -4158,3 +4158,65 @@ html[data-theme="dark"] .sb-brand .brand-mark.sm {
 .sidebar .chat-item:focus-within .chat-indicators{padding-right:22px!important}
 .sidebar .chat-actions{z-index:3}
 .sidebar .chat-more{z-index:4}
+
+
+/* Chat-list filter and action-menu alignment corrections */
+.chatlist-filters.sb-tabs{
+  border:0!important;
+  background:transparent!important;
+  box-shadow:none!important;
+  padding:2px 0 5px!important;
+  margin-inline:0!important;
+}
+.chatlist-filters .sb-tab,
+.chatlist-filters .sb-tab[data-tab]{
+  flex:0 0 auto!important;
+  width:max-content!important;
+  min-width:0!important;
+  border:0!important;
+  box-shadow:none!important;
+  background:#f2f6f3!important;
+}
+.chatlist-filters .sb-tab.active,
+.chatlist-filters .sb-tab.active:hover{
+  border:0!important;
+  background:#dff1e6!important;
+  color:#12613f!important;
+  box-shadow:none!important;
+}
+.chatlist-filters .sb-tab:hover{border:0!important}
+.sidebar .chat-more{
+  width:22px!important;
+  min-width:22px!important;
+  max-width:22px!important;
+  flex:0 0 22px!important;
+  transform:translateY(-50%)!important;
+  transition:opacity .12s ease,background .12s ease,color .12s ease!important;
+}
+.sidebar .chat-more:hover,
+.sidebar .chat-more:focus-visible,
+.sidebar .chat-more[aria-expanded=true]{
+  width:22px!important;
+  min-width:22px!important;
+  max-width:22px!important;
+}
+.sidebar .chat-item:hover .chat-indicators,
+.sidebar .chat-item:focus-within .chat-indicators{
+  padding-right:25px!important;
+}
+.sidebar .chat-item .chat-pinned-indicator{
+  position:relative;
+  z-index:5;
+  flex:0 0 15px;
+  opacity:1!important;
+  visibility:visible!important;
+}
+.sidebar .chat-item .chat-actions{
+  position:relative;
+  z-index:6;
+  flex:0 0 22px;
+}
+.sidebar .chat-item .chat-context-menu{
+  right:0;
+  transform:none!important;
+}
