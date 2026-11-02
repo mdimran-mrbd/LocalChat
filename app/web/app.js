@@ -3088,8 +3088,10 @@ function updateHeader() {
     if (callBtn) callBtn.classList.toggle("hidden", !p);
     if (videoCallBtn) videoCallBtn.classList.toggle("hidden", !p);
   } else {
-    title.textContent = "#" + (ch.name || ch.id);
-    sub.textContent = ch.kind === "lobby" ? "lobby \u00b7 everyone" : (ch.isPrivate ? "private channel" : "channel");
+    const isNotes = ch.id.startsWith("notes:");
+    const isLobby = ch.kind === "lobby" || ch.id === S.lobby || ch.id === "pub:general";
+    title.textContent = isNotes ? (S.me?.display_name || S.me?.username || "My") + " (Me)" : (isLobby ? "Lobby" : "#" + (ch.name || ch.id));
+    sub.textContent = isNotes ? "Personal notes · only you" : (ch.kind === "lobby" ? "lobby · everyone" : (ch.isPrivate ? "private channel" : "channel"));
     badge.classList.add("hidden");
     composer.placeholder = "Type a message";
     if (avSlot) {
