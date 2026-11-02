@@ -676,7 +676,7 @@ const S = {
   typingTimer: null,
   reconnectTries: 0,
   hostname: "",
-  sidebarTab: "mine",
+  sidebarTab: "all",
   sidebarFilter: "",
   sidebarMessageResults: [],
   searchChannel: null,
