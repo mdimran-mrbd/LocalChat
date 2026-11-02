@@ -1387,6 +1387,7 @@ function onUsers(list) {
     if (profileChanged && $("settingsPanel")?.classList.contains("open")) {
       $("profileUsername").value = updatedMe.display_name || updatedMe.username || "";
       $("profileDesignation").value = updatedMe.designation || "CSA";
+      $("profileUsernameHandle").textContent = updatedMe.username ? "@" + updatedMe.username.replace(/^@/, "") : "";
       const status = $("profileSettingsStatus");
       status.textContent = "Profile saved.";
       status.classList.remove("err"); status.classList.add("ok");
@@ -4024,6 +4025,12 @@ document.addEventListener("visibilitychange", () => {
 window.addEventListener("focus", scheduleReadReceipt);
 
 const PROFILE_AVATAR_PRESETS = ["😀","😎","🥰","🤩","😇","🤗","🥳","🫶","🐱","🐼","🦊","🐸","🐙","🦄","🐧","🐨","🐯","🦋","🌟","🌈","🚀","🍀","🌻","⚡"];
+function toggleProfileAvatarPicker(){
+ const picker=$("profileAvatarPicker");if(!picker)return;
+ picker.hidden=!picker.hidden;
+ if(!picker.hidden)picker.scrollIntoView({block:"nearest",behavior:"smooth"});
+}
+Object.assign(window,{toggleProfileAvatarPicker});
 function renderProfileAvatarSettings() {
   const preview = $("profileAvatarPreview");
   if (preview) { preview.style.background = /\p{Extended_Pictographic}/u.test(S.me?.avatar || "") ? "transparent" : (S.me?.color || "var(--brand)"); renderAvatarContent(preview, S.me?.avatar, S.me?.username?.[0] || "?"); }
@@ -4036,6 +4043,7 @@ function setProfileAvatarPreset(avatar) {
   if (!PROFILE_AVATAR_PRESETS.includes(avatar)) return;
   if (!S.ws || S.ws.readyState !== WebSocket.OPEN) { toast("Not connected. Please try again."); return; }
   sendOp({ op: "avatar_set", avatar });
+  $("profileAvatarPicker").hidden = true;
   const status = $("profileAvatarStatus"); if (status) { status.textContent = "Updating avatar…"; status.classList.remove("err","ok"); }
 }
 async function uploadProfileAvatar(file) {
@@ -4064,12 +4072,14 @@ async function uploadProfileAvatar(file) {
 }
 $("profileAvatarUploadBtn")?.addEventListener("click",()=> $("profileAvatarFileInput")?.click());
 $("profileAvatarFileInput")?.addEventListener("change",async()=>{const file=$("profileAvatarFileInput").files?.[0];$("profileAvatarFileInput").value="";if(file)await uploadProfileAvatar(file);});
+$("profileAvatarUploadBtn")?.addEventListener("click",()=> $("profileAvatarFileInput")?.click());
 Object.assign(window,{setProfileAvatarPreset});
 
 function openSettingsPanel() {
   if (!S.me) return;
   $("profileUsername").value = S.me.display_name || S.me.username || "";
   $("profileDesignation").value = S.me.designation || "CSA";
+  $("profileUsernameHandle").textContent = S.me.username ? "@" + S.me.username.replace(/^@/, "") : "";
   renderProfileAvatarSettings();
   setProfileFieldEditing("username", false);
   setProfileFieldEditing("designation", false);
@@ -4624,10 +4634,10 @@ function updateThemeIcon() {
   const sun  = `<svg viewBox="0 0 24 24" width="16" height="16"><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4L7 17M17 7l1.4-1.4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
   const moon = `<svg viewBox="0 0 24 24" width="16" height="16"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>`;
   const html = isDark ? sun : moon;
-  for (const id of ["themeToggle", "themeToggleJoin"]) {
-    const el = document.getElementById(id);
-    if (el) el.innerHTML = html;
-  }
+  const themeButton = document.getElementById("themeToggle");
+  if (themeButton) { themeButton.setAttribute("aria-checked", String(isDark)); themeButton.classList.toggle("is-on", isDark); themeButton.title = isDark ? "Dark theme enabled" : "Light theme enabled"; }
+  const joinTheme = document.getElementById("themeToggleJoin");
+  if (joinTheme) joinTheme.innerHTML = html;
 }
 updateThemeIcon();
 
