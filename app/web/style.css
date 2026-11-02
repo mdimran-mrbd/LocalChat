@@ -105,7 +105,7 @@
 *, *::before, *::after { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; height: 100%; }
 body {
-  font-family: var(--font-sans);
+  font-family: var(--font-sans), "Noto Color Emoji", "Segoe UI Emoji", "Apple Color Emoji", sans-serif;
   font-size: 14px;
   line-height: 1.45;
   color: var(--fg-0);
@@ -4220,3 +4220,25 @@ html[data-theme="dark"] .sb-brand .brand-mark.sm {
   right:0;
   transform:none!important;
 }
+
+
+/* Google Noto Color Emoji — consistent emoji rendering throughout LocalChat. */
+.emoji-pop,.reaction-pop,.rp-btn,.rp-grid,.profile-avatar-preset,
+.profile-avatar-preview,.avatar,.call-avatar,.ad-avatar,.ci-member-avatar,
+.mention-option-avatar,.account-avatar,.chat-row-avatar,.r-emoji{
+  font-family:"Noto Color Emoji","Segoe UI Emoji","Apple Color Emoji",sans-serif!important;
+  font-variant-emoji:emoji;
+}
+.has-avatar-emoji{
+  background:transparent!important;
+  color:inherit!important;
+  font-size:1.7em!important;
+  line-height:1!important;
+  font-weight:400!important;
+  overflow:hidden;
+}
+.profile-avatar-preview.has-avatar-emoji{
+  background:transparent!important;
+  font-size:52px!important;
+}
+.profile-avatar-preset{font-size:24px!important;line-height:1}
