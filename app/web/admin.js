@@ -433,7 +433,9 @@ function userRow(u) {
   sub.push(el("span", null, (u.msgCount || 0) + " msgs"));
 
   return el("div", { class: "ad-row ad-user-row" + (online ? " online" : " offline") }, [
-    (() => { const isImage = typeof u.avatar === "string" && u.avatar.startsWith("/uploads/") && !u.avatar.slice(9).includes("/"); const node = el("div", { class: "ad-avatar" + (isImage ? " has-avatar-image" : ""), style: `background:${u.color || colorForName(u.username || "")}`, title: u.username }); node.append(avatarContentAdmin(u.avatar, initial)); node.append(el("span", { class: "ad-presence-dot " + (online ? "on" : "off"), title: online ? "Online" : "Offline" })); return node; })(),
+    (() => { const isImage = typeof u.avatar === "string" && u.avatar.startsWith("/uploads/") && !u.avatar.slice(9).includes("/"); const node = el("div", { class: "ad-avatar" + (isImage ? " has-avatar-image" : ""), style: `background:${u.color || colorForName(u.username || "")}`, title: u.username }); node.append(avatarContentAdmin(u.avatar, initial));
+     node.classList.toggle("has-avatar-emoji", typeof u.avatar === "string" && !isImage && /\\p{Extended_Pictographic}/u.test(u.avatar));
+     node.append(el("span", { class: "ad-presence-dot " + (online ? "on" : "off"), title: online ? "Online" : "Offline" })); return node; })(),
     el("div", { class: "ad-row-meta" }, [
       el("div", { class: "ad-row-title" }, [
         document.createTextNode(u.displayName || u.username || "—"),
