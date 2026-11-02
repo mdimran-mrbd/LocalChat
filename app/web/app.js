@@ -2291,7 +2291,7 @@ function toggleChatPin(channelId) {
 
 function renderChannels(){
  const root=$("sbGroups");if(!root)return;root.innerHTML="";
- const tab=S.sidebarTab||"mine",q=(S.sidebarFilter||"").trim().toLowerCase(),matches=s=>!q||(s||"").toLowerCase().includes(q);
+ const tab=S.sidebarTab||"all",q=(S.sidebarFilter||"").trim().toLowerCase(),matches=s=>!q||(s||"").toLowerCase().includes(q);
  const pinnedIds=(()=>{try{return(JSON.parse(lstore.get(chatPinsStorageKey())||"[]")||[]).filter(id=>S.channels.has(id));}catch{return[];}})();
  const favIds=(()=>{try{return(JSON.parse(lstore.get(favouriteChatsStorageKey())||"[]")||[]).filter(id=>S.channels.has(id));}catch{return[];}})();
  const all=[...S.channels.values()].filter(c=>c.kind!=="dm"||dmPeer(c));
@@ -2325,7 +2325,6 @@ function renderChannels(){
  if(!root.querySelector(".chat-item"))root.append(el("div",{class:"chat-empty muted xs",role:"status"},q?"No chats or messages match your search. Try another name or keyword.":tab==="online"?"No one is online right now. You will see people here when they connect.":tab==="favourites"?"No favourites yet. Use a conversation menu to add favourites.":"No conversations to show yet. Start a new chat or channel."));
 }
 function setSidebarTab(tab) {
-  if (tab === "all") tab = "mine";
   S.sidebarTab = tab;
   document.querySelectorAll(".sb-tab").forEach((b) => {
     const selected = b.dataset.tab === tab;
