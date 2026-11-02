@@ -1385,7 +1385,7 @@ function onUsers(list) {
     if (ownHandle) ownHandle.textContent = updatedMe.username ? "@" + updatedMe.username.replace(/^@/, "") : "";
     if (updatedMe.designation) closeModal("designationModal");
     if (profileChanged && $("settingsPanel")?.classList.contains("open")) {
-      $("profileUsername").value = updatedMe.display_name || updatedMe.username || "";
+      $("profileUsername").value = updatedMe.display_name || updatedMe.username || ""; sizeProfileDisplayName();
       $("profileDesignation").value = updatedMe.designation || "CSA";
       $("profileUsernameHandle").textContent = updatedMe.username ? "@" + updatedMe.username.replace(/^@/, "") : "";
       const status = $("profileSettingsStatus");
@@ -4030,6 +4030,17 @@ function toggleProfileAvatarPicker(){
  picker.hidden=!picker.hidden;
  if(!picker.hidden)picker.scrollIntoView({block:"nearest",behavior:"smooth"});
 }
+document.addEventListener("pointerdown",ev=>{
+ const picker=$("profileAvatarPicker"), trigger=$("profilePhotoEditBtn");
+ if(!picker||picker.hidden)return;
+ if(!picker.contains(ev.target)&&!trigger?.contains(ev.target))picker.hidden=true;
+});
+function sizeProfileDisplayName(){
+ const input=$("profileUsername");if(!input)return;
+ const value=input.value||S.me?.display_name||"";
+ input.style.width=Math.max(4,Math.min(48,value.length*0.58+1))+"ch";
+}
+$("profileUsername")?.addEventListener("input",sizeProfileDisplayName);
 Object.assign(window,{toggleProfileAvatarPicker});
 function renderProfileAvatarSettings() {
   const preview = $("profileAvatarPreview");
@@ -4067,7 +4078,7 @@ async function uploadProfileAvatar(file) {
   try {
     const response=await fetch("/api/upload",{method:"POST",body:form}), result=await response.json().catch(()=>({}));
     if(!response.ok) throw new Error(result.error||result.message||"Upload failed.");
-    if(status){status.textContent="Profile picture uploaded.";status.classList.remove("err");status.classList.add("ok");}
+    if(status){status.textContent="Profile picture uploaded.";status.classList.remove("err");status.classList.add("ok");}$("profileAvatarPicker").hidden=true;
   } catch(error) { if(status){status.textContent="Could not upload picture: "+(error.message||"upload failed");status.classList.remove("ok");status.classList.add("err");} }
 }
 $("profileAvatarUploadBtn")?.addEventListener("click",()=> $("profileAvatarFileInput")?.click());
@@ -4077,7 +4088,7 @@ Object.assign(window,{setProfileAvatarPreset});
 
 function openSettingsPanel() {
   if (!S.me) return;
-  $("profileUsername").value = S.me.display_name || S.me.username || "";
+  $("profileUsername").value = S.me.display_name || S.me.username || ""; sizeProfileDisplayName();
   $("profileDesignation").value = S.me.designation || "CSA";
   $("profileUsernameHandle").textContent = S.me.username ? "@" + S.me.username.replace(/^@/, "") : "";
   renderProfileAvatarSettings();
@@ -4090,7 +4101,7 @@ function openSettingsPanel() {
   $("settingsPanel").setAttribute("aria-hidden", "false");
   document.body.classList.add("settings-open");
   document.addEventListener("keydown", _settingsEscape);
-  setTimeout(() => $("profileUsername")?.focus(), 40);
+  sizeProfileDisplayName();
 }
 function closeSettingsPanel() {
   $("settingsBackdrop")?.classList.add("hidden");
