@@ -4242,3 +4242,15 @@ html[data-theme="dark"] .sb-brand .brand-mark.sm {
   font-size:52px!important;
 }
 .profile-avatar-preset{font-size:24px!important;line-height:1}
+
+
+/* Emoji avatars scale with their circular avatar containers. */
+.avatar.has-avatar-emoji,.account-avatar.has-avatar-emoji,
+.chat-row-avatar.has-avatar-emoji,.ci-member-avatar.has-avatar-emoji,
+.admin-shell .ad-avatar.has-avatar-emoji,.mention-option-avatar.has-avatar-emoji{
+  font-size:30px!important;
+}
+.avatar.xs.has-avatar-emoji{font-size:16px!important}
+.mention-option-avatar.has-avatar-emoji{font-size:23px!important}
+.admin-shell .ad-avatar.has-avatar-emoji{font-size:30px!important}
+.profile-avatar-preview.has-avatar-emoji{font-size:54px!important}
