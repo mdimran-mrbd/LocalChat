@@ -26,6 +26,7 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/ban/:user_id", post(ban))
         .route("/unban/:username", post(unban))
         .route("/reset-password/:user_id", post(reset_password))
+        .route("/user-email/:user_id", get(get_user_email).post(change_user_email))
         .route("/broadcast", post(broadcast))
         .route("/channel/:id", axum::routing::delete(delete_channel))
         .route("/uploads", get(list_uploads))
@@ -119,6 +120,8 @@ async fn users(
             json!({
                 "id": u.id,
                 "username": u.username,
+                "displayName": u.display_name,
+                "designation": u.designation,
                 "avatar": u.avatar,
                 "color": u.color,
                 "online": online,
@@ -146,6 +149,58 @@ async fn users(
         bt.cmp(&at)
     });
     Ok(Json(json!({"users": list})))
+}
+
+async fn get_user_email(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
+    headers: HeaderMap,
+    Path(user_id): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    auth!(state, headers, addr);
+    let profile = state.db.get_profile_fields(user_id.to_compact_string()).await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "could not read user profile".into()))?
+        .ok_or((StatusCode::NOT_FOUND, "user not found".into()))?;
+    Ok(Json(json!({"officeEmail": profile.0})))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ChangeUserEmail {
+    office_email: String,
+}
+
+async fn change_user_email(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
+    headers: HeaderMap,
+    Path(user_id): Path<String>,
+    Json(payload): Json<ChangeUserEmail>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    auth!(state, headers, addr);
+    let email = payload.office_email.trim().to_string();
+    let valid = email.len() <= 254
+        && email.split_once('@').map_or(false, |(local, domain)| {
+            !local.is_empty() && !domain.is_empty() && domain.contains('.')
+                && !email.chars().any(char::is_whitespace)
+        });
+    if !valid {
+        return Err((StatusCode::BAD_REQUEST, "Enter a valid office email address.".into()));
+    }
+    let uid = user_id.to_compact_string();
+    let current = state.db.get_profile_fields(uid.clone()).await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "could not read user profile".into()))?
+        .ok_or((StatusCode::NOT_FOUND, "user not found".into()))?;
+    if current.0.eq_ignore_ascii_case(&email) {
+        return Ok(Json(json!({"ok": true, "officeEmail": current.0})));
+    }
+    if state.db.office_email_exists(&email).await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "could not check email uniqueness".into()))? {
+        return Err((StatusCode::CONFLICT, "That office email is already assigned to another account.".into()));
+    }
+    state.db.set_office_email(uid, &email).await
+        .map_err(|_| (StatusCode::CONFLICT, "Could not save the office email; it may already be in use.".into()))?;
+    Ok(Json(json!({"ok": true, "officeEmail": email})))
 }
 
 #[derive(Deserialize)]
@@ -205,6 +260,7 @@ async fn get_settings(
         "bannedUsers": cfg.banned_users,
         "bannedIps": cfg.banned_ips,
         "autostart": cfg.autostart,
+        "officeEmailDomains": cfg.office_email_domains,
     })))
 }
 
@@ -217,6 +273,8 @@ struct SettingsPatch {
     history_ram: Option<usize>,
     #[serde(rename = "rotateMb")]
     rotate_mb: Option<u64>,
+    #[serde(rename = "officeEmailDomains")]
+    office_email_domains: Option<Vec<String>>,
     autostart: Option<bool>,
 }
 
@@ -239,6 +297,27 @@ async fn post_settings(
     }
     if let Some(v) = patch.rotate_mb {
         cfg.rotate_mb = v.clamp(1, 1000);
+    }
+    if let Some(domains) = patch.office_email_domains {
+        let mut normalized = Vec::new();
+        for domain in domains {
+            let domain = domain.trim().trim_start_matches('@').to_ascii_lowercase();
+            if domain.is_empty() { continue; }
+            if domain.len() > 253
+                || !domain.contains('.')
+                || domain.starts_with('.')
+                || domain.ends_with('.')
+                || domain.split('.').any(|label| label.is_empty()
+                    || label.len() > 63
+                    || !label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+                    || label.starts_with('-')
+                    || label.ends_with('-'))
+            {
+                return Err((StatusCode::BAD_REQUEST, format!("invalid office email domain: {domain}")));
+            }
+            if !normalized.contains(&domain) { normalized.push(domain); }
+        }
+        cfg.office_email_domains = normalized;
     }
     if let Some(v) = patch.autostart {
         cfg.autostart = v;

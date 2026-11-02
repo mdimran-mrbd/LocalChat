@@ -2,7 +2,7 @@ name: LocalChat CI
 
 on:
   pull_request:
-    branches: [main, feature/chat-info-ux-3.2.0]
+    branches: [main, feature/chat-info-ux-3.2.0, feature/login-user-profiling]
     paths:
       - 'app/**'
       - '.github/workflows/**'
@@ -33,7 +33,9 @@ jobs:
         with:
           node-version: 22
       - name: Check JavaScript syntax
-        run: node --check app/web/app.js
+        run: |
+          node --check app/web/app.js
+          node --check app/web/admin.js
 
   build-windows:
     name: Build Windows test executable

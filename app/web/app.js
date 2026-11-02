@@ -14,12 +14,19 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const _AVATAR_COLORS = ["#6366f1","#8b5cf6","#ec4899","#ef4444","#f97316","#eab308","#22c55e","#14b8a6","#06b6d4","#3b82f6"];
 function userNameNode(user) {
   let profile = typeof user === "string" ? { username: user } : (user || {});
-  if (!profile.designation && S.userProfiles) {
+  if (S.userProfiles && profile.username) {
     const cached = [...S.userProfiles.values()].find(item => (item.username || "").toLowerCase() === (profile.username || "").toLowerCase());
-    if (cached) profile = { ...cached, ...profile, designation: cached.designation || profile.designation };
+    if (cached) profile = {
+      ...cached,
+      ...profile,
+      // DM/channel peer objects can contain only username/avatar fields. Keep
+      // the authoritative cached profile when optional fields are absent.
+      display_name: profile.display_name || cached.display_name,
+      designation: profile.designation || cached.designation,
+    };
   }
   const root = el("span", { class: "user-name-display" });
-  root.append(document.createTextNode(profile.username || "Unknown"));
+  root.append(document.createTextNode(profile.display_name || "Unknown"));
   if (profile.designation) root.append(el("span", { class: "user-designation" }, " • " + profile.designation));
   return root;
 }
@@ -33,7 +40,11 @@ function renderAvatarContent(node, avatar, fallback = "?") {
   const presence = node.querySelector(":scope > .presence-dot");
   node.replaceChildren(avatarContent(avatar, fallback));
   if (presence) node.append(presence);
-  node.classList.toggle("has-avatar-image", typeof avatar === "string" && avatar.startsWith("/uploads/") && !avatar.slice(9).includes("/"));
+  const isImage = typeof avatar === "string" && avatar.startsWith("/uploads/") && !avatar.slice(9).includes("/");
+  const isEmoji = typeof avatar === "string" && !isImage && /\p{Extended_Pictographic}/u.test(avatar);
+  node.classList.toggle("has-avatar-image", isImage);
+  node.classList.toggle("has-avatar-emoji", isEmoji);
+  if (isEmoji) { node.style.background = "transparent"; node.style.display = "grid"; node.style.placeItems = "center"; } else { node.style.removeProperty("display"); node.style.removeProperty("place-items"); }
 }
 function colorForName(name) {
   if (!name) return _AVATAR_COLORS[0];
@@ -143,10 +154,30 @@ function appendLinkedText(container, text, channelId = null) {
   if (channelId) {
     const users = new Map(S.users);
     if (S.me?.id) users.set(S.me.id, S.me);
-    const byName = new Map([...users.values()].filter(u => u?.username && u?.id).map(u => [u.username.toLowerCase(), u]));
+    const byName = new Map();
+    for (const user of users.values()) {
+      if (!user?.id) continue;
+      if (user.username) byName.set(user.username.replace(/^@/, "").toLowerCase(), user);
+      if (user.display_name) byName.set(user.display_name.toLowerCase(), user);
+    }
     for (const match of source.matchAll(/@([A-Za-z0-9._-]+)/g)) {
       const user = byName.get(match[1].toLowerCase());
       if (user) tokens.push({ raw: match[0], index: match.index, kind: "mention", user });
+    }
+    // Display names may contain spaces; match them as a full mention token.
+    for (const user of users.values()) {
+      const name = String(user?.display_name || "").trim();
+      if (!user?.id || !name || !name.includes(" ")) continue;
+      const needle = "@" + name;
+      const lowerSource = source.toLowerCase(), lowerNeedle = needle.toLowerCase();
+      let at = -1;
+      while ((at = lowerSource.indexOf(lowerNeedle, at + 1)) >= 0) {
+        const end = at + needle.length;
+        if ((at === 0 || !/[A-Za-z0-9._-]/.test(source[at - 1])) &&
+            (end === source.length || !/[A-Za-z0-9._-]/.test(source[end]))) {
+          tokens.push({ raw: source.slice(at, end), index: at, kind: "mention", user });
+        }
+      }
     }
   }
   tokens.sort((a, b) => a.index - b.index || (a.kind === "url" ? -1 : 1));
@@ -649,7 +680,7 @@ const S = {
   typingTimer: null,
   reconnectTries: 0,
   hostname: "",
-  sidebarTab: "mine",
+  sidebarTab: "all",
   sidebarFilter: "",
   sidebarMessageResults: [],
   searchChannel: null,
@@ -701,40 +732,209 @@ const S = {
   }
 })();
 
-// ── Join flow ────────────────────────────────────────────────────────
+async function loadRecoveryChallenge() {
+  const loginInput=$("recoveryLogin").value.trim();
+  const login=loginInput.startsWith("@")&&!loginInput.includes("@",1)?loginInput.slice(1):loginInput;
+  const status=$("recoveryStatus"); status.textContent=""; status.classList.remove("err","ok");
+  if(!login){status.textContent="Enter your username or office email.";status.classList.add("err");$("recoveryLogin").focus();return;}
+  const button=$("recoveryLoadBtn");button.disabled=true;
+  try{
+    const response=await fetch("/api/recovery/challenge",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({login})});
+    const data=await response.json();
+    if(!data.ok||!Array.isArray(data.questions)){status.textContent=data.message||"Recovery questions are not available for that account.";status.classList.add("err");return;}
+    const select=$("recoveryQuestionSlot");select.replaceChildren();
+    data.questions.forEach((questionId,slot)=>select.add(new Option(_recoveryQuestionLabels[Number(questionId)-1]||"Recovery question",String(slot))));
+    $("recoveryIdentifierField")?.classList.add("hidden");button.classList.add("hidden");
+    $("recoveryQuestionStep")?.classList.remove("hidden");$("recoveryPasswordStep")?.classList.add("hidden");
+    status.textContent="";$("recoveryAnswer")?.focus();
+  }catch{status.textContent="Could not contact the server. Please try again.";status.classList.add("err");}
+  finally{button.disabled=false;}
+}
+
+async function submitRecovery(event) {
+  event.preventDefault();
+  const status=$("recoveryStatus");status.textContent="";status.classList.remove("err","ok");
+  const raw=$("recoveryLogin").value.trim(),login=raw.startsWith("@")&&!raw.includes("@",1)?raw.slice(1):raw;
+  const answer=$("recoveryAnswer").value.trim(),newPassword=$("recoveryNewPassword").value,repeatPassword=$("recoveryRepeatPassword").value;
+  if(!answer){status.textContent="Enter your saved recovery answer.";status.classList.add("err");$("recoveryAnswer").focus();return;}
+  if(newPassword.length<4){status.textContent="New password must be at least 4 characters.";status.classList.add("err");$("recoveryNewPassword").focus();return;}
+  if(newPassword!==repeatPassword){status.textContent="The passwords do not match.";status.classList.add("err");$("recoveryRepeatPassword").focus();return;}
+  const button=$("recoverySubmitBtn");button.disabled=true;
+  try{
+    const response=await fetch("/api/recovery/reset",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({login,questionSlot:Number($("recoveryQuestionSlot").value),answer,newPassword})});
+    const data=await response.json();
+    if(data.ok){status.textContent="";status.classList.remove("err","ok");$("username").value=login;$("password").value="";closeModal("recoveryModal");}
+    else{status.textContent=data.message||"Recovery failed.";status.classList.add("err");}
+  }catch{status.textContent="Could not contact the server. Please try again.";status.classList.add("err");}
+  finally{button.disabled=false;}
+}
+$("recoveryNextBtn")?.addEventListener("click",()=>{
+  const status=$("recoveryStatus");status.textContent="";status.classList.remove("err","ok");
+  if(!$("recoveryAnswer").value.trim()){status.textContent="Enter your saved recovery answer.";status.classList.add("err");$("recoveryAnswer").focus();return;}
+  $("recoveryQuestionStep")?.classList.add("hidden");$("recoveryPasswordStep")?.classList.remove("hidden");$("recoveryNewPassword")?.focus();
+});
+$("recoveryBackBtn")?.addEventListener("click",()=>{
+  $("recoveryPasswordStep")?.classList.add("hidden");$("recoveryQuestionStep")?.classList.remove("hidden");
+  $("recoveryStatus").textContent="";$("recoveryStatus").classList.remove("err","ok");$("recoveryAnswer")?.focus();
+});
+
+// ── Login / registration flow ────────────────────────────────────────
+let _joinMode = "login";
+$("loginPasswordArea")?.append($("passwordField"));
+
+// Hidden registration controls must not block login form submission through
+// native HTML constraint validation. Only require designation in register mode.
+if ($("registrationDesignation")) $("registrationDesignation").required = false;
+
+function setRegistrationStep(step) {
+  const panels = [$("registrationIdentityPanel"), $("registrationSecurityPanel"), $("registrationPasswordPanel")];
+  if (panels.some(panel => !panel)) return;
+  panels.forEach((panel, index) => panel.classList.toggle("hidden", index + 1 !== step));
+  const copy={1:["Your information","Set up your LocalChat profile."],2:["Security questions","Choose three different questions to recover your account."],3:["Create your password","Use at least 4 characters and confirm it below."]}[step];
+  if(copy){$("registrationStepTitle").textContent=copy[0];$("registrationStepSubtitle").textContent=copy[1];}
+  document.querySelectorAll("#join .auth-progress-step").forEach((node, index) => {
+    node.classList.toggle("is-active", index + 1 === step);
+    node.classList.toggle("is-complete", index + 1 < step);
+  });
+  document.querySelectorAll("#join .auth-progress-track").forEach((node, index) => node.classList.toggle("is-complete", index + 1 < step));
+  const focusTarget = step === 1 ? $("officeEmail") : step === 2 ? $("recoveryQuestion1") : $("password");
+  focusTarget?.focus();
+}
+$("registrationNextBtn")?.addEventListener("click", () => {
+  const email=$("officeEmail"), display=$("registrationDisplayName"), username=$("registrationUsername"), designation=$("registrationDesignation"), status=$("joinStatus");
+  status.textContent=""; status.classList.remove("err","ok");
+  if (!email.value.trim() || !email.checkValidity()) { status.textContent="Enter a valid work email address."; status.classList.add("err"); email.focus(); return; }
+  if (!display.value.trim() || display.value.trim().length>48 || /[\u0000-\u001f\u007f]/.test(display.value.trim())) { status.textContent="Enter your full display name (up to 48 characters)."; status.classList.add("err"); display.focus(); return; }
+  const handle=username.value.trim().replace(/^@/,"");
+  if (!/^[A-Za-z0-9_-]{3,24}$/.test(handle) || !/[0-9]/.test(handle)) { status.textContent="Username must be 3–24 characters, use English letters, numbers, _ or -, and include at least one number."; status.classList.add("err"); username.focus(); return; }
+  if (!designation.value) { status.textContent="Choose your designation to continue."; status.classList.add("err"); designation.focus(); return; }
+  username.value=handle; setRegistrationStep(2);
+});
+$("registrationBackBtn")?.addEventListener("click",()=>setRegistrationStep(1));
+$("registrationPasswordNextBtn")?.addEventListener("click", () => {
+  const status=$("joinStatus"); status.textContent=""; status.classList.remove("err","ok");
+  for (let n=1;n<=3;n++) {
+    const question=$("recoveryQuestion"+n), answer=$("recoveryAnswer"+n);
+    if (!question.value) { status.textContent="Choose a recovery question for each slot."; status.classList.add("err"); question.focus(); return; }
+    if (!answer.value.trim()) { status.textContent="Enter an answer for each recovery question."; status.classList.add("err"); answer.focus(); return; }
+  }
+  if (new Set([1,2,3].map(n=>$("recoveryQuestion"+n).value)).size !== 3) { status.textContent="Choose three different recovery questions."; status.classList.add("err"); $("recoveryQuestion1").focus(); return; }
+  setRegistrationStep(3);
+});
+$("registrationPasswordBackBtn")?.addEventListener("click",()=>setRegistrationStep(2));
+$("usernameHelp")?.addEventListener("click",()=>{const b=$("usernameHelp");b.setAttribute("aria-expanded",String(b.getAttribute("aria-expanded")!=="true"));});
+$("toggleRegistration")?.addEventListener("click",(event)=>{
+  event.preventDefault(); _joinMode=_joinMode==="login"?"register":"login";
+  const registering=_joinMode==="register";
+  $("join")?.classList.toggle("is-registering",registering);
+  $("registrationFields")?.classList.toggle("hidden",!registering);
+  $("loginIdentifierField")?.classList.toggle("hidden",registering);
+  const passwordField=$("passwordField");
+  (registering ? $("registrationPasswordArea") : $("loginPasswordArea"))?.append(passwordField);
+  if (registering) $("registrationPasswordArea")?.append($("registrationRepeatPasswordField"));
+  $("loginSubmitBtn")?.classList.toggle("hidden",registering);
+  $("username").required=!registering; $("password").required=true;
+  $("password").autocomplete=registering?"new-password":"current-password";
+  $("registrationRepeatPassword").value="";
+  if($("registrationUsername")) $("registrationUsername").required=false;
+  if($("registrationDisplayName")) $("registrationDisplayName").required=false;
+  if($("officeEmail")) $("officeEmail").required=false;
+  if($("registrationDesignation")) $("registrationDesignation").required=false;
+  $("accountPromptText").textContent=registering?"Already registered?":"Not registered yet?";
+  $("toggleRegistration").textContent=registering?"Sign in here":"Create your account";
+  $("forgotPasswordLink")?.classList.toggle("hidden", registering);
+  $("joinStatus").textContent=""; $("joinStatus").classList.remove("err","ok");
+  if(registering) setRegistrationStep(1); else $("username").focus();
+});
+
+// Keep the three recovery-question dropdowns mutually exclusive as the user chooses.
+function refreshRecoveryQuestionOptions(prefix = "recoveryQuestion") {
+  const selects = [1, 2, 3].map(n => $(prefix + n)).filter(Boolean);
+  const selected = new Set(selects.map(s => s.value).filter(Boolean));
+  for (const select of selects) {
+    const ownValue = select.value;
+    for (const option of [...select.options]) {
+      if (!option.value) continue;
+      const usedElsewhere = selected.has(option.value) && option.value !== ownValue;
+      option.disabled = usedElsewhere;
+      option.hidden = usedElsewhere;
+    }
+  }
+}
+for (const prefix of ["recoveryQuestion", "requiredQuestion"]) {
+  for (let n = 1; n <= 3; n++) {
+    $(prefix + n)?.addEventListener("change", () => refreshRecoveryQuestionOptions(prefix));
+  }
+}
+
+$("forgotPasswordLink")?.addEventListener("click", (event) => {
+  event.preventDefault();
+  $("recoveryLogin").value = $("username").value.trim();
+  $("recoveryQuestionStep")?.classList.add("hidden");
+  $("recoveryPasswordStep")?.classList.add("hidden");
+  $("recoveryLoadBtn")?.classList.remove("hidden");
+  $("recoveryIdentifierField")?.classList.remove("hidden");
+  $("recoveryStatus").textContent = "";
+  openModal("recoveryModal");
+  $("recoveryLogin").focus();
+});
+
 $("joinForm").addEventListener("submit", (e) => {
   e.preventDefault();
-  const username = $("username").value.trim();
+  const registering = _joinMode === "register";
+  const identifier = registering ? $("registrationUsername").value.trim().replace(/^@/, "") : $("username").value.trim();
   const password = $("password").value;
-  if (!username) return;
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{2,23}$/.test(username)) {
-    const status = $("joinStatus");
-    if (status) {
-      status.textContent = "Username must be 3-24 chars: letters, digits, underscore, hyphen, or dot. No spaces.";
-      status.classList.add("err");
-    }
-    const input = $("username");
-    if (input) { input.classList.add("err"); input.focus(); }
+  const repeatPassword = $("registrationRepeatPassword").value;
+  const status = $("joinStatus");
+  status.textContent = "";
+  status.classList.remove("err", "ok");
+  if (!identifier) {
+    status.textContent = registering ? "Choose your unique username." : "Enter your email or @username.";
+    status.classList.add("err");
+    (registering ? $("registrationUsername") : $("username")).focus();
     return;
+  }
+  let registration = {};
+  if (registering) {
+    if (!/^[A-Za-z0-9_-]{3,24}$/.test(identifier) || !/[0-9]/.test(identifier)) {
+      status.textContent = "Username must be 3–24 characters, use letters, numbers, _ or -, and include at least one number.";
+      status.classList.add("err"); $("registrationUsername").focus(); return;
+    }
+    const displayName = $("registrationDisplayName").value.trim();
+    if (!displayName || displayName.length > 48 || /[\u0000-\u001f\u007f]/.test(displayName)) {
+      status.textContent = "Display name must be 1–48 characters and cannot contain control characters.";
+      status.classList.add("err"); $("registrationDisplayName").focus(); return;
+    }
+    const officeEmail = $("officeEmail").value.trim();
+    const designation = $("registrationDesignation").value;
+    const recoveryQuestions = [1, 2, 3].map(n => Number($("recoveryQuestion" + n).value));
+    const recoveryAnswers = [1, 2, 3].map(n => $("recoveryAnswer" + n).value.trim());
+    if (!officeEmail || !designation || recoveryQuestions.some(q => !q) ||
+        new Set(recoveryQuestions).size !== 3 || recoveryAnswers.some(a => !a)) {
+      status.textContent = "Enter your office email, choose a designation, and choose three different recovery questions with answers.";
+      status.classList.add("err");
+      return;
+    }
+    registration = { displayName, officeEmail, designation, recoveryQuestions, recoveryAnswers };
+  }
+  if (registering && password !== repeatPassword) {
+    status.textContent = "The passwords do not match.";
+    status.classList.add("err"); $("registrationRepeatPassword").focus(); return;
   }
   if (!password || password.length < 4) {
-    const status = $("joinStatus");
-    if (status) {
-      status.textContent = "Password must be at least 4 characters.";
-      status.classList.add("err");
-    }
-    const pw = $("password");
-    if (pw) { pw.classList.add("err"); pw.focus(); }
+    status.textContent = "Password must be at least 4 characters.";
+    status.classList.add("err");
+    $("password").focus();
     return;
   }
-  lstore.set("username", username);
-  connect(username, password);
+  lstore.set("username", identifier);
+  connect(identifier, password, _joinMode, registration);
 });
 
 let _activePassword = "";
 let _pendingNewPassword = "";
 
-function connect(username, password) {
+function connect(username, password, mode = "login", registration = {}) {
   _activePassword = password || "";
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   const ws = new WebSocket(`${proto}//${location.host}/ws`);
@@ -745,7 +945,13 @@ function connect(username, password) {
     ws.send(JSON.stringify({
       op: "join",
       username,
+      displayName: registration.displayName || "",
       password: password || "",
+      mode,
+      officeEmail: registration.officeEmail || "",
+      designation: registration.designation || "",
+      recoveryQuestions: registration.recoveryQuestions || [],
+      recoveryAnswers: registration.recoveryAnswers || [],
       userId: lstore.get("userId") || "",
       pubkey: E2EE.myPubStr(),
     }));
@@ -812,6 +1018,9 @@ function updateBrowserNotificationButton() {
   const snoozed = granted && !enabled && Date.now() < _browserNotificationSnoozedUntil;
   button.classList.toggle("active", enabled);
   button.classList.toggle("snoozed", snoozed);
+  button.classList.toggle("blocked", supported && Notification.permission === "denied");
+  button.classList.toggle("unsupported", !supported);
+  button.dataset.state = !supported ? "unsupported" : Notification.permission === "denied" ? "blocked" : snoozed ? "snoozed" : enabled ? "enabled" : "disabled";
   button.title = !supported ? "Browser notifications are not supported here"
     : !granted ? (Notification.permission === "denied" ? "Notifications blocked by browser" : "Enable browser notifications")
     : snoozed ? "Notifications snoozed" : "Browser notifications enabled";
@@ -961,6 +1170,7 @@ Object.assign(window, { toggleBrowserNotifications });
 function handleEvent(e, password = _activePassword) {
   switch (e.ev) {
     case "welcome":      return onWelcome(e, password);
+    case "profile_updated": return onRequiredProfileUpdated();
     case "msg":          return onWireMsg(e.m);
     case "users":        return onUsers(e.users);
     case "history":      return onHistory(e);
@@ -1003,6 +1213,14 @@ function onKicked(e) {
 }
 
 function onError(e) {
+  if (_requiredProfilePending && $("profileCompletionModal") && !$("profileCompletionModal").classList.contains("hidden")) {
+    _requiredProfilePending = false;
+    $("requiredProfileSubmit").disabled = false;
+    const status = $("requiredProfileStatus");
+    status.textContent = e.text || "Could not save account setup.";
+    status.classList.add("err");
+    return;
+  }
   if (!S.me) {
     // Server rejected our auto-join (banned, bad name, name taken, etc.).
     // Drop the saved name so the user can pick a different one, surface
@@ -1087,18 +1305,14 @@ async function onWelcome(e, password) {
     const onHost = h === "localhost" || h === "127.0.0.1" || h === "[::1]" || h === "::1";
     adminLink.hidden = !onHost;
   }
-  $("meChip").innerHTML = "";
-  const ownAvatar = el("div", { class: "avatar xs", style: `background:${e.user.color}` });
-  renderAvatarContent(ownAvatar, e.user.avatar, e.user.username?.[0] || "?");
-  $("meChip").append(
-    ownAvatar,
-    el("div", { class: "me-info" }, [el("div", { class: "name" }, userNameNode(e.user))]),
-    el("button", {
-      id: "settingsOpenBtn", class: "icon-btn settings-open-btn", title: "Settings", "aria-label": "Open settings",
-      onclick: openSettingsPanel,
-      html: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2" fill="var(--bg-1)"/><circle cx="15" cy="12" r="2" fill="var(--bg-1)"/><circle cx="8" cy="18" r="2" fill="var(--bg-1)"/></svg>`,
-    }),
-  );
+  $("meChip").innerHTML = ""; $("meChip").className = "nav-profile";
+  const ownAvatar=el("div",{class:"avatar account-avatar",style:`background:${e.user.color}`,title:e.user.display_name||e.user.username});
+  renderAvatarContent(ownAvatar,e.user.avatar,e.user.username?.[0]||"?");
+  $("meChip").append(ownAvatar);
+  $("meChip").type="button";
+  $("meChip").setAttribute("aria-label","Open profile and settings");
+  $("meChip").title="Profile and settings";
+  $("meChip").onclick=()=>openSettingsPanel();
   const notificationControl = $("browserNotificationControl");
   const notificationSlot = $("settingsNotificationsSlot");
   if (notificationControl && notificationSlot && notificationControl.parentElement !== notificationSlot) notificationSlot.append(notificationControl);
@@ -1114,14 +1328,35 @@ async function onWelcome(e, password) {
       sendOp({ op: "ch_info", channel: channel.id });
     }
   }
-  switchChannel(e.lobby || "pub:general");
+  const initialChannel = e.lobby || "pub:general";
+  // Fetch only the newest message for each other conversation so previews
+  // are visible immediately without loading every chat's full history.
+  for (const channel of S.channels.values()) {
+    if (channel.id !== initialChannel && channel.kind !== "lobby") {
+      _previewOnlyHistory.add(channel.id);
+      sendOp({ op: "history", channel: channel.id, limit: 1 });
+    }
+  }
+  switchChannel(initialChannel);
   sendOp({ op: "saved_list" });
   S.lobby = e.lobby || "pub:general";
+  _requiredProfileFlags = e.profileCompletion || null;
   if (e.mustChangePassword) {
     setTimeout(() => openChangePasswordModal({ forced: true }), 200);
+  } else if (_requiredProfileFlags && Object.values(_requiredProfileFlags).some(Boolean)) {
+    setTimeout(openRequiredProfileModal, 250);
   } else if (!e.user.designation) {
     setTimeout(openDesignationModal, 250);
   }
+}
+
+function onRequiredProfileUpdated() {
+  if (!_requiredProfilePending) return;
+  _requiredProfilePending = false;
+  $("requiredProfileSubmit").disabled = false;
+  _requiredProfileFlags = null;
+  closeModal("profileCompletionModal");
+  toast("Account setup saved.");
 }
 
 function onUsers(list) {
@@ -1137,26 +1372,29 @@ function onUsers(list) {
   for (const u of list) { S.users.set(u.id, u); S.userProfiles.set(u.id, u); }
   const updatedMe = list.find(u => u.id === S.me?.id);
   if (updatedMe) {
-    const profileChanged = !!previousMe && (previousMe.username !== updatedMe.username || previousMe.designation !== updatedMe.designation);
+    const profileChanged = !!previousMe && (previousMe.display_name !== updatedMe.display_name || previousMe.designation !== updatedMe.designation);
     const avatarChanged = !!previousMe && previousMe.avatar !== updatedMe.avatar;
     S.me = updatedMe;
     const ownAvatar = $("meChip")?.querySelector(".avatar");
     if (ownAvatar) { ownAvatar.style.background = updatedMe.color || "var(--brand)"; renderAvatarContent(ownAvatar, updatedMe.avatar, updatedMe.username?.[0] || "?"); }
     if ($("settingsPanel")?.classList.contains("open")) renderProfileAvatarSettings();
     if (avatarChanged && $("profileAvatarStatus")) { $("profileAvatarStatus").textContent = "Profile picture updated."; $("profileAvatarStatus").classList.remove("err"); $("profileAvatarStatus").classList.add("ok"); }
-    const ownName = $("meChip")?.querySelector(".me-info .name");
+    const ownName = $("meChip")?.querySelector(".account-display-name");
     if (ownName) ownName.replaceChildren(userNameNode(updatedMe));
+    const ownHandle = $("meChip")?.querySelector(".account-handle");
+    if (ownHandle) ownHandle.textContent = updatedMe.username ? "@" + updatedMe.username.replace(/^@/, "") : "";
     if (updatedMe.designation) closeModal("designationModal");
     if (profileChanged && $("settingsPanel")?.classList.contains("open")) {
-      $("profileUsername").value = updatedMe.username || "";
+      $("profileUsername").value = updatedMe.display_name || updatedMe.username || ""; sizeProfileDisplayName();
       $("profileDesignation").value = updatedMe.designation || "CSA";
+      $("profileUsernameHandle").textContent = updatedMe.username ? "@" + updatedMe.username.replace(/^@/, "") : "";
       const status = $("profileSettingsStatus");
       status.textContent = "Profile saved.";
       status.classList.remove("err"); status.classList.add("ok");
       setProfileFieldEditing("username", false);
       setProfileFieldEditing("designation", false);
       const us = $("saveUsernameBtn"), ds = $("saveDesignationBtn");
-      if (us) { us.disabled = false; us.textContent = "Save username"; }
+      if (us) { us.disabled = false; us.textContent = "Save display name"; }
       if (ds) { ds.disabled = false; ds.textContent = "Save designation"; }
     }
   }
@@ -1307,8 +1545,24 @@ async function onHistory({ channel, messages, reactions, pins }) {
   const filtered = (messages || []).filter((m) =>
     !(m.kind === "system" && /\b(joined|left) the chat\b/.test(m.text || ""))
   );
+  const previewOnly = _previewOnlyHistory.delete(channel);
+  // A one-message preview must never replace a full history that was loaded
+  // because the user opened the conversation before this response arrived.
+  if (previewOnly && S.hasHistory.has(channel)) return;
   S.msgs.set(channel, filtered);
-  S.hasHistory.add(channel);
+  if (!previewOnly) S.hasHistory.add(channel);
+  const historyChannel = S.channels.get(channel);
+  if (historyChannel?.kind === "dm" && filtered.length) {
+    const latestPreviewMessage = [...filtered].filter(m => m && !m.deleted && m.kind !== "system")
+      .sort((a,b) => Number(b.ts || 0) - Number(a.ts || 0))[0];
+    const peer = dmPeer(historyChannel);
+    if (latestPreviewMessage?.text?.startsWith("e2e:v1:") && peer?.pubkey) {
+      try {
+        const previewText = await E2EE.tryDecrypt(peer.id, peer.pubkey, latestPreviewMessage.text);
+        if (previewText != null) latestPreviewMessage._sidebarPreview = previewText;
+      } catch {}
+    }
+  }
   // Drop any queued file ops that the server already accepted (their
   // resulting WireMsg is now visible in history).
   for (const m of filtered) {
@@ -1327,6 +1581,7 @@ async function onHistory({ channel, messages, reactions, pins }) {
   }
   S.reactions.set(channel, rmap);
   S.pins.set(channel, Array.isArray(pins) ? pins : []);
+  renderChannels();
   if (S.active === channel) { await renderStream(); updateMentionBadge(); }
   if (_ciPendingJump && _ciPendingJump.channelId === channel) {
     if (filtered.some(m => Number(m.id) === Number(_ciPendingJump.messageId))) {
@@ -1580,10 +1835,13 @@ function messageMentionsMe(m) {
       if (decrypted == null) return false;
       text = decrypted;
     }
-    const escaped = S.me.username.replace(/[^A-Za-z0-9._-]/g, (ch) => "\\" + ch);
     const channel = S.channels.get(m.channel);
     if (channel?.kind === "group" && text.toLowerCase().split(/[^a-z0-9@_-]+/).includes("@all")) return true;
-    return new RegExp(`(^|[^A-Za-z0-9._-])@${escaped}(?=$|[^A-Za-z0-9._-])`, "i").test(text);
+    const names = [S.me.username, S.me.display_name].filter(Boolean);
+    return names.some(name => {
+      const escaped = String(name).replace(/[^A-Za-z0-9._-]/g, (ch) => "\\" + ch);
+      return new RegExp(`(^|[^A-Za-z0-9._-])@${escaped}(?=$|[^A-Za-z0-9._-])`, "i").test(text);
+    });
   };
   return inspect().catch(() => false);
 }
@@ -1736,80 +1994,174 @@ function _sbToggle(key, open) {
 function _sbGroup(key, title, count, items) {
   const open = !_sbCollapsed.has(key);
   const det = el("details", { class: "sb-group", open: open ? "" : null });
-  const sum = el("summary", { class: "sb-group-head" }, [
-    el("span", { class: "sb-caret", html: `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>` }),
+  const sum = el("summary", { class: "sb-group-head", "aria-label": `${title}, ${count} conversations` }, [
+    el("span", { class: "sb-caret", "aria-hidden": "true", html: `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>` }),
     el("span", { class: "sb-group-title" }, title),
+    el("span", { class: "sb-group-count", "aria-hidden": "true" }, String(count)),
   ]);
   det.append(sum);
   if (!open) det.removeAttribute("open");
   det.addEventListener("toggle", () => _sbToggle(key, det.open));
   const ul = el("ul", { class: "chat-list" });
   for (const it of items) ul.append(it);
+  if (!items.length) ul.append(el("li", { class: "chat-section-empty muted xs" }, key === "pinned" ? "Pin a conversation to keep it here." : "No conversations yet."));
   det.append(ul);
   return det;
 }
 
+function _sidebarLatestMessage(channel) {
+  const messages = S.msgs.get(channel.id) || [];
+  const latest = [...messages].filter(m => m && !m.deleted && m.kind !== "system")
+    .sort((a, b) => Number(b.ts || 0) - Number(a.ts || 0))[0];
+  if (!latest) return { preview: "", time: "" };
+  const raw = String(latest._sidebarPreview ?? latest.text ?? "");
+  if (raw.startsWith("e2e:v1:")) return { preview: "🔒 Encrypted message", time: latest.ts ? fmtTime(latest.ts) : "" };
+  if (latest.kind === "file" || latest.file) return { preview: "📎 Attachment", time: latest.ts ? fmtTime(latest.ts) : "" };
+  const preview = raw.replace(/\s+/g, " ").trim();
+  return { preview: preview ? (preview.length > 72 ? preview.slice(0, 69) + "…" : preview) : "Message", time: latest.ts ? fmtTime(latest.ts) : "" };
+}
+
+const _CHAT_PIN_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6l-1 6 3 3v2H7v-2l3-3-1-6Z"/><path d="M12 14v7"/></svg>';
+function _chatContextMenu(channel, options) {
+  const wrap = el("div", { class: "chat-actions" });
+  const trigger = el("button", {
+    class: "chat-more", type: "button", title: "Conversation actions",
+    "aria-label": "Actions for " + options.label, "aria-haspopup": "menu", "aria-expanded": "false",
+    onclick: (ev) => {
+      ev.stopPropagation();
+      const menu = wrap.querySelector(".chat-context-menu");
+      const willOpen = menu.hidden;
+      document.querySelectorAll(".chat-context-menu").forEach(node => {
+        node.hidden = true;
+        node.closest(".chat-actions")?.querySelector(".chat-more")?.setAttribute("aria-expanded", "false");
+      });
+      menu.hidden = !willOpen;
+      trigger.setAttribute("aria-expanded", willOpen ? "true" : "false");
+    },
+    html: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>'
+  });
+  const menu = el("div", { class: "chat-context-menu", role: "menu", hidden: true });
+  for (const action of options.actions) {
+    menu.append(el("button", {
+      type: "button", role: "menuitem", class: action.danger ? "is-danger" : "",
+      onclick: (ev) => { ev.stopPropagation(); menu.hidden = true; trigger.setAttribute("aria-expanded", "false"); action.run(ev); }
+    }, action.label));
+  }
+  wrap.append(trigger, menu);
+  if (!document.documentElement.dataset.chatMenuDismissBound) {
+    document.addEventListener("pointerdown", (ev) => {
+      if (ev.target.closest && ev.target.closest(".chat-actions")) return;
+      document.querySelectorAll(".chat-context-menu:not([hidden])").forEach(node => { node.hidden = true; node.closest(".chat-actions")?.querySelector(".chat-more")?.setAttribute("aria-expanded", "false"); });
+    });
+    document.addEventListener("keydown", (ev) => {
+      if (ev.key !== "Escape") return;
+      document.querySelectorAll(".chat-context-menu:not([hidden])").forEach(node => { node.hidden = true; node.closest(".chat-actions")?.querySelector(".chat-more")?.setAttribute("aria-expanded", "false"); });
+    });
+    document.documentElement.dataset.chatMenuDismissBound = "1";
+  }
+  return wrap;
+}
+function _chatRowIndicators(channel, unread, pinned, label, actions, extraSignals = []) {
+  const row = el("div", { class: "chat-indicators", "aria-label": "Conversation status and actions" });
+  if (unread) row.append(el("span", { class: "badge badge-unread", title: unread + " unread messages" }, String(unread)));
+  for (const signal of extraSignals) if (signal) row.append(signal);
+  if (channel.notificationMode === "mute") {
+    row.append(el("span", { class: "chat-state-icon chat-muted-indicator", title: "Notifications muted", "aria-label": "Notifications muted",
+      html: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-10.9-3.5M6 8c0 4.5-1.1 6.4-2.1 7.5-.5.5-.2 1.5.6 1.5h10.2M18 13v2.5c0 1.2.8 1.5 1.4 1.5M10 21h4M3 3l18 18"/></svg>' }));
+  }
+  if (pinned) row.append(el("span", { class: "chat-state-icon chat-pinned-indicator", title: "Pinned conversation", "aria-label": "Pinned conversation", html: _CHAT_PIN_ICON }));
+  row.append(_chatContextMenu(channel, { label, actions }));
+  return row;
+}
+
 function _channelItem(c) {
   const active = c.id === S.active ? "active" : "";
-  const pinned = isChatPinned(c.id);
+  const isGeneral = c.kind === "lobby" || c.id === S.lobby || c.id === "pub:general";
+  const pinned = isGeneral || isChatPinned(c.id);
   const unread = S.unread.get(c.id) || 0;
   const isMember = !!(S.me && (c.members || []).includes(S.me.id));
   const isNotes = c.id.startsWith("notes:");
   const canDelete = !isNotes && c.kind === "group" && S.me && c.createdBy === S.me.id;
-  // Personal Notes are permanent and owner-only; ordinary groups can be deleted/left.
   const canLeave = !isNotes && c.kind === "group" && isMember && !canDelete;
-  const askDelete = canDelete ? (ev) => {
-    ev.stopPropagation();
-    ev.preventDefault();
-    confirmDialog({
-      title: "Delete channel",
-      body: `Delete channel #${c.name || c.id}?\n\nThis removes the channel and its history for everyone. This cannot be undone.`,
-      okText: "Delete",
-    }).then((ok) => { if (ok) deleteChannel(c.id); });
-  } : null;
-  const askLeave = canLeave ? (ev) => {
-    ev.stopPropagation();
-    ev.preventDefault();
-    confirmDialog({
-      title: "Leave channel",
-      body: c.isPrivate
-        ? `Leave private channel #${c.name || c.id}?\n\nYou'll need to be added back by a member to rejoin.`
-        : `Leave #${c.name || c.id}?\n\nYou can rejoin any time from the Channels list.`,
-      okText: "Leave",
-    }).then((ok) => { if (ok) leaveChannel(c.id); });
-  } : null;
+  const askDelete = () => confirmDialog({
+    title: "Delete channel",
+    body: "Delete channel #" + (c.name || c.id) + "?\n\nThis removes the channel and its history for everyone. This cannot be undone.",
+    okText: "Delete",
+  }).then(ok => { if (ok) deleteChannel(c.id); });
+  const askLeave = () => confirmDialog({
+    title: "Leave channel",
+    body: c.isPrivate
+      ? "Leave private channel #" + (c.name || c.id) + "?\n\nYou'll need to be added back by a member to rejoin."
+      : "Leave #" + (c.name || c.id) + "?\n\nYou can rejoin any time from the Channels list.",
+    okText: "Leave",
+  }).then(ok => { if (ok) leaveChannel(c.id); });
+  const summary = _sidebarLatestMessage(c);
+  const label = isGeneral ? "Lobby" : (isNotes ? (S.me?.display_name || S.me?.username || "My") + " (Me)" : "#" + (c.name || c.id));
+  const actions = [
+    ...(isGeneral ? [] : [{ label: pinned ? "Unpin conversation" : "Pin conversation", run: () => toggleChatPin(c.id) }]),
+    { label: isChatFavourite(c.id) ? "Remove from favourites" : "Add to favourites", run: () => toggleChatFavourite(c.id) }
+  ];
+  if (canDelete) actions.push({ label: "Delete channel", danger: true, run: askDelete });
+  if (canLeave) actions.push({ label: "Leave channel", danger: true, run: askLeave });
+  const signals = [
+    c.kind === "group" && S.unreadIndicators.get(c.id)?.mention ? el("span", { class: "chat-unread-signal mention-signal", title: "Unread mention", "aria-label": "Unread mention" }, "@") : null,
+    c.kind === "group" && S.unreadIndicators.get(c.id)?.reply ? el("span", { class: "chat-unread-signal reply-signal", title: "Unread reply to you", "aria-label": "Unread reply to you" }, "↩") : null
+  ];
   return el("li", {
     class: "chat-item " + active,
     onclick: () => switchChannel(c.id),
-    oncontextmenu: askDelete || askLeave || undefined,
+    oncontextmenu: (ev) => { ev.preventDefault(); ev.stopPropagation(); ev.currentTarget.querySelector(".chat-more")?.click(); }
   }, [
-    el("div", { class: "avatar", style: `background:var(--brand)` }, isNotes ? "📝" : "#"),
+    el("div", { class: "avatar chat-row-avatar", style: "background:#087f5b" }, isNotes ? "📝" : "#"),
     el("div", { class: "chat-meta" }, [
-      el("div", { class: "chat-name" }, [pinned ? el("span", { class: "chat-pin-mark", title: "Pinned chat", "aria-hidden": "true", html: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 3 5 5-4 1-4 4-1 5-2-2-4 4-2-2 4-4-2-2 5-1 4-4 1-4Z"/><path d="m10 14-6 6"/></svg>' }) : null, c.name || c.id]),
-      el("div", { class: "chat-sub muted xs" },
-        isNotes ? "Personal notes · only you" : (c.kind === "lobby" ? "lobby · everyone" : (c.isPrivate ? "private channel" : "channel"))),
-    ]),
-    c.kind === "group" && S.unreadIndicators.get(c.id)?.mention ? el("span", { class: "chat-unread-signal mention-signal", title: "Unread mention", "aria-label": "Unread mention" }, "@") : null,
-    c.kind === "group" && S.unreadIndicators.get(c.id)?.reply ? el("span", { class: "chat-unread-signal reply-signal", title: "Unread reply to you", "aria-label": "Unread reply to you" }, "↩") : null,
-    unread ? el("span", { class: "badge badge-unread" }, String(unread)) : null,
-    el("button", { class: "chat-pin" + (pinned ? " is-pinned" : ""), type: "button", title: pinned ? "Unpin chat" : "Pin chat", "aria-label": pinned ? "Unpin chat" : "Pin chat", onclick: (ev) => { ev.stopPropagation(); toggleChatPin(c.id); }, html: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 3 5 5-4 1-4 4-1 5-2-2-4 4-2-2 4-4-2-2 5-1 4-4 1-4Z"/><path d="m10 14-6 6"/></svg>' }),
-    canDelete ? el("button", {
-      class: "chat-del",
-      title: `Delete #${c.name || c.id}`,
-      "aria-label": "Delete channel",
-      onclick: askDelete,
-      html: `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>`,
-    }) : null,
-    canLeave ? el("button", {
-      class: "chat-del",
-      title: `Leave #${c.name || c.id}`,
-      "aria-label": "Leave channel",
-      onclick: askLeave,
-      html: `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>`,
-    }) : null,
+      el("div", { class: "chat-row-top" }, [
+        el("div", { class: "chat-name" }, [isNotes ? (S.me?.display_name || S.me?.username || "My") + " (Me)" : (isGeneral ? "Lobby" : (c.name || c.id))]),
+        summary.time ? el("time", { class: "chat-time", datetime: summary.time }, summary.time) : null
+      ]),
+      el("div", { class: "chat-row-bottom" }, [
+        el("div", { class: "chat-sub muted xs" }, summary.preview || (isNotes ? "Personal notes · only you" : (c.kind === "lobby" ? "Lobby · everyone" : (c.isPrivate ? "Private channel" : "Channel")))),
+        _chatRowIndicators(c, unread, pinned, label, actions, signals)
+      ])
+    ])
   ]);
 }
 
+function _dmItem(c) {
+  const u = dmPeer(c);
+  const pinned = isChatPinned(c.id);
+  const active = c.id === S.active ? "active" : "";
+  const unread = S.unread.get(c.id) || 0;
+  const online = !!(u && !u.offline);
+  const peerName = u ? (u.display_name || u.username) : "Unknown";
+  const summary = _sidebarLatestMessage(c);
+  const askDelete = () => confirmDialog({
+    title: "Delete conversation",
+    body: `Delete your conversation with ${peerName}?\n\nThis removes the chat for both of you, including all messages. This cannot be undone.`,
+    okText: "Delete",
+  }).then(ok => { if (ok) deleteDm(c.id); });
+  const actions = [{ label: pinned ? "Unpin conversation" : "Pin conversation", run: () => toggleChatPin(c.id) },
+    { label: isChatFavourite(c.id) ? "Remove from favourites" : "Add to favourites", run: () => toggleChatFavourite(c.id) },
+    { label: "Delete conversation", danger: true, run: askDelete }];
+  return el("li", {
+    class: "chat-item " + active,
+    onclick: () => switchChannel(c.id),
+    oncontextmenu: (ev) => { ev.preventDefault(); ev.stopPropagation(); ev.currentTarget.querySelector(".chat-more")?.click(); },
+  }, [
+    (() => { const node = el("div", { class: `avatar chat-row-avatar ${online ? "avatar-online" : "avatar-offline"}`, style: `background:${u?.color || "var(--brand)"}` }); renderAvatarContent(node, u?.avatar, u?.username?.[0] || "?"); node.append(el("span", { class: "presence-dot" })); return node; })(),
+    el("div", { class: "chat-meta" }, [
+      el("div", { class: "chat-row-top" }, [
+        el("div", { class: "chat-name" }, userNameNode(u || { username: peerName })),
+        summary.time ? el("time", { class: "chat-time" }, summary.time) : null,
+      ]),
+      el("div", { class: "chat-row-bottom" }, [
+        el("div", { class: "chat-sub muted xs" }, summary.preview || (online ? "Online" : "Offline")),
+        unread ? el("span", { class: "badge badge-unread" }, String(unread)) : null,
+      ]),
+    ]),
+    pinned ? el("span", { class: "chat-pin-mark", title: "Pinned conversation", "aria-label": "Pinned" }, "◆") : null,
+    _chatContextMenu(c, { label: peerName, actions }),
+  ]);
+}
 function deleteChannel(channelId) {
   sendOp({ op: "ch_delete", channel: channelId });
 }
@@ -1840,35 +2192,34 @@ function _dmItem(c) {
   const active = c.id === S.active ? "active" : "";
   const unread = S.unread.get(c.id) || 0;
   const online = !!(u && !u.offline);
-  const peerName = u ? u.username : "unknown";
-  const askDelete = (ev) => {
-    ev.stopPropagation();
-    ev.preventDefault();
-    confirmDialog({
-      title: "Delete conversation",
-      body: `Delete your conversation with ${peerName}?\n\nThis removes the chat for both of you, including all messages. This cannot be undone.`,
-      okText: "Delete",
-    }).then((ok) => { if (ok) deleteDm(c.id); });
-  };
+  const peerName = u ? (u.display_name || u.username) : "Unknown";
+  const summary = _sidebarLatestMessage(c);
+  const askDelete = () => confirmDialog({
+    title: "Delete conversation",
+    body: "Delete your conversation with " + peerName + "?\n\nThis removes the chat for both of you, including all messages. This cannot be undone.",
+    okText: "Delete"
+  }).then(ok => { if (ok) deleteDm(c.id); });
+  const actions = [
+    { label: pinned ? "Unpin conversation" : "Pin conversation", run: () => toggleChatPin(c.id) },
+    { label: isChatFavourite(c.id) ? "Remove from favourites" : "Add to favourites", run: () => toggleChatFavourite(c.id) },
+    { label: "Delete conversation", danger: true, run: askDelete }
+  ];
   return el("li", {
     class: "chat-item " + active,
     onclick: () => switchChannel(c.id),
-    oncontextmenu: askDelete,
+    oncontextmenu: (ev) => { ev.preventDefault(); ev.stopPropagation(); ev.currentTarget.querySelector(".chat-more")?.click(); }
   }, [
-    (() => { const node = el("div", { class: `avatar ${online ? "avatar-online" : "avatar-offline"}`, style: `background:${u?.color || "var(--brand)"}` }); renderAvatarContent(node, u?.avatar, u?.username?.[0] || "?"); node.append(el("span", { class: "presence-dot" })); return node; })(),
+    (() => { const node = el("div", { class: "avatar chat-row-avatar " + (online ? "avatar-online" : "avatar-offline"), style: "background:" + (u?.color || "var(--brand)") }); renderAvatarContent(node, u?.avatar, u?.username?.[0] || "?"); node.append(el("span", { class: "presence-dot" })); return node; })(),
     el("div", { class: "chat-meta" }, [
-      el("div", { class: "chat-name" }, [pinned ? el("span", { class: "chat-pin-mark", title: "Pinned chat", "aria-hidden": "true", html: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 3 5 5-4 1-4 4-1 5-2-2-4 4-2-2 4-4-2-2 5-1 4-4 1-4Z"/><path d="m10 14-6 6"/></svg>' }) : null, userNameNode(u || { username: peerName })]),
-      el("div", { class: "chat-sub muted xs" }, online ? "online" : "offline"),
-    ]),
-    unread ? el("span", { class: "badge badge-unread" }, String(unread)) : null,
-    el("button", { class: "chat-pin" + (pinned ? " is-pinned" : ""), type: "button", title: pinned ? "Unpin chat" : "Pin chat", "aria-label": pinned ? "Unpin chat" : "Pin chat", onclick: (ev) => { ev.stopPropagation(); toggleChatPin(c.id); }, html: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 3 5 5-4 1-4 4-1 5-2-2-4 4-2-2 4-4-2-2 5-1 4-4 1-4Z"/><path d="m10 14-6 6"/></svg>' }),
-    el("button", {
-      class: "chat-del",
-      title: `Delete conversation with ${peerName}`,
-      "aria-label": "Delete conversation",
-      onclick: askDelete,
-      html: `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>`,
-    }),
+      el("div", { class: "chat-row-top" }, [
+        el("div", { class: "chat-name" }, userNameNode(u || { username: peerName })),
+        summary.time ? el("time", { class: "chat-time" }, summary.time) : null
+      ]),
+      el("div", { class: "chat-row-bottom" }, [
+        el("div", { class: "chat-sub muted xs" }, summary.preview || (online ? "Online" : "Offline")),
+        _chatRowIndicators(c, unread, pinned, peerName, actions)
+      ])
+    ])
   ]);
 }
 
@@ -1921,11 +2272,16 @@ function _personItem(u, online) {
   ]);
 }
 
+function favouriteChatsStorageKey(){return "favourite-chats:"+(S.me?.id||"anonymous");}
+function isChatFavourite(id){try{return(JSON.parse(lstore.get(favouriteChatsStorageKey())||"[]")||[]).includes(id);}catch{return false;}}
+function toggleChatFavourite(id){let ids=[];try{ids=JSON.parse(lstore.get(favouriteChatsStorageKey())||"[]")||[];}catch{}ids=ids.filter(x=>S.channels.has(x));ids=ids.includes(id)?ids.filter(x=>x!==id):[...ids,id];lstore.set(favouriteChatsStorageKey(),JSON.stringify(ids));renderChannels();}
 function chatPinsStorageKey() { return "pinned-chats:" + (S.me?.id || "anonymous"); }
 function isChatPinned(channelId) {
   try { return (JSON.parse(lstore.get(chatPinsStorageKey()) || "[]") || []).includes(channelId); } catch { return false; }
 }
 function toggleChatPin(channelId) {
+  const channel = S.channels.get(channelId);
+  if (channel && (channel.kind === "lobby" || channel.id === S.lobby || channel.id === "pub:general")) { toast("Block G is always pinned."); return; }
   let pinned = [];
   try { pinned = JSON.parse(lstore.get(chatPinsStorageKey()) || "[]") || []; } catch {}
   pinned = pinned.filter(id => S.channels.has(id));
@@ -1938,117 +2294,103 @@ function toggleChatPin(channelId) {
   renderChannels();
 }
 
-function renderChannels() {
-  const root = $("sbGroups");
-  if (!root) return;
-  root.innerHTML = "";
-  const tab = S.sidebarTab || "mine";
-  const q = (S.sidebarFilter || "").trim().toLowerCase();
-  const matches = (s) => !q || (s || "").toLowerCase().includes(q);
-
-  // ── Channels ─────────────────────────────────────────────
-  const channels = [];
-  for (const c of S.channels.values()) {
-    if (c.kind === "dm") continue;
-    if (!matches(c.name || c.id)) continue;
-    channels.push(c);
-  }
-  channels.sort((a, b) => {
-    const pinDiff = Number(isChatPinned(b.id)) - Number(isChatPinned(a.id));
-    if (pinDiff) return pinDiff;
-    if (a.kind === "lobby") return -1;
-    if (b.kind === "lobby") return 1;
-    return (a.name || a.id).localeCompare(b.name || b.id);
-  });
-
-  // ── DM channels (used inside Online/Offline groups for unread + history) ──
-  const dmList = [...S.channels.values()].filter((c) => c.kind === "dm");
-
-  // ── People (online + offline) ────────────────────────────
-  const me = S.me;
-  const myName = (me?.username || "").toLowerCase();
-  const byName = new Map();
-  for (const u of S.users.values()) {
-    if (!me || u.id !== me.id) byName.set((u.username || "").toLowerCase(), { user: u, online: true });
-  }
-  for (const c of dmList) {
-    if (!c.dmUsers) continue;
-    for (const n of c.dmUsers) {
-      const ln = (n || "").toLowerCase();
-      if (!ln || ln === myName || byName.has(ln)) continue;
-      byName.set(ln, {
-        user: { username: n, color: colorForName(n), avatar: n[0]?.toUpperCase() || "?", offline: true },
-        online: false,
-      });
-    }
-  }
-  const onlinePeople  = [...byName.values()].filter((x) =>  x.online && matches(x.user.username)).sort((a,b)=> a.user.username.localeCompare(b.user.username));
-  const offlinePeople = [...byName.values()].filter((x) => !x.online && matches(x.user.username)).sort((a,b)=> a.user.username.localeCompare(b.user.username));
-
-  // For DM tab we want DM channels grouped by online/offline (since they're conversations)
-  const dmGroupedOnline  = dmList.filter((c) => {
-    const p = dmPeer(c); return !!(p && !p.offline) && matches(p?.username);
-  });
-  const dmGroupedOffline = dmList.filter((c) => {
-    const p = dmPeer(c); return !(p && !p.offline) && matches(p?.username);
-  });
-  const sortDm = (a, b) => Number(isChatPinned(b.id)) - Number(isChatPinned(a.id)) || (dmPeer(a)?.username || "").localeCompare(dmPeer(b)?.username || "");
-  dmGroupedOnline.sort(sortDm); dmGroupedOffline.sort(sortDm);
-
-  // ── Render based on tab ──────────────────────────────────
-  if (tab === "online") {
-    // Just online people — quick way to start a chat.
-    const items = onlinePeople.map((x) => {
-      // If a DM already exists with this peer, render the DM row (preserves unread).
-      const existing = dmGroupedOnline.find(
-        (c) => dmPeer(c)?.username?.toLowerCase() === x.user.username.toLowerCase()
-      );
-      return existing ? _dmItem(existing) : _personItem(x.user, true);
-    });
-    root.append(_sbGroup("online", "Online", items.length, items));
-  } else if (tab === "mine") {
-    // My channels and personal (DM) chats I've actually opened.
-    root.append(_sbGroup("ch", "Channels", channels.length, channels.map(_channelItem)));
-    const personal = [...dmGroupedOnline, ...dmGroupedOffline].sort(sortDm);
-    root.append(_sbGroup("personal", "Personal", personal.length, personal.map(_dmItem)));
-  } else {
-    // All: channels + every DM + every person.
-    root.append(_sbGroup("ch", "Channels", channels.length, channels.map(_channelItem)));
-    const onlinePeopleNoDm = onlinePeople.filter((x) =>
-      !dmGroupedOnline.some((c) => dmPeer(c)?.username?.toLowerCase() === x.user.username.toLowerCase()));
-    const offlinePeopleNoDm = offlinePeople.filter((x) =>
-      !dmGroupedOffline.some((c) => dmPeer(c)?.username?.toLowerCase() === x.user.username.toLowerCase()));
-    const onlineItems  = [...dmGroupedOnline.map(_dmItem),  ...onlinePeopleNoDm.map((x) => _personItem(x.user, true))];
-    const offlineItems = [...dmGroupedOffline.map(_dmItem), ...offlinePeopleNoDm.map((x) => _personItem(x.user, false))];
-    root.append(_sbGroup("online",  "Online",  onlineItems.length,  onlineItems));
-    root.append(_sbGroup("offline", "Offline", offlineItems.length, offlineItems));
-  }
-
-  if (S.sidebarMessageResults.length && q) {
-    const results = S.sidebarMessageResults.filter(item => String(item.snippet || item.message?.text || item.message?.file?.name || "").toLowerCase().includes(q));
-    const resultItems = results.slice(0, 20).map(item => el("li", { class: "chat-item search-result-item", title: "Open matching message", onclick: () => openSidebarSearchResult(item) }, [
-      el("div", { class: "avatar", style: "background:var(--brand)" }, "#"),
-      el("div", { class: "chat-meta" }, [
-        el("div", { class: "chat-name" }, item.channelName || item.channelId || "Channel"),
-        el("div", { class: "chat-sub muted xs" }, `${item.message?.username || "Member"}: ${String(item.snippet || item.message?.text || item.message?.file?.name || "Attachment").slice(0, 90)}`),
-      ]),
-    ]));
-    root.append(_sbGroup("message-search-results", "Message matches", results.length, resultItems));
-  }
-  if (!root.children.length) {
-    root.append(el("div", { class: "chat-empty muted xs" }, "Nothing here yet."));
-  }
+function customFiltersStorageKey(){return "custom-chat-filters:"+(S.me?.id||"anonymous");}
+function getCustomFilters(){try{const value=JSON.parse(lstore.get(customFiltersStorageKey())||"[]");return Array.isArray(value)?value:[];}catch{return[];}}
+function saveCustomFilters(items){lstore.set(customFiltersStorageKey(),JSON.stringify(items));}
+let _customFilterDraft=new Set(),_customFilterKind="all";
+function renderCustomFilterTabs(){
+ const bar=$("chatlistFilters");if(!bar)return;
+ bar.querySelectorAll("[data-custom-filter]").forEach(node=>node.remove());
+ const add=$("customFilterAdd");
+ getCustomFilters().forEach(item=>{
+   const b=el("button",{type:"button",class:"sb-tab"+(S.sidebarTab==="custom:"+item.id?" active":""),"data-custom-filter":item.id,role:"tab","aria-selected":S.sidebarTab==="custom:"+item.id?"true":"false",title:item.name,onclick:()=>setSidebarTab("custom:"+item.id)},item.name);
+   bar.insertBefore(b,add);
+ });
 }
-
+function openRibbonChannel(kind){
+ const channels=[...S.channels.values()];
+ const channel=kind==="lobby"?channels.find(c=>c.kind==="lobby"||c.id===S.lobby||c.id==="pub:general"):channels.find(c=>c.id.startsWith("notes:"));
+ if(channel)switchChannel(channel.id);else toast(kind==="lobby"?"Lobby is not available yet.":"Your Notes chat is not available yet.");
+}
 function setSidebarTab(tab) {
-  if (tab === "all") tab = "mine";
   S.sidebarTab = tab;
   document.querySelectorAll(".sb-tab").forEach((b) => {
-    b.classList.toggle("active", b.dataset.tab === tab);
+    const selected = (b.dataset.tab||"") === tab || (b.dataset.customFilter && "custom:"+b.dataset.customFilter===tab);
+    b.classList.toggle("active", selected);
+    b.setAttribute("aria-selected", selected ? "true" : "false");
   });
+  document.querySelectorAll("[data-rail-tab]").forEach(b=>b.classList.toggle("active",(tab==="all"&&b.dataset.railTab==="mine")||b.dataset.railTab===tab));
   renderChannels();
 }
-
+function openCustomFilterModal(){
+ _customFilterDraft=new Set();_customFilterKind="all";
+ $("customFilterName").value="";$("customFilterSearch").value="";
+ $("customFilterTitle").textContent="Create custom filter";$("customFilterSaveBtn").textContent="Create filter";
+ document.querySelectorAll("[data-custom-kind]").forEach(b=>b.classList.toggle("active",b.dataset.customKind==="all"));
+ renderCustomFilterChoices();$("customFilterModal").classList.remove("hidden");$("customFilterName").focus();
+}
+function closeCustomFilterModal(){$("customFilterModal")?.classList.add("hidden");}
+function setCustomFilterKind(kind){_customFilterKind=kind;document.querySelectorAll("[data-custom-kind]").forEach(b=>b.classList.toggle("active",b.dataset.customKind===kind));renderCustomFilterChoices();}
+function renderCustomFilterChoices(){
+ const root=$("customFilterChoices");if(!root)return;root.innerHTML="";
+ const query=($("customFilterSearch")?.value||"").trim().toLowerCase();
+ const items=[...S.channels.values()].filter(c=>c.kind!=="lobby"&&c.id!==S.lobby&&c.id!=="pub:general"&&!c.id.startsWith("notes:")&&(c.kind!=="dm"||dmPeer(c)));
+ const filtered=items.filter(c=>(_customFilterKind==="all"||(_customFilterKind==="channels"?c.kind!=="dm":c.kind==="dm"))).filter(c=>{
+  const name=c.kind==="dm"?(dmPeer(c)?.display_name||dmPeer(c)?.username||"Private chat"):(c.name||c.id);
+  return !query||name.toLowerCase().includes(query);
+ }).sort((a,b)=>String(a.name||dmPeer(a)?.display_name||"").localeCompare(String(b.name||dmPeer(b)?.display_name||"")));
+ filtered.forEach(c=>{
+  const name=c.kind==="dm"?(dmPeer(c)?.display_name||dmPeer(c)?.username||"Private chat"):(c.name||c.id);
+  const checked=_customFilterDraft.has(c.id);
+  const row=el("label",{class:"custom-filter-choice"+(checked?" selected":"")},[
+   el("span",{class:"custom-filter-choice-icon"},c.kind==="dm"?"●":"#"),
+   el("span",{class:"custom-filter-choice-name"},name),
+   el("input",{type:"checkbox",checked:checked?"checked":null,"aria-label":"Select "+name,onchange:e=>{if(e.target.checked)_customFilterDraft.add(c.id);else _customFilterDraft.delete(c.id);renderCustomFilterChoices();}}),
+   el("span",{class:"custom-filter-check", "aria-hidden":"true"},"✓")
+  ]);root.append(row);
+ });
+ if(!filtered.length)root.append(el("div",{class:"custom-filter-empty"},query?"No conversations match your search.":"No conversations available in this category."));
+ $("customFilterSelectedCount").textContent=_customFilterDraft.size+" selected";
+}
+function saveCustomFilter(){
+ const name=($("customFilterName").value||"").trim();
+ if(!name){toast("Enter a name for this filter.");$("customFilterName").focus();return;}
+ if(!_customFilterDraft.size){toast("Select at least one conversation.");return;}
+ const items=getCustomFilters();
+ if(items.some(x=>x.name.toLowerCase()===name.toLowerCase())){toast("A custom filter with that name already exists.");return;}
+ const id="cf-"+Date.now().toString(36);
+ items.push({id,name,channelIds:[..._customFilterDraft]});saveCustomFilters(items);
+ closeCustomFilterModal();renderCustomFilterTabs();setSidebarTab("custom:"+id);toast("Custom filter created.");
+}
+function renderChannels(){
+ const root=$("sbGroups");if(!root)return;root.innerHTML="";
+ renderCustomFilterTabs();
+ const tab=S.sidebarTab||"all",q=(S.sidebarFilter||"").trim().toLowerCase(),matches=s=>!q||(s||"").toLowerCase().includes(q);
+ const pinnedIds=(()=>{try{return(JSON.parse(lstore.get(chatPinsStorageKey())||"[]")||[]).filter(id=>S.channels.has(id));}catch{return[];}})();
+ const favIds=(()=>{try{return(JSON.parse(lstore.get(favouriteChatsStorageKey())||"[]")||[]).filter(id=>S.channels.has(id));}catch{return[];}})();
+ const all=[...S.channels.values()].filter(c=>c.kind!=="dm"||dmPeer(c));
+ const general=all.find(c=>c.kind==="lobby"||c.id===S.lobby||c.id==="pub:general");
+ const notes=all.find(c=>c.id.startsWith("notes:"));
+ const channels=all.filter(c=>c.kind!=="dm"&&c!==general&&c!==notes&&matches(c.name||c.id));
+ const personal=all.filter(c=>c.kind==="dm"&&matches(dmPeer(c)?.display_name||dmPeer(c)?.username||""));
+ let list=[];
+ if(tab==="channels")list=channels;
+ else if(tab==="personal")list=personal;
+ else if(tab==="favourites")list=all.filter(c=>favIds.includes(c.id)&&matches(c.kind==="dm"?(dmPeer(c)?.display_name||dmPeer(c)?.username):(c.name||c.id)));
+ else if(tab==="online")list=personal.filter(c=>{const p=dmPeer(c);return !!p&&!p.offline;});
+ else if(tab.startsWith("custom:")){const custom=getCustomFilters().find(x=>x.id===tab.slice(7));list=custom?all.filter(c=>custom.channelIds.includes(c.id)&&matches(c.kind==="dm"?(dmPeer(c)?.display_name||dmPeer(c)?.username):(c.name||c.id))):[];}
+ else list=[...channels,...personal];
+ const recent=c=>Math.max(0,...(S.msgs.get(c.id)||[]).filter(m=>m&&!m.deleted).map(m=>Number(m.ts||0)));
+ list.sort((a,b)=>Number(pinnedIds.includes(b.id))-Number(pinnedIds.includes(a.id))||recent(b)-recent(a));
+ const rows=list.filter(c=>c!==general&&c!==notes).map(c=>c.kind==="dm"?_dmItem(c):_channelItem(c));
+ if(rows.length){const ul=el("ul",{class:"chat-list chat-list-flat"});rows.forEach(row=>ul.append(row));root.append(ul);}
+ if(S.sidebarMessageResults.length&&q){
+   const results=S.sidebarMessageResults.filter(x=>String(x.snippet||x.message?.text||x.message?.file?.name||"").toLowerCase().includes(q));
+   const resultRows=results.slice(0,20).map(x=>el("li",{class:"chat-item search-result-item",title:"Open matching message",onclick:()=>openSidebarSearchResult(x)},[el("div",{class:"avatar",style:"background:var(--brand)"},"#"),el("div",{class:"chat-meta"},[el("div",{class:"chat-name"},x.channelName||x.channelId||"Channel"),el("div",{class:"chat-sub muted xs"},(x.message?.username||"Member")+": "+String(x.snippet||x.message?.text||x.message?.file?.name||"Attachment").slice(0,90))])]));
+   if(resultRows.length)root.append(_sbGroup("message-search-results","Message matches",results.length,resultRows));
+ }
+ if(!root.querySelector(".chat-item"))root.append(el("div",{class:"chat-empty muted xs",role:"status"},q?"No chats or messages match your search. Try another name or keyword.":tab==="favourites"?"No favourites yet. Use a conversation menu to add favourites.":tab.startsWith("custom:")?"No selected conversations are available in this filter.":"No conversations to show yet. Start a new chat or channel."));
+}
 function handleSidebarSearchKeydown(event) {
   if (event.key !== "Enter") return;
   event.preventDefault();
@@ -2287,7 +2629,7 @@ async function renderMessage(m, { follow, peer, ch }) {
           type: authorIsMe ? undefined : "button",
           class: "author" + (authorIsMe ? "" : " author-link"),
           style: `color:${m.color || "var(--brand)"}`,
-          title: authorIsMe ? m.username : `Message ${m.username}`,
+          title: authorIsMe ? "Your message" : "Open direct chat",
           onclick: authorIsMe ? undefined : (ev) => {
             ev.stopPropagation();
             openDmWithUserId(m.userId, m.username);
@@ -2801,8 +3143,10 @@ function updateHeader() {
     if (callBtn) callBtn.classList.toggle("hidden", !p);
     if (videoCallBtn) videoCallBtn.classList.toggle("hidden", !p);
   } else {
-    title.textContent = "#" + (ch.name || ch.id);
-    sub.textContent = ch.kind === "lobby" ? "lobby \u00b7 everyone" : (ch.isPrivate ? "private channel" : "channel");
+    const isNotes = ch.id.startsWith("notes:");
+    const isLobby = ch.kind === "lobby" || ch.id === S.lobby || ch.id === "pub:general";
+    title.textContent = isNotes ? (S.me?.display_name || S.me?.username || "My") + " (Me)" : (isLobby ? "Lobby" : "#" + (ch.name || ch.id));
+    sub.textContent = isNotes ? "Personal notes · only you" : (ch.kind === "lobby" ? "lobby · everyone" : (ch.isPrivate ? "private channel" : "channel"));
     badge.classList.add("hidden");
     composer.placeholder = "Type a message";
     if (avSlot) {
@@ -2837,8 +3181,14 @@ function isAtBottom(box) {
 }
 
 // ── Channel switching ────────────────────────────────────────────────
+const _previewOnlyHistory = new Set();
+
 function switchChannel(id) {
   S.active = id;
+  const activeChannel=S.channels.get(id);
+  const isLobby=!!activeChannel&&(activeChannel.kind==="lobby"||activeChannel.id===S.lobby||activeChannel.id==="pub:general");
+  const isNotes=!!activeChannel&&activeChannel.id.startsWith("notes:");
+  document.querySelectorAll("[data-rail-channel]").forEach(b=>b.classList.toggle("active",(b.dataset.railChannel==="lobby"&&isLobby)||(b.dataset.railChannel==="notes"&&isNotes)));
   updateMentionBadge();
   S.unread.set(id, 0);
   S.unreadIndicators.delete(id);
@@ -2851,7 +3201,7 @@ function switchChannel(id) {
   renderStream();
   scheduleReadReceipt();
   $("msgInput").focus();
-  if (window.matchMedia("(max-width: 780px)").matches) $("sidebar").classList.remove("open");
+  if (window.matchMedia("(max-width: 780px)").matches) closeSidebar({ restoreFocus: false });
 }
 
 function dmPeer(ch) {
@@ -3251,49 +3601,60 @@ function closeMentionPicker() {
 function getMentionToken() {
   const caret = msgInput.selectionStart ?? msgInput.value.length;
   const before = msgInput.value.slice(0, caret);
-  const match = before.match(/(^|\s)@([A-Za-z0-9._-]*)$/);
+  // Allow spaces while searching so a multi-word display name can be selected.
+  const match = before.match(/(^|\s)@([^\n@]*)$/);
   if (!match) return null;
   return { start: caret - match[2].length - 1, end: caret, query: match[2] };
 }
 function updateMentionPicker() {
   const token = getMentionToken();
   if (!token) { closeMentionPicker(); return; }
-  const query = token.query.toLowerCase();
+  const query = token.query.trimStart().toLowerCase();
   const activeChannel = S.channels.get(S.active);
   const allCandidate = activeChannel?.kind === "group" && "all".startsWith(query)
-    ? [{ id: "__all__", username: "all", color: "var(--brand)", avatar: "@", online: true, isAll: true }]
+    ? [{ id: "__all__", username: "all", display_name: "all", color: "var(--brand)", avatar: "@", online: true, isAll: true }]
     : [];
   const candidates = [...allCandidate, ...[...S.users.values()]
+    .map((u) => {
+      const cached = S.userProfiles.get(u.id) ||
+        [...S.userProfiles.values()].find((p) => (p.username || "").toLowerCase() === (u.username || "").toLowerCase());
+      return cached ? {
+        ...u,
+        display_name: u.display_name || cached.display_name,
+        designation: u.designation || cached.designation,
+      } : u;
+    })
     .filter((u) => u.username && u.username.toLowerCase() !== (S.me?.username || "").toLowerCase())
-    .filter((u) => u.username.toLowerCase().startsWith(query))
-    .sort((a, b) => a.username.localeCompare(b.username))]
+    .filter((u) => u.username.toLowerCase().startsWith(query) || String(u.display_name || "").toLowerCase().startsWith(query))
+    .sort((a, b) => String(a.display_name || a.username).localeCompare(String(b.display_name || b.username)))]
     .slice(0, 8);
   if (!candidates.length) { closeMentionPicker(); return; }
   mentionToken = token;
   mentionCandidates = candidates;
   mentionActiveIndex = Math.min(mentionActiveIndex, candidates.length - 1);
   mentionPicker.replaceChildren(...candidates.map((u, i) => {
+    const displayName = String(u.display_name || u.username);
     const item = el("button", {
       type: "button",
       class: "mention-option" + (i === mentionActiveIndex ? " active" : ""),
       role: "option",
       "aria-selected": i === mentionActiveIndex ? "true" : "false",
-      onmousedown: (ev) => { ev.preventDefault(); insertMention(u.username); },
+      onmousedown: (ev) => { ev.preventDefault(); insertMention(u.isAll ? u.username : displayName); },
     }, [
-      (() => { const node = el("span", { class: "mention-option-avatar", style: `background:${u.color || colorForName(u.username)}` }); renderAvatarContent(node, u.avatar, u.username?.[0] || "?"); return node; })(),
-      el("span", { class: "mention-option-name" }, "@" + u.username),
-      el("span", { class: "mention-option-status" }, u.isAll ? "everyone in group" : (u.online ? "online" : "")),
+      (() => { const node = el("span", { class: "mention-option-avatar", style: `background:${u.color || colorForName(u.username)}` }); renderAvatarContent(node, u.avatar, displayName?.[0] || "?"); return node; })(),
+      el("span", { class: "mention-option-name" }, "@" + displayName),
+      el("span", { class: "mention-option-status" }, u.isAll ? "everyone in group" : ("@" + u.username + (u.online ? " · online" : ""))),
     ]);
     return item;
   }));
   mentionPicker.classList.remove("hidden");
 }
-function insertMention(username) {
+function insertMention(name) {
   if (!mentionToken) return;
   const { start, end } = mentionToken;
   const before = msgInput.value.slice(0, start);
   const after = msgInput.value.slice(end);
-  const inserted = "@" + username + " ";
+  const inserted = "@" + name + " ";
   msgInput.value = before + inserted + after;
   const caret = before.length + inserted.length;
   msgInput.focus();
@@ -3382,8 +3743,17 @@ function openCreateChannel() {
   $("createModal").classList.remove("hidden");
   $("newChName").focus();
 }
-function closeModal(id) { $(id).classList.add("hidden"); }
+function closeModal(id) {
+  if (id === "profileCompletionModal" && _requiredProfileFlags &&
+      Object.values(_requiredProfileFlags).some(Boolean)) return;
+  $(id).classList.add("hidden");
+}
 function openModal(id) { const m = $(id); if (m) m.classList.remove("hidden"); }
+
+$("profileCompletionModal")?.addEventListener("click", (event) => {
+  if (event.target === $("profileCompletionModal") && _requiredProfileFlags &&
+      Object.values(_requiredProfileFlags).some(Boolean)) event.stopPropagation();
+});
 
 // ── Sidebar "+" menu (new channel / new DM) ─────────────────────────
 function toggleNewMenu(ev) {
@@ -3489,6 +3859,12 @@ function createChannel(e) {
   closeModal("createModal");
   $("newChName").value = ""; $("newChPrivate").checked = false;
 }
+
+function openNewChatMenu() {
+  const modal = $("newChatChoiceModal");
+  if (modal) modal.classList.remove("hidden");
+}
+Object.assign(window, { openNewChatMenu });
 
 function openDmPicker() {
   const list = $("dmPickList"); list.innerHTML = "";
@@ -3602,19 +3978,45 @@ function sendInvites() {
 
 Object.assign(window, { openInviteModal, renderInviteList, sendInvites });
 
-function toggleSidebar() { $("sidebar").classList.toggle("open"); }
-// Auto-close mobile sidebar on outside tap / Escape.
-document.addEventListener("click", (e) => {
+let _sidebarOpener = null;
+function _isMobileSidebar() { return window.matchMedia("(max-width: 780px)").matches; }
+function openSidebar() {
+  const sb = $("sidebar"), backdrop = $("sidebarBackdrop");
+  if (!sb || !_isMobileSidebar()) return;
+  _sidebarOpener = document.activeElement;
+  sb.classList.add("open"); backdrop?.classList.add("open");
+  sb.setAttribute("aria-hidden", "false");
+  document.body.classList.add("sidebar-open");
+  $("sidebarCloseBtn")?.focus({ preventScroll: true });
+}
+function closeSidebar({ restoreFocus = true } = {}) {
+  const sb = $("sidebar"), backdrop = $("sidebarBackdrop");
+  if (!sb) return;
+  sb.classList.remove("open"); backdrop?.classList.remove("open");
+  sb.setAttribute("aria-hidden", _isMobileSidebar() ? "true" : "false");
+  document.body.classList.remove("sidebar-open");
+  if (restoreFocus && _sidebarOpener?.isConnected) _sidebarOpener.focus({ preventScroll: true });
+  _sidebarOpener = null;
+}
+function toggleSidebar() {
   const sb = $("sidebar");
-  if (!sb || !sb.classList.contains("open")) return;
-  if (!window.matchMedia("(max-width: 780px)").matches) return;
-  if (e.target.closest("#sidebar")) return;
-  if (e.target.closest('[onclick*="toggleSidebar"]')) return;
-  sb.classList.remove("open");
-});
+  if (!sb) return;
+  if (sb.classList.contains("open")) closeSidebar();
+  else openSidebar();
+}
+$("sidebarBackdrop")?.addEventListener("click", () => closeSidebar());
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") $("sidebar")?.classList.remove("open");
+  const sb = $("sidebar");
+  if (!sb?.classList.contains("open") || !_isMobileSidebar()) return;
+  if (e.key === "Escape") { e.preventDefault(); closeSidebar(); return; }
+  if (e.key !== "Tab") return;
+  const focusable = [...sb.querySelectorAll('button:not([disabled]):not([hidden]),a[href]:not([hidden]),input:not([disabled]):not([hidden]),[tabindex]:not([tabindex="-1"]):not([hidden])')].filter(node => node.getClientRects().length);
+  if (!focusable.length) { e.preventDefault(); $("sidebarCloseBtn")?.focus(); return; }
+  const first = focusable[0], last = focusable[focusable.length - 1];
+  if (e.shiftKey && (document.activeElement === first || !sb.contains(document.activeElement))) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && (document.activeElement === last || !sb.contains(document.activeElement))) { e.preventDefault(); first.focus(); }
 });
+window.addEventListener("resize", () => { if (!_isMobileSidebar()) closeSidebar({ restoreFocus: false }); });
 updateBrowserNotificationButton();
 // Re-confirm read state when the tab becomes visible again.
 document.addEventListener("visibilitychange", () => {
@@ -3622,10 +4024,27 @@ document.addEventListener("visibilitychange", () => {
 });
 window.addEventListener("focus", scheduleReadReceipt);
 
-const PROFILE_AVATAR_PRESETS = ["😀","😎","😊","🐱","🐼","🦊","🐸","🐙","🦄","🐧","🐨","🐯","🦋","🌟","🌈","🚀"];
+const PROFILE_AVATAR_PRESETS = ["😀","😎","🥰","🤩","😇","🤗","🥳","🫶","🐱","🐼","🦊","🐸","🐙","🦄","🐧","🐨","🐯","🦋","🌟","🌈","🚀","🍀","🌻","⚡"];
+function toggleProfileAvatarPicker(){
+ const picker=$("profileAvatarPicker");if(!picker)return;
+ picker.hidden=!picker.hidden;
+ if(!picker.hidden)picker.scrollIntoView({block:"nearest",behavior:"smooth"});
+}
+document.addEventListener("pointerdown",ev=>{
+ const picker=$("profileAvatarPicker"), trigger=$("profilePhotoEditBtn");
+ if(!picker||picker.hidden)return;
+ if(!picker.contains(ev.target)&&!trigger?.contains(ev.target))picker.hidden=true;
+});
+function sizeProfileDisplayName(){
+ const input=$("profileUsername");if(!input)return;
+ const value=input.value||S.me?.display_name||"";
+ input.style.width=Math.max(4,Math.min(48,value.length*0.58+1))+"ch";
+}
+$("profileUsername")?.addEventListener("input",sizeProfileDisplayName);
+Object.assign(window,{toggleProfileAvatarPicker});
 function renderProfileAvatarSettings() {
   const preview = $("profileAvatarPreview");
-  if (preview) { preview.style.background = S.me?.color || "var(--brand)"; renderAvatarContent(preview, S.me?.avatar, S.me?.username?.[0] || "?"); }
+  if (preview) { preview.style.background = /\p{Extended_Pictographic}/u.test(S.me?.avatar || "") ? "transparent" : (S.me?.color || "var(--brand)"); renderAvatarContent(preview, S.me?.avatar, S.me?.username?.[0] || "?"); }
   document.querySelectorAll(".profile-avatar-preset").forEach(button => {
     const active = button.dataset.avatar === S.me?.avatar;
     button.classList.toggle("active", active); button.setAttribute("aria-pressed", active ? "true" : "false");
@@ -3635,6 +4054,7 @@ function setProfileAvatarPreset(avatar) {
   if (!PROFILE_AVATAR_PRESETS.includes(avatar)) return;
   if (!S.ws || S.ws.readyState !== WebSocket.OPEN) { toast("Not connected. Please try again."); return; }
   sendOp({ op: "avatar_set", avatar });
+  $("profileAvatarPicker").hidden = true;
   const status = $("profileAvatarStatus"); if (status) { status.textContent = "Updating avatar…"; status.classList.remove("err","ok"); }
 }
 async function uploadProfileAvatar(file) {
@@ -3658,17 +4078,19 @@ async function uploadProfileAvatar(file) {
   try {
     const response=await fetch("/api/upload",{method:"POST",body:form}), result=await response.json().catch(()=>({}));
     if(!response.ok) throw new Error(result.error||result.message||"Upload failed.");
-    if(status){status.textContent="Profile picture uploaded.";status.classList.remove("err");status.classList.add("ok");}
+    if(status){status.textContent="Profile picture uploaded.";status.classList.remove("err");status.classList.add("ok");}$("profileAvatarPicker").hidden=true;
   } catch(error) { if(status){status.textContent="Could not upload picture: "+(error.message||"upload failed");status.classList.remove("ok");status.classList.add("err");} }
 }
 $("profileAvatarUploadBtn")?.addEventListener("click",()=> $("profileAvatarFileInput")?.click());
 $("profileAvatarFileInput")?.addEventListener("change",async()=>{const file=$("profileAvatarFileInput").files?.[0];$("profileAvatarFileInput").value="";if(file)await uploadProfileAvatar(file);});
+
 Object.assign(window,{setProfileAvatarPreset});
 
 function openSettingsPanel() {
   if (!S.me) return;
-  $("profileUsername").value = S.me.username || "";
+  $("profileUsername").value = S.me.display_name || S.me.username || ""; sizeProfileDisplayName();
   $("profileDesignation").value = S.me.designation || "CSA";
+  $("profileUsernameHandle").textContent = S.me.username ? "@" + S.me.username.replace(/^@/, "") : "";
   renderProfileAvatarSettings();
   setProfileFieldEditing("username", false);
   setProfileFieldEditing("designation", false);
@@ -3679,7 +4101,7 @@ function openSettingsPanel() {
   $("settingsPanel").setAttribute("aria-hidden", "false");
   document.body.classList.add("settings-open");
   document.addEventListener("keydown", _settingsEscape);
-  setTimeout(() => $("profileUsername")?.focus(), 40);
+  sizeProfileDisplayName();
 }
 function closeSettingsPanel() {
   $("settingsBackdrop")?.classList.add("hidden");
@@ -3699,17 +4121,17 @@ function setProfileFieldEditing(field, editing) {
   if (editing) input.focus();
 }
 function cancelProfileFieldEdit(field) {
-  $("profileUsername").value = S.me?.username || "";
+  $("profileUsername").value = S.me?.display_name || S.me?.username || "";
   $("profileDesignation").value = S.me?.designation || "CSA";
   setProfileFieldEditing(field, false);
   const status = $("profileSettingsStatus"); if (status) { status.textContent = ""; status.classList.remove("err", "ok"); }
 }
 function submitProfileField(field) {
-  const username = ($("profileUsername")?.value || "").trim();
+  const displayName = ($("profileUsername")?.value || "").trim();
   const designation = $("profileDesignation")?.value || "";
   const status = $("profileSettingsStatus"); status.classList.remove("err", "ok");
-  if (field === "username" && !/^[A-Za-z0-9][A-Za-z0-9_.-]{2,23}$/.test(username)) {
-    status.textContent = "Use 3–24 characters: letters, digits, underscore, hyphen, or dot; start with a letter or digit.";
+  if (field === "username" && (!displayName || displayName.length > 48 || /[\u0000-\u001f\u007f]/.test(displayName))) {
+    status.textContent = "Display name must be 1–48 characters and cannot contain control characters.";
     status.classList.add("err"); $("profileUsername")?.focus(); return;
   }
   if (field === "designation" && !["AM","TL","STL","QDE","LRD","EE","CSA"].includes(designation)) {
@@ -3719,8 +4141,8 @@ function submitProfileField(field) {
   const save = $(field === "username" ? "saveUsernameBtn" : "saveDesignationBtn");
   if (save) { save.disabled = true; save.textContent = "Saving…"; }
   status.textContent = "Saving changes…";
-  sendOp(field === "username" ? { op: "profile_update", username } : { op: "profile_update", designation });
-  setTimeout(() => { if (save?.isConnected) { save.disabled = false; save.textContent = field === "username" ? "Save username" : "Save designation"; } }, 3000);
+  sendOp(field === "username" ? { op: "profile_update", displayName } : { op: "profile_update", designation });
+  setTimeout(() => { if (save?.isConnected) { save.disabled = false; save.textContent = field === "username" ? "Save display name" : "Save designation"; } }, 3000);
 }
 function signOut() {
   lstore.remove("username");
@@ -3732,6 +4154,85 @@ function signOut() {
   S.ws = null;
   location.reload();
 }
+
+let _requiredProfileFlags = null;
+const _recoveryQuestionLabels = [
+  "What was the name of your first school?",
+  "What was the name of the first street you lived on?",
+  "What nickname did you have as a child?",
+  "What was the name of your first teacher?",
+  "What was the name of your first pet?",
+  "What was the first concert or live music event you attended?",
+  "What was your first job or workplace?",
+  "What was the model of your first car or motorcycle?",
+  "What was the name of a childhood friend?",
+  "What was the first city you lived in?"
+];
+
+function openRequiredProfileModal() {
+  if (!_requiredProfileFlags || !Object.values(_requiredProfileFlags).some(Boolean)) return;
+  const flags = _requiredProfileFlags;
+  $("requiredUsernameField").classList.toggle("hidden", !flags.username);
+  $("requiredEmailField").classList.toggle("hidden", !flags.officeEmail);
+  $("requiredDesignationField").classList.toggle("hidden", !flags.designation);
+  $("requiredRecoveryFields").classList.toggle("hidden", !flags.recoveryQuestions);
+  $("requiredUsername").value = S.me?.display_name || S.me?.username || "";
+  $("requiredOfficeEmail").value = "";
+  $("requiredDesignation").value = S.me?.designation || "";
+  for (let n = 1; n <= 3; n++) {
+    const select = $("requiredQuestion" + n);
+    if (select && !select.options.length) {
+      select.add(new Option("Choose a question", ""));
+      _recoveryQuestionLabels.forEach((label, index) => select.add(new Option(label, String(index + 1))));
+    }
+    if ($("requiredAnswer" + n)) $("requiredAnswer" + n).value = "";
+  }
+  openModal("profileCompletionModal");
+  if (flags.username) $("requiredUsername").focus();
+}
+
+async function submitRequiredProfile(event) {
+  event.preventDefault();
+  const flags = _requiredProfileFlags || {};
+  const username = $("requiredUsername").value.trim();
+  const designation = $("requiredDesignation").value;
+  const officeEmail = $("requiredOfficeEmail").value.trim();
+  const status = $("requiredProfileStatus");
+  status.textContent = "";
+  status.classList.remove("err", "ok");
+  if (flags.username && (!username || username.length > 48 || /[\u0000-\u001f\u007f]/.test(username))) {
+    status.textContent = "Display name must be 1–48 characters and cannot contain control characters.";
+    status.classList.add("err"); return;
+  }
+  if (flags.officeEmail && !officeEmail) {
+    status.textContent = "Enter your office email."; status.classList.add("err"); return;
+  }
+  if (flags.designation && !designation) {
+    status.textContent = "Choose your designation."; status.classList.add("err"); return;
+  }
+  const payload = { op: "profile_update" };
+  if (flags.username) payload.displayName = username;
+  if (flags.designation) payload.designation = designation;
+  else payload.designation = S.me.designation || "CSA";
+  if (flags.officeEmail) payload.officeEmail = officeEmail;
+  if (flags.recoveryQuestions) {
+    payload.recoveryQuestions = [1, 2, 3].map(n => Number($("requiredQuestion" + n).value));
+    payload.recoveryAnswers = [1, 2, 3].map(n => $("requiredAnswer" + n).value.trim());
+    if (payload.recoveryQuestions.some(q => !q) || new Set(payload.recoveryQuestions).size !== 3 ||
+        payload.recoveryAnswers.some(a => !a)) {
+      status.textContent = "Choose three different questions and enter all answers."; status.classList.add("err"); return;
+    }
+  }
+  if (!S.ws || S.ws.readyState !== WebSocket.OPEN) {
+    status.textContent = "Connection lost. Please reconnect and try again."; status.classList.add("err"); return;
+  }
+  $("requiredProfileSubmit").disabled = true;
+  status.textContent = "Saving account setup…";
+  S.ws.send(JSON.stringify(payload));
+  // The server sends profile_updated only after the DB writes succeed.
+  _requiredProfilePending = true;
+}
+let _requiredProfilePending = false;
 
 // ── Change password ─────────────────────────────────────────────────
 let _cpwForced = false;
@@ -3899,14 +4400,14 @@ function closeLightbox() {
 
 // ── Emoji picker ─────────────────────────────────────────────────────
 const EMOJI = {
-  "Smileys": "😀 😃 😄 😁 😆 😅 🤣 😂 🙂 🙃 😉 😊 😇 🥰 😍 🤩 😘 😗 😚 😙 😋 😛 😜 🤪 😝 🤑 🤗 🤭 🤫 🤔 🤐 🤨 😐 😑 😶 😏 😒 🙄 😬 🤥 😌 😔 😪 🤤 😴 😷 🤒 🤕 🤢 🤮 🤧 🥵 🥶 🥴 😵 🤯 🤠 🥳 😎 🤓 🧐 😕 😟 🙁 ☹️ 😮 😯 😲 😳 🥺 😦 😧 😨 😰 😥 😢 😭 😱 😖 😣 😞 😓 😩 😫 🥱 😤 😡 😠 🤬 😈 👿 💀 ☠️ 💩 🤡 👹 👺 👻 👽 👾 🤖".split(" "),
+  "Smileys": "🫩 🫨 😀 😃 😄 😁 😆 😅 🤣 😂 🙂 🙃 😉 😊 😇 🥰 😍 🤩 😘 😗 😚 😙 😋 😛 😜 🤪 😝 🤑 🤗 🤭 🤫 🤔 🤐 🤨 😐 😑 😶 😏 😒 🙄 😬 🤥 😌 😔 😪 🤤 😴 😷 🤒 🤕 🤢 🤮 🤧 🥵 🥶 🥴 😵 🤯 🤠 🥳 😎 🤓 🧐 😕 😟 🙁 ☹️ 😮 😯 😲 😳 🥺 😦 😧 😨 😰 😥 😢 😭 😱 😖 😣 😞 😓 😩 😫 🥱 😤 😡 😠 🤬 😈 👿 💀 ☠️ 💩 🤡 👹 👺 👻 👽 👾 🤖".split(" "),
   "Gestures": "👍 👎 👌 🤌 🤏 ✌️ 🤞 🤟 🤘 🤙 👈 👉 👆 🖕 👇 ☝️ 👋 🤚 🖐️ ✋ 🖖 👏 🙌 👐 🤲 🤝 🙏 ✍️ 💅 🤳 💪 🦾 🦵 🦶 👂 🦻 👃 🧠 🦷 🦴 👀 👁️ 👅 👄 💋 🩸".split(" "),
   "Hearts": "❤️ 🧡 💛 💚 💙 💜 🖤 🤍 🤎 💔 ❣️ 💕 💞 💓 💗 💖 💘 💝 💟 💌 💯 💢 💥 💫 💦 💨 🕳️ 💣 💬 👁️‍🗨️ 🗨️ 🗯️ 💭 💤".split(" "),
-  "Animals": "🐶 🐱 🐭 🐹 🐰 🦊 🐻 🐼 🐨 🐯 🦁 🐮 🐷 🐽 🐸 🐵 🙈 🙉 🙊 🐒 🐔 🐧 🐦 🐤 🦆 🦅 🦉 🦇 🐺 🐗 🐴 🦄 🐝 🐛 🦋 🐌 🐞 🐢 🐍 🦖 🐙 🦑 🦐 🦀 🐠 🐟 🐬 🐳 🐋 🦈".split(" "),
-  "Food": "🍏 🍎 🍐 🍊 🍋 🍌 🍉 🍇 🍓 🫐 🍈 🍒 🍑 🥭 🍍 🥥 🥝 🍅 🍆 🥑 🥦 🥬 🥒 🌶️ 🌽 🥕 🧄 🧅 🥔 🍠 🥐 🍞 🥖 🥨 🧀 🥚 🍳 🥞 🧇 🥓 🥩 🍗 🍖 🌭 🍔 🍟 🍕 🥪 🥙 🧆 🌮 🌯 🥗 🥘 🍝 🍜 🍲 🍛 🍣 🍱 🍤 🍙 🍚 🍘 🥠 🥮 🍢 🍡 🍧 🍨 🍦 🥧 🧁 🍰 🎂 🍮 🍭 🍬 🍫 🍿 🧂 🍩 🍪 ☕ 🫖 🍵 🥤 🧋 🍶 🍺 🍻 🥂 🍷 🥃 🍸 🍹 🧉 🍾".split(" "),
-  "Activity": "⚽ 🏀 🏈 ⚾ 🥎 🎾 🏐 🏉 🥏 🎱 🪀 🏓 🏸 🏒 🏑 🥍 🏏 🪃 🥅 ⛳ 🪁 🏹 🎣 🤿 🥊 🥋 🎽 🛹 🛼 🛷 ⛸️ 🥌 🎿 ⛷️ 🏂 🪂 🏋️ 🤼 🤸 ⛹️ 🤺 🤾 🏌️ 🏇 🧘 🏄 🏊 🤽 🚣 🧗 🚵 🚴 🏆 🥇 🥈 🥉 🏅 🎖️ 🏵️ 🎗️ 🎫 🎟️ 🎪 🤹 🎭 🩰 🎨 🎬 🎤 🎧 🎼 🎹 🥁 🎷 🎺 🎸 🪕 🎻 🎲 ♟️ 🎯 🎳 🎮 🎰 🧩".split(" "),
+  "Animals": "🫍 🫎 🪿 🐶 🐱 🐭 🐹 🐰 🦊 🐻 🐼 🐨 🐯 🦁 🐮 🐷 🐽 🐸 🐵 🙈 🙉 🙊 🐒 🐔 🐧 🐦 🐤 🦆 🦅 🦉 🦇 🐺 🐗 🐴 🦄 🐝 🐛 🦋 🐌 🐞 🐢 🐍 🦖 🐙 🦑 🦐 🦀 🐠 🐟 🐬 🐳 🐋 🦈".split(" "),
+  "Food": "🫚 🫛 🍏 🍎 🍐 🍊 🍋 🍌 🍉 🍇 🍓 🫐 🍈 🍒 🍑 🥭 🍍 🥥 🥝 🍅 🍆 🥑 🥦 🥬 🥒 🌶️ 🌽 🥕 🧄 🧅 🥔 🍠 🥐 🍞 🥖 🥨 🧀 🥚 🍳 🥞 🧇 🥓 🥩 🍗 🍖 🌭 🍔 🍟 🍕 🥪 🥙 🧆 🌮 🌯 🥗 🥘 🍝 🍜 🍲 🍛 🍣 🍱 🍤 🍙 🍚 🍘 🥠 🥮 🍢 🍡 🍧 🍨 🍦 🥧 🧁 🍰 🎂 🍮 🍭 🍬 🍫 🍿 🧂 🍩 🍪 ☕ 🫖 🍵 🥤 🧋 🍶 🍺 🍻 🥂 🍷 🥃 🍸 🍹 🧉 🍾".split(" "),
+  "Activity": "🪇 🪈 ⚽ 🏀 🏈 ⚾ 🥎 🎾 🏐 🏉 🥏 🎱 🪀 🏓 🏸 🏒 🏑 🥍 🏏 🪃 🥅 ⛳ 🪁 🏹 🎣 🤿 🥊 🥋 🎽 🛹 🛼 🛷 ⛸️ 🥌 🎿 ⛷️ 🏂 🪂 🏋️ 🤼 🤸 ⛹️ 🤺 🤾 🏌️ 🏇 🧘 🏄 🏊 🤽 🚣 🧗 🚵 🚴 🏆 🥇 🥈 🥉 🏅 🎖️ 🏵️ 🎗️ 🎫 🎟️ 🎪 🤹 🎭 🩰 🎨 🎬 🎤 🎧 🎼 🎹 🥁 🎷 🎺 🎸 🪕 🎻 🎲 ♟️ 🎯 🎳 🎮 🎰 🧩".split(" "),
   "Travel": "🚗 🚕 🚙 🚌 🚎 🏎️ 🚓 🚑 🚒 🚐 🛻 🚚 🚛 🚜 🦯 🦽 🦼 🛴 🚲 🛵 🏍️ 🛺 🚨 🚔 🚍 🚘 🚖 🚡 🚠 🚟 🚃 🚋 🚞 🚝 🚄 🚅 🚈 🚂 🚆 🚇 🚊 🚉 ✈️ 🛫 🛬 🛩️ 💺 🛰️ 🚀 🛸 🚁 🛶 ⛵ 🚤 🛥️ 🛳️ ⛴️ 🚢 ⚓ ⛽ 🚧 🚦 🚥 🗺️ 🗿 🗽 🗼 🏰 🏯 🏟️ 🎡 🎢 🎠 ⛲ ⛱️ 🏖️ 🏝️ 🏜️ 🌋 ⛰️ 🏔️ 🗻 🏕️ ⛺ 🏠 🏡 🏘️ 🏚️ 🏗️ 🏭 🏢 🏬 🏣 🏤 🏥 🏦 🏨 🏪 🏫 🏩 💒 🏛️ ⛪ 🕌 🛕 🕍 ⛩️".split(" "),
-  "Objects": "⌚ 📱 📲 💻 ⌨️ 🖥️ 🖨️ 🖱️ 🖲️ 🕹️ 🗜️ 💽 💾 💿 📀 📼 📷 📸 📹 🎥 📽️ 🎞️ 📞 ☎️ 📟 📠 📺 📻 🎙️ 🎚️ 🎛️ ⏱️ ⏲️ ⏰ 🕰️ ⌛ ⏳ 📡 🔋 🔌 💡 🔦 🕯️ 🪔 🧯 🛢️ 💸 💵 💴 💶 💷 💰 💳 💎 ⚖️ 🧰 🔧 🔨 ⚒️ 🛠️ ⛏️ 🔩 ⚙️ 🧱 ⛓️ 🧲 🔫 💣 🧨 🪓 🔪 🗡️ ⚔️ 🛡️ 🚬 ⚰️ ⚱️ 🏺 🔮 📿 🧿 💈 ⚗️ 🔭 🔬 🕳️ 🩹 🩺 💊 💉 🩸 🧬 🦠 🧫 🧪 🌡️ 🧹 🧺 🧻 🚽 🚰 🚿 🛁 🛀 🧼 🪒 🧽 🧴 🛎️ 🔑 🗝️ 🚪 🪑 🛋️ 🛏️ 🛌 🧸 🖼️ 🛍️ 🛒 🎁 🎈 🎏 🎀 🎊 🎉 🎎 🏮 🎐 🧧 ✉️ 📩 📨 📧 💌 📥 📤 📦 🏷️ 📪 📫 📬 📭 📮 📯 📜 📃 📄 📑 🧾 📊 📈 📉 🗒️ 🗓️ 📆 📅 🗑️ 📇 🗃️ 🗳️ 🗄️ 📋 📁 📂 🗂️ 🗞️ 📰 📓 📔 📒 📕 📗 📘 📙 📚 📖 🔖 🧷 🔗 📎 🖇️ 📐 📏 🧮 📌 📍 ✂️ 🖊️ 🖋️ ✒️ 🖌️ 🖍️ 📝 ✏️ 🔍 🔎 🔏 🔐 🔒 🔓".split(" "),
+  "Objects": "🪉 🪏 🫟 ⌚ 📱 📲 💻 ⌨️ 🖥️ 🖨️ 🖱️ 🖲️ 🕹️ 🗜️ 💽 💾 💿 📀 📼 📷 📸 📹 🎥 📽️ 🎞️ 📞 ☎️ 📟 📠 📺 📻 🎙️ 🎚️ 🎛️ ⏱️ ⏲️ ⏰ 🕰️ ⌛ ⏳ 📡 🔋 🔌 💡 🔦 🕯️ 🪔 🧯 🛢️ 💸 💵 💴 💶 💷 💰 💳 💎 ⚖️ 🧰 🔧 🔨 ⚒️ 🛠️ ⛏️ 🔩 ⚙️ 🧱 ⛓️ 🧲 🔫 💣 🧨 🪓 🔪 🗡️ ⚔️ 🛡️ 🚬 ⚰️ ⚱️ 🏺 🔮 📿 🧿 💈 ⚗️ 🔭 🔬 🕳️ 🩹 🩺 💊 💉 🩸 🧬 🦠 🧫 🧪 🌡️ 🧹 🧺 🧻 🚽 🚰 🚿 🛁 🛀 🧼 🪒 🧽 🧴 🛎️ 🔑 🗝️ 🚪 🪑 🛋️ 🛏️ 🛌 🧸 🖼️ 🛍️ 🛒 🎁 🎈 🎏 🎀 🎊 🎉 🎎 🏮 🎐 🧧 ✉️ 📩 📨 📧 💌 📥 📤 📦 🏷️ 📪 📫 📬 📭 📮 📯 📜 📃 📄 📑 🧾 📊 📈 📉 🗒️ 🗓️ 📆 📅 🗑️ 📇 🗃️ 🗳️ 🗄️ 📋 📁 📂 🗂️ 🗞️ 📰 📓 📔 📒 📕 📗 📘 📙 📚 📖 🔖 🧷 🔗 📎 🖇️ 📐 📏 🧮 📌 📍 ✂️ 🖊️ 🖋️ ✒️ 🖌️ 🖍️ 📝 ✏️ 🔍 🔎 🔏 🔐 🔒 🔓".split(" "),
   "Symbols": "❤️ 💔 ✨ 🔥 💯 ✅ ❌ ❓ ❗ ⚠️ 🚫 ✔️ ➕ ➖ ➗ ✖️ 🟰 ♾️ 💲 💱 ™️ ©️ ®️ 🆗 🆒 🆕 🆙 🆓 🆖 🆘 🆚 🅰️ 🅱️ 🆎 🅾️ 🆔 ⚛️ 🕉️ ✡️ ☸️ ☯️ ✝️ ☦️ ☪️ ☮️ 🕎 🔯 ♈ ♉ ♊ ♋ ♌ ♍ ♎ ♏ ♐ ♑ ♒ ♓ ⛎ 🔀 🔁 🔂 ▶️ ⏸️ ⏹️ ⏺️ ⏭️ ⏮️ ⏩ ⏪ 🔼 🔽 ⏫ ⏬ ➡️ ⬅️ ⬆️ ⬇️ ↗️ ↘️ ↙️ ↖️ ↕️ ↔️ ↩️ ↪️ ⤴️ ⤵️ 🔃 🔄 🔅 🔆 📶 📳 📴 ♀️ ♂️ ⚧️ ⚕️ ♻️ ⚜️ 🔱 📛 🔰 ⭕ ☑️ 🔘 🔴 🟠 🟡 🟢 🔵 🟣 ⚫ ⚪ 🟤 🟥 🟧 🟨 🟩 🟦 🟪 ⬛ ⬜ 🟫 ◼️ ◻️ ◾ ◽ ▪️ ▫️ 🔶 🔷 🔸 🔹 🔺 🔻 💠 🔘 🔳 🔲".split(" "),
 };
 
@@ -4144,10 +4645,10 @@ function updateThemeIcon() {
   const sun  = `<svg viewBox="0 0 24 24" width="16" height="16"><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4L7 17M17 7l1.4-1.4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
   const moon = `<svg viewBox="0 0 24 24" width="16" height="16"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>`;
   const html = isDark ? sun : moon;
-  for (const id of ["themeToggle", "themeToggleJoin"]) {
-    const el = document.getElementById(id);
-    if (el) el.innerHTML = html;
-  }
+  const themeButton = document.getElementById("themeToggle");
+  if (themeButton) { themeButton.setAttribute("aria-checked", String(isDark)); themeButton.classList.toggle("is-on", isDark); themeButton.title = isDark ? "Dark theme enabled" : "Light theme enabled"; }
+  const joinTheme = document.getElementById("themeToggleJoin");
+  if (joinTheme) joinTheme.innerHTML = html;
 }
 updateThemeIcon();
 

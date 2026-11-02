@@ -25,7 +25,7 @@
   <meta name="twitter:description" content="Self-contained LAN instant messenger with channels, DMs, and file sharing." />
   <title>LocalChat</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='32' y2='32' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='0' stop-color='%236366f1'/%3E%3Cstop offset='1' stop-color='%238b5cf6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='8' fill='url(%23g)'/%3E%3Cpath d='M8 10a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3h-5l-4 3v-3h-1a3 3 0 0 1-3-3z' fill='white'/%3E%3Ccircle cx='13' cy='13.5' r='1.3' fill='%236366f1'/%3E%3Ccircle cx='16' cy='13.5' r='1.3' fill='%236366f1'/%3E%3Ccircle cx='19' cy='13.5' r='1.3' fill='%236366f1'/%3E%3Ccircle cx='24' cy='8' r='3' fill='%2322c55e' stroke='white' stroke-width='1.5'/%3E%3C/svg%3E"/>
-  <link rel="stylesheet" href="/style.css?v=20261018m"/>
+  <link rel="stylesheet" href="/style.css?v=20261102-chatlist-refine2"/>
   <script>
     // Migrate old LanChat keys -> LocalChat (one-shot).
     (function () {
@@ -50,165 +50,89 @@
       document.documentElement.setAttribute("data-theme", theme);
     })();
   </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=swap" rel="stylesheet">
 </head>
 <body>
   <!-- ═══════════════════ JOIN SCREEN ═══════════════════ -->
   <div id="join" class="screen-join">
     <div class="join-panel">
       <div class="join-brand">
-        <div class="brand-mark">
-          <svg viewBox="0 0 32 32" width="48" height="48" aria-hidden="true">
-            <defs>
-              <linearGradient id="lcGrad" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
-                <stop offset="0" stop-color="#6366f1"/><stop offset="1" stop-color="#8b5cf6"/>
-              </linearGradient>
-            </defs>
-            <rect width="32" height="32" rx="8" fill="url(#lcGrad)"/>
-            <path d="M8 10a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3h-5l-4 3v-3h-1a3 3 0 0 1-3-3z" fill="white"/>
-            <circle cx="13" cy="13.5" r="1.3" fill="#6366f1"/>
-            <circle cx="16" cy="13.5" r="1.3" fill="#6366f1"/>
-            <circle cx="19" cy="13.5" r="1.3" fill="#6366f1"/>
-            <circle cx="24" cy="8" r="3" fill="#22c55e" stroke="white" stroke-width="1.5"/>
-          </svg>
-        </div>
-        <h1>LocalChat</h1>
-        <p class="muted">Private messaging for your local network</p>
+        <div class="brand-mark"><svg viewBox="0 0 32 32" width="48" height="48" aria-hidden="true"><defs><linearGradient id="lcGrad" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#087f5b"/><stop offset="1" stop-color="#0b9a6c"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#lcGrad)"/><path d="M8 10a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3h-5l-4 3v-3h-1a3 3 0 0 1-3-3z" fill="white"/><circle cx="13" cy="13.5" r="1.3" fill="#087f5b"/><circle cx="16" cy="13.5" r="1.3" fill="#087f5b"/><circle cx="19" cy="13.5" r="1.3" fill="#087f5b"/><circle cx="24" cy="8" r="3" fill="#65d8a6" stroke="white" stroke-width="1.5"/></svg></div>
+        <div class="join-brand-copy"><h1>LocalChat</h1><p class="muted">Private messaging for your local network</p></div>
       </div>
 
-      <form id="joinForm" class="join-form">
-        <label class="field">
-          <span>Username</span>
-          <input id="username" type="text" minlength="3" maxlength="24" required
-                 autocomplete="username" spellcheck="false"
-                 pattern="[A-Za-z0-9][A-Za-z0-9._-]{2,23}"
-                 title="3-24 characters: letters, digits, underscore, hyphen, or dot. No spaces. Must start with a letter or digit."
-                 placeholder="e.g. alice_42"/>
-        </label>
-        <label class="field">
-          <span>Password</span>
-          <input id="password" type="password" maxlength="128" required
-                 autocomplete="current-password" placeholder="At least 4 characters"/>
-        </label>
-        <p class="muted small" style="margin:-4px 0 4px;font-size:12px;">
-          First time? The password you choose now is what you'll use
-          to log back in (including from a different browser).
-        </p>
-        <button class="btn btn-primary btn-lg" type="submit">
-          Enter chat
-          <svg viewBox="0 0 24 24" width="16" height="16"><path d="M5 12h14M13 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </button>
+      <form id="joinForm" class="join-form join-form-scrollable">
+        <label class="field" id="loginIdentifierField"><span id="loginIdentifierLabel">Email or @username</span><input id="username" type="text" maxlength="254" required autocomplete="username" spellcheck="false" placeholder="you@company.example or @username"/></label>
+        <div id="loginPasswordArea"><label class="field" id="passwordField"><span class="field-label-row"><span>Password</span><a href="#" id="forgotPasswordLink">Forgot password?</a></span><input id="password" type="password" maxlength="128" required autocomplete="current-password" placeholder="Enter your password"/></label></div>
+        <div id="registrationFields" class="hidden">
+          <div class="auth-step-heading auth-registration-heading"><h2 id="registrationStepTitle">Your information</h2><p id="registrationStepSubtitle">Set up your LocalChat profile.</p></div>
+          <div class="auth-progress" role="group" aria-label="Registration progress">
+            <div class="auth-progress-step is-active" data-auth-step="1"><span class="auth-progress-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c.6-3.5 3-5.2 7-5.2s6.4 1.7 7 5.2"/></svg></span><span>Your information</span></div>
+            <div class="auth-progress-track" aria-hidden="true"></div>
+            <div class="auth-progress-step" data-auth-step="2"><span class="auth-progress-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3 19 6v5c0 4.5-2.8 7.8-7 10-4.2-2.2-7-5.5-7-10V6z"/><path d="m9 12 2 2 4-4"/></svg></span><span>Security questions</span></div>
+            <div class="auth-progress-track" aria-hidden="true"></div>
+            <div class="auth-progress-step" data-auth-step="3"><span class="auth-progress-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><circle cx="12" cy="15" r="1"/></svg></span><span>Password</span></div>
+          </div>
+          <section id="registrationIdentityPanel" class="auth-registration-step" aria-labelledby="registrationStepTitle">
+            <label class="field"><span>Work Email</span><input id="officeEmail" type="email" maxlength="254" autocomplete="email" placeholder="you@company.example"/></label>
+            <label class="field"><span>Display Name (Your Full Name)</span><input id="registrationDisplayName" type="text" maxlength="48" autocomplete="name" placeholder="e.g. Md. Imran Islam"/></label>
+            <label class="field username-field"><span>Choose a unique @username</span><input id="registrationUsername" type="text" maxlength="24" autocomplete="username" spellcheck="false" placeholder="e.g. imran07" aria-describedby="usernameRules"/><button type="button" id="usernameHelp" class="username-help" aria-label="Username allowed characters" aria-describedby="usernameRules" aria-expanded="false">i</button><div id="usernameRules" class="username-help-popover" role="tooltip"><strong>Allowed characters</strong><span>3–24 characters: English letters, numbers, underscore (_) or hyphen (-). Include at least one number; no spaces.</span></div></label>
+            <label class="field"><span>Designation</span><select id="registrationDesignation"><option value="">Choose designation…</option><option value="AM">Assistant Manager - AM</option><option value="TL">Team Leader - TL</option><option value="STL">Senior Team Leader - STL</option><option value="QDE">Quality Development Executive - QDE</option><option value="LRD">Learning &amp; Resource Development Lead - LRD</option><option value="EE">Escalation Executive - EE</option><option value="CSA">Customer Service Advisor - CSA</option></select></label>
+            <button type="button" id="registrationNextBtn" class="btn btn-primary btn-lg">Continue to password &amp; security <span aria-hidden="true">→</span></button>
+          </section>
+          <section id="registrationSecurityPanel" class="auth-registration-step hidden" aria-labelledby="registrationStepTitle">
+            <div class="auth-security-questions">
+              <div class="field"><span>Recovery question 1</span><select id="recoveryQuestion1"><option value="">Choose a question</option><option value="1">What was the name of your first school?</option><option value="2">What was the name of the first street you lived on?</option><option value="3">What nickname did you have as a child?</option><option value="4">What was the name of your first teacher?</option><option value="5">What was the name of your first pet?</option><option value="6">What was the first concert you attended?</option><option value="7">What was your first job or workplace?</option><option value="8">What was the model of your first car or motorcycle?</option><option value="9">What was the name of a childhood friend?</option><option value="10">What was the first city you lived in?</option></select><input id="recoveryAnswer1" type="password" maxlength="200" placeholder="Your answer"/></div>
+              <div class="field"><span>Recovery question 2</span><select id="recoveryQuestion2"><option value="">Choose a different question</option><option value="1">What was the name of your first school?</option><option value="2">What was the name of the first street you lived on?</option><option value="3">What nickname did you have as a child?</option><option value="4">What was the name of your first teacher?</option><option value="5">What was the name of your first pet?</option><option value="6">What was the first concert you attended?</option><option value="7">What was your first job or workplace?</option><option value="8">What was the model of your first car or motorcycle?</option><option value="9">What was the name of a childhood friend?</option><option value="10">What was the first city you lived in?</option></select><input id="recoveryAnswer2" type="password" maxlength="200" placeholder="Your answer"/></div>
+              <div class="field"><span>Recovery question 3</span><select id="recoveryQuestion3"><option value="">Choose a different question</option><option value="1">What was the name of your first school?</option><option value="2">What was the name of the first street you lived on?</option><option value="3">What nickname did you have as a child?</option><option value="4">What was the name of your first teacher?</option><option value="5">What was the name of your first pet?</option><option value="6">What was the first concert you attended?</option><option value="7">What was your first job or workplace?</option><option value="8">What was the model of your first car or motorcycle?</option><option value="9">What was the name of a childhood friend?</option><option value="10">What was the first city you lived in?</option></select><input id="recoveryAnswer3" type="password" maxlength="200" placeholder="Your answer"/></div>
+            </div>
+            <p class="muted small auth-security-note">Recovery answers are stored as password hashes. Choose answers you can remember.</p>
+            <div class="auth-step-actions"><button type="button" id="registrationBackBtn" class="btn btn-secondary">← Back</button><button type="button" id="registrationPasswordNextBtn" class="btn btn-primary btn-lg">Continue <span aria-hidden="true">→</span></button></div>
+          </section>
+          <section id="registrationPasswordPanel" class="auth-registration-step hidden" aria-labelledby="registrationStepTitle">
+            <div id="registrationPasswordArea">
+              <label class="field" id="registrationRepeatPasswordField"><span>Repeat password</span><input id="registrationRepeatPassword" type="password" maxlength="128" autocomplete="new-password" placeholder="Enter your password again"/></label>
+            </div>
+            <div class="auth-step-actions"><button type="button" id="registrationPasswordBackBtn" class="btn btn-secondary">← Back</button><button class="btn btn-primary btn-lg" type="submit"><span>Create account</span><span aria-hidden="true">→</span></button></div>
+          </section>
+        </div>
+        <button id="loginSubmitBtn" class="btn btn-primary btn-lg" type="submit"><span id="joinButtonLabelLogin">Sign in</span><svg viewBox="0 0 24 24" width="16" height="16"><path d="M5 12h14M13 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         <div id="joinStatus" class="join-status"></div>
       </form>
-
-      <div class="join-foot muted">
-        <span class="foot-left">
-          <svg viewBox="0 0 24 24" width="14" height="14"><path d="M12 2l3 7h7l-5.5 4.5L18 21l-6-4-6 4 1.5-7.5L2 9h7z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
-          <span>End-to-end encrypted direct messages</span>
-        </span>
-        <button type="button" id="themeToggleJoin" class="icon-btn" title="Toggle theme" aria-label="Toggle theme" onclick="toggleTheme()" hidden></button>
-      </div>
+      <div class="join-foot muted auth-account-prompt"><span id="accountPromptText">Not registered yet?</span> <a href="#" id="toggleRegistration">Create your account</a></div>
+      <div class="join-foot muted auth-privacy-foot"><span class="foot-left"><svg viewBox="0 0 24 24" width="14" height="14"><path d="M12 2l3 7h7l-5.5 4.5L18 21l-6-4-6 4 1.5-7.5L2 9h7z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg><span>End-to-end encrypted direct messages</span></span><button type="button" id="themeToggleJoin" class="icon-btn" title="Toggle theme" aria-label="Toggle theme" onclick="toggleTheme()" hidden></button></div>
     </div>
   </div>
 
   <!-- ═══════════════════ MAIN APP ═══════════════════ -->
   <div id="app" class="app hidden">
-    <!-- ───────── Sidebar ───────── -->
-    <aside class="sidebar" id="sidebar">
-      <div class="sb-header">
-        <div class="sb-brand">
-          <div class="brand-mark sm">
-            <svg viewBox="0 0 32 32" width="24" height="24" aria-hidden="true">
-              <defs>
-                <linearGradient id="lcGrad2" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
-                  <stop offset="0" stop-color="#6366f1"/><stop offset="1" stop-color="#8b5cf6"/>
-                </linearGradient>
-              </defs>
-              <rect width="32" height="32" rx="8" fill="url(#lcGrad2)"/>
-              <path d="M8 10a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3h-5l-4 3v-3h-1a3 3 0 0 1-3-3z" fill="white"/>
-              <circle cx="13" cy="13.5" r="1.3" fill="#6366f1"/>
-              <circle cx="16" cy="13.5" r="1.3" fill="#6366f1"/>
-              <circle cx="19" cy="13.5" r="1.3" fill="#6366f1"/>
-            </svg>
-          </div>
-          <div class="sb-title">
-            <div class="h6">LocalChat</div>
-          </div>
+    <div id="sidebarBackdrop" class="sidebar-backdrop" aria-hidden="true"></div>
+    <nav class="nav-ribbon" aria-label="Primary navigation">
+      <button class="nav-ribbon-brand" type="button" title="LocalChat" aria-label="LocalChat" onclick="setSidebarTab('all');if(window.innerWidth<=780)openSidebar()"><span class="brand-mark sm"><svg viewBox="0 0 32 32" width="25" height="25"><rect width="32" height="32" rx="9" fill="#fff"/><path d="M7 9a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3h-6l-5 4v-4h-1a3 3 0 0 1-3-3z" fill="#087f5b"/><circle cx="13" cy="13" r="1.2" fill="#fff"/><circle cx="17" cy="13" r="1.2" fill="#fff"/><circle cx="21" cy="13" r="1.2" fill="#fff"/></svg></span></button>
+      <div class="nav-ribbon-primary">
+        <button class="nav-rail-btn nav-rail-labeled" type="button" data-rail-channel="lobby" title="Lobby" aria-label="Lobby" onclick="openRibbonChannel('lobby')"><svg viewBox="0 0 24 24"><path d="M3 10.5 12 4l9 6.5V20H3z"/><path d="M8 20v-6h8v6"/></svg><span>Lobby</span></button>
+        <button class="nav-rail-btn nav-rail-labeled" type="button" data-rail-channel="notes" title="Notes" aria-label="Notes (Admin (Me))" onclick="openRibbonChannel('notes')"><svg viewBox="0 0 24 24"><path d="M5 3h10l4 4v14H5z"/><path d="M14 3v5h5M8 12h8M8 16h6"/></svg><span>Notes</span></button>
+        <button class="nav-rail-btn nav-rail-labeled" type="button" title="New Chat" aria-label="New Chat" onclick="openNewChatMenu()"><svg viewBox="0 0 24 24"><path d="M20 11.5a7.5 7.5 0 0 1-8 7.5 8.5 8.5 0 0 1-3.5-.8L4 20l1.3-3.5A7.2 7.2 0 0 1 4 12c0-4.2 3.6-7.5 8-7.5s8 3.1 8 7z"/><path d="M12 8v7M8.5 11.5h7"/></svg><span>New Chat</span></button>
+        <button class="nav-rail-btn nav-rail-labeled" type="button" data-rail-tab="mine" title="My Chats" aria-label="My Chats" onclick="setSidebarTab('all');if(window.innerWidth<=780)openSidebar()"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H8l-4 4zM8 9h8M8 12h5"/></svg><span>My Chats</span></button>
+        <button class="nav-rail-btn nav-rail-labeled" type="button" data-rail-tab="online" title="Online" aria-label="Online" onclick="setSidebarTab('online');if(window.innerWidth<=780)openSidebar()"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3"/><path d="M5 20a7 7 0 0 1 14 0"/></svg><span>Online</span></button>
+      </div><div class="nav-ribbon-spacer"></div>
+      <div class="nav-ribbon-bottom"><button id="meChip" class="nav-profile" type="button" title="Profile and settings" aria-label="Open profile and settings"></button></div>
+      <div id="browserNotificationControl" class="browser-notification-control nav-notification-control"><button id="browserNotificationsBtn" class="icon-btn browser-notification-button" type="button" title="Browser notifications" aria-label="Browser notifications" aria-haspopup="true" aria-expanded="false"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg></button><div id="browserNotificationMenu" class="browser-notification-menu" role="menu" aria-label="Browser notification controls" hidden><button type="button" role="menuitem" data-notification-action="enable">Enable browser notifications</button><button type="button" role="menuitem" data-notification-action="resume" hidden>Resume notifications now</button><div class="browser-notification-menu-label">Snooze notifications</div><button type="button" role="menuitem" data-snooze-minutes="5">For 5 minutes</button><button type="button" role="menuitem" data-snooze-minutes="30">For 30 minutes</button><button type="button" role="menuitem" data-snooze-minutes="60">For 1 hour</button><button type="button" role="menuitem" data-snooze-minutes="480">For 8 hours</button></div></div>
+    </nav>    <aside class="sidebar" id="sidebar" aria-label="Chat list" aria-hidden="false">
+      <button type="button" id="sidebarCloseBtn" class="icon-btn sidebar-close-btn" aria-label="Close chat list" title="Close chat list" onclick="closeSidebar()">×</button>
+      <header class="chatlist-head"><div class="chatlist-title-row"><h1>Chats</h1><span class="status-pill" id="statusPill" title="Connection status" role="status" aria-live="polite"><span class="dot"></span><span class="txt">offline</span></span></div>
+        <div class="sb-search" role="search" aria-label="Search chats and messages"><svg class="sb-search-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg><input id="sbSearch" type="search" aria-label="Search chats and messages" placeholder="Search chats and messages…" autocomplete="off" oninput="setSidebarFilter(this.value)" onkeydown="handleSidebarSearchKeydown(event)"/><button type="button" class="sb-search-clear" id="sbSearchClear" title="Clear" aria-label="Clear search" hidden onclick="setSidebarFilter('')">×</button></div>
+        <div class="sb-tabs chatlist-filters" id="chatlistFilters" role="tablist" aria-label="Filter conversations">
+          <button type="button" class="sb-tab active" data-tab="all" role="tab" aria-selected="true" onclick="setSidebarTab('all')">All</button>
+          <button type="button" class="sb-tab" data-tab="channels" role="tab" aria-selected="false" onclick="setSidebarTab('channels')">Channel</button>
+          <button type="button" class="sb-tab" data-tab="personal" role="tab" aria-selected="false" onclick="setSidebarTab('personal')">Personal</button>
+          <button type="button" class="sb-tab" data-tab="favourites" role="tab" aria-selected="false" onclick="setSidebarTab('favourites')">Favourite</button>
+          <button type="button" class="sb-tabs-add" id="customFilterAdd" title="Create custom filter" aria-label="Create custom filter" onclick="openCustomFilterModal()"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
         </div>
-        <span class="status-pill" id="statusPill" title="Connection status">
-          <span class="dot"></span><span class="txt">offline</span>
-        </span>
-        <button type="button" class="icon-btn sb-info-btn" id="aboutBtn" title="About LocalChat" aria-label="About" onclick="openModal('aboutModal')">
-          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="8" r="1.2" fill="currentColor"/><path d="M11 11h1.2v6H11z M10.4 17h3.2" fill="currentColor" stroke="currentColor" stroke-width="0.6" stroke-linecap="round"/></svg>
-        </button>
-      </div>
-
-      <nav class="sb-scroll">
-        <div class="sb-tabs" role="tablist">
-          <button type="button" class="sb-tab active" data-tab="mine"   onclick="setSidebarTab('mine')">My Chats</button>
-          <button type="button" class="sb-tab"        data-tab="online" onclick="setSidebarTab('online')">Online</button>
-          <div class="sb-tabs-actions">
-            <button type="button" class="icon-btn sb-tabs-add" id="sbNewBtn" title="New chat" aria-label="New chat" aria-haspopup="menu" aria-expanded="false" onclick="toggleNewMenu(event)">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
-            </button>
-            <button type="button" class="icon-btn sb-tabs-share" id="shareBtn" title="Share / pair with QR" aria-label="Share" onclick="openShareModal()">
-              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-                <path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h3v3h-3zM18 14h3v3h-3zM14 18h3v3h-3zM18 18h3v3h-3z" fill="currentColor"/>
-              </svg>
-            </button>
-            <div id="sbNewMenu" class="sb-new-menu hidden" role="menu" aria-labelledby="sbNewBtn">
-              <button type="button" role="menuitem" class="sb-new-item" onclick="closeNewMenu(); openCreateChannel();">
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9h16M4 15h16M10 3l-2 18M16 3l-2 18"/></svg>
-                <div class="sb-new-text">
-                  <div class="sb-new-title">New channel</div>
-                  <div class="sb-new-desc">Group conversation, public or invite-only.</div>
-                </div>
-              </button>
-              <button type="button" role="menuitem" class="sb-new-item" onclick="closeNewMenu(); openDmPicker();">
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-                <div class="sb-new-text">
-                  <div class="sb-new-title">New direct message</div>
-                  <div class="sb-new-desc">End-to-end encrypted 1:1 chat.</div>
-                </div>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div class="sb-search">
-          <svg class="sb-search-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>
-          <input id="sbSearch" type="search" placeholder="Search chats; press Enter for messages…" autocomplete="off" oninput="setSidebarFilter(this.value)" onkeydown="handleSidebarSearchKeydown(event)"/>
-          <button type="button" class="sb-search-clear" id="sbSearchClear" title="Clear" aria-label="Clear search" hidden onclick="setSidebarFilter('')">×</button>
-        </div>
-
-        <div id="sbGroups" class="sb-groups"></div>
-      </nav>
-
-      <a id="adminLink" class="sb-admin-link" href="/admin" target="_blank" rel="noopener" hidden title="Open the admin dashboard (host-only)">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l8 4v6c0 5-3.5 9-8 10-4.5-1-8-5-8-10V6l8-4z"/></svg>
-        <span>Admin dashboard</span>
-      </a>
-
-      <div class="sb-foot">
-        <div class="sb-foot-row">
-          <div class="me-chip" id="meChip"></div>
-          <div id="browserNotificationControl" class="browser-notification-control">
-            <button id="browserNotificationsBtn" class="icon-btn browser-notification-button" type="button" title="Enable browser notifications" aria-label="Enable browser notifications" aria-haspopup="true" aria-expanded="false">
-              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/><path d="m3 3 18 18"/></svg>
-            </button>
-            <div id="browserNotificationMenu" class="browser-notification-menu" role="menu" aria-label="Browser notification controls" hidden>
-              <button type="button" role="menuitem" data-notification-action="enable">Enable browser notifications</button>
-              <button type="button" role="menuitem" data-notification-action="resume" hidden>Resume notifications now</button>
-              <div class="browser-notification-menu-label">Snooze notifications</div>
-              <button type="button" role="menuitem" data-snooze-minutes="5">For 5 minutes</button>
-              <button type="button" role="menuitem" data-snooze-minutes="30">For 30 minutes</button>
-              <button type="button" role="menuitem" data-snooze-minutes="60">For 1 hour</button>
-              <button type="button" role="menuitem" data-snooze-minutes="480">For 8 hours</button>
-            </div>
-          </div>
-        </div>
-      </div>
+      </header><nav class="sb-scroll" aria-label="Conversations"><div id="sbGroups" class="sb-groups"></div></nav>
     </aside>
-
     <!-- ───────── Main panel ───────── -->
     <main class="main">
       <header class="chat-header">
@@ -301,6 +225,16 @@
       <footer class="modal-foot"><button type="button" class="btn btn-ghost" onclick="closePollModal()">Cancel</button><button type="submit" class="btn btn-primary">Create poll</button></footer>
     </form>
   </div>
+
+  <div id="newChatChoiceModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="newChatChoiceTitle">
+    <div class="modal-panel new-chat-choice-panel">
+      <header class="modal-head"><h3 id="newChatChoiceTitle">Start a new conversation</h3><button type="button" class="icon-btn" onclick="closeModal('newChatChoiceModal')" aria-label="Close">×</button></header>
+      <div class="modal-body new-chat-choice-options">
+        <button type="button" class="new-chat-choice" onclick="closeModal('newChatChoiceModal');openDmPicker()"><span class="new-chat-choice-icon">✉</span><span><strong>New private chat</strong><small>Start an end-to-end encrypted direct message</small></span><span aria-hidden="true">›</span></button>
+        <button type="button" class="new-chat-choice" onclick="closeModal('newChatChoiceModal');openCreateChannel()"><span class="new-chat-choice-icon">＋</span><span><strong>Create a channel</strong><small>Start a group conversation for a team or topic</small></span><span aria-hidden="true">›</span></button>
+      </div>
+    </div>
+  </div>
   <div id="createModal" class="modal hidden" role="dialog" aria-labelledby="cmTitle">
     <form class="modal-panel" onsubmit="createChannel(event)">
       <header class="modal-head">
@@ -387,6 +321,55 @@
       <footer class="modal-foot">
         <button id="designationSubmit" type="submit" class="btn btn-primary">Save designation</button>
       </footer>
+    </form>
+  </div>
+
+  <!-- Password recovery is separate from sign-in -->
+  <div id="recoveryModal" class="modal auth-recovery-modal hidden" role="dialog" aria-labelledby="recoveryTitle" aria-modal="true">
+    <form class="modal-panel auth-recovery-panel" onsubmit="submitRecovery(event)">
+      <header class="auth-recovery-brand"><div class="auth-recovery-branding"><span class="auth-recovery-logo"><svg viewBox="0 0 32 32" width="48" height="48" aria-hidden="true"><defs><linearGradient id="lcGrad" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#087f5b"/><stop offset="1" stop-color="#0b9a6c"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#lcGrad)"/><path d="M8 10a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3h-5l-4 3v-3h-1a3 3 0 0 1-3-3z" fill="white"/><circle cx="13" cy="13.5" r="1.3" fill="#087f5b"/><circle cx="16" cy="13.5" r="1.3" fill="#087f5b"/><circle cx="19" cy="13.5" r="1.3" fill="#087f5b"/><circle cx="24" cy="8" r="3" fill="#65d8a6" stroke="white" stroke-width="1.5"/></svg></span><span class="auth-recovery-brand-copy"><strong>LocalChat</strong><small>Private messaging for your local network</small></span></div><h2 id="recoveryTitle">Recover your account</h2><p class="muted">Verify your identity and choose a new password.</p></header>
+      <div class="modal-body">
+        <p class="muted sm">Answer one of your saved recovery questions to reset your password. Repeated failures trigger a temporary lockout.</p>
+        <label class="field" id="recoveryIdentifierField"><span>Email or @username</span><input id="recoveryLogin" required maxlength="254" autocomplete="username" placeholder="you@company.example or @username"/></label>
+        <button type="button" id="recoveryLoadBtn" class="btn btn-secondary" onclick="loadRecoveryChallenge()">Find account</button>
+        <div id="recoveryQuestionStep" class="auth-recovery-step hidden">
+          <div class="auth-step-heading"><span class="auth-step-count">01 / 02</span><h3>Verify your identity</h3><p>Answer the selected security question to continue.</p></div>
+          <label class="field"><span>Recovery question</span><select id="recoveryQuestionSlot" required></select></label>
+          <label class="field"><span>Your answer</span><input id="recoveryAnswer" type="password" maxlength="200" required autocomplete="off" placeholder="Your saved answer"/></label>
+          <button type="button" id="recoveryNextBtn" class="btn btn-primary btn-lg">Continue <span aria-hidden="true">→</span></button>
+        </div>
+        <div id="recoveryPasswordStep" class="auth-recovery-step hidden">
+          <div class="auth-step-heading"><span class="auth-step-count">02 / 02</span><h3>Choose a new password</h3><p>Enter your new password twice to confirm it.</p></div>
+          <label class="field"><span>New password</span><input id="recoveryNewPassword" type="password" minlength="4" maxlength="128" autocomplete="new-password" placeholder="At least 4 characters"/></label>
+          <label class="field"><span>Repeat new password</span><input id="recoveryRepeatPassword" type="password" minlength="4" maxlength="128" autocomplete="new-password" placeholder="Enter the new password again"/></label>
+          <div class="auth-step-actions"><button type="button" id="recoveryBackBtn" class="btn btn-secondary">← Back</button><button type="submit" id="recoverySubmitBtn" class="btn btn-primary">Reset password</button></div>
+        </div>
+        <div id="recoveryStatus" class="join-status" role="status" aria-live="polite"></div>
+        <button type="button" class="auth-recovery-back" onclick="closeModal('recoveryModal')">Back to sign in</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Required profile completion for existing accounts -->
+  <div id="profileCompletionModal" class="modal hidden" role="dialog" aria-labelledby="profileCompletionTitle" aria-modal="true">
+    <form class="modal-panel" onsubmit="submitRequiredProfile(event)">
+      <header class="modal-head"><h3 id="profileCompletionTitle">Complete your account setup</h3></header>
+      <div class="modal-body">
+        <p class="muted sm">Before continuing, update the missing account details. Your account ID and encrypted chat history will be preserved.</p>
+        <label class="field" id="requiredUsernameField"><span>Display name</span><input id="requiredUsername" maxlength="48" autocomplete="nickname" required placeholder="e.g. Imran Islam"/></label>
+        <label class="field" id="requiredEmailField"><span>Office email</span><input id="requiredOfficeEmail" type="email" maxlength="254" autocomplete="email" placeholder="you@company.example"/></label>
+        <label class="field" id="requiredDesignationField"><span>Designation</span>
+          <select id="requiredDesignation"><option value="">Choose designation…</option><option value="AM">Assistant Manager - AM</option><option value="TL">Team Leader - TL</option><option value="STL">Senior Team Leader - STL</option><option value="QDE">Quality Development Executive - QDE</option><option value="LRD">Learning &amp; Resource Development Lead - LRD</option><option value="EE">Escalation Executive - EE</option><option value="CSA">Customer Service Advisor - CSA</option></select>
+        </label>
+        <div id="requiredRecoveryFields" class="hidden">
+          <p class="muted sm">Choose three different recovery questions and answers. Answers are case-insensitive.</p>
+          <label class="field"><span>Question 1</span><select id="requiredQuestion1"></select><input id="requiredAnswer1" type="password" maxlength="200" placeholder="Answer 1"/></label>
+          <label class="field"><span>Question 2</span><select id="requiredQuestion2"></select><input id="requiredAnswer2" type="password" maxlength="200" placeholder="Answer 2"/></label>
+          <label class="field"><span>Question 3</span><select id="requiredQuestion3"></select><input id="requiredAnswer3" type="password" maxlength="200" placeholder="Answer 3"/></label>
+        </div>
+        <div id="requiredProfileStatus" class="join-status"></div>
+      </div>
+      <footer class="modal-foot"><button id="requiredProfileSubmit" type="submit" class="btn btn-primary">Save and continue</button></footer>
     </form>
   </div>
 
@@ -578,36 +561,59 @@
       <div><h2 id="settingsTitle">Settings</h2><p class="muted sm">Your LocalChat account and preferences</p></div>
       <button type="button" class="icon-btn settings-close" onclick="closeSettingsPanel()" aria-label="Close settings">×</button>
     </header>
-    <div class="settings-content">
-      <section class="settings-section">
-        <h3>Profile</h3>
-        <div class="profile-avatar-row">
-          <div class="avatar profile-avatar-preview" id="profileAvatarPreview" aria-label="Profile picture preview"></div>
-          <div class="profile-avatar-controls"><strong>Profile picture</strong><p class="muted xs">Upload a picture or choose a built-in avatar.</p>
-            <input id="profileAvatarFileInput" type="file" accept="image/png,image/jpeg,image/webp" hidden aria-label="Choose profile picture">
-            <button type="button" class="btn btn-ghost btn-sm" id="profileAvatarUploadBtn">Upload picture</button>
-            <div class="profile-avatar-presets" aria-label="Predefined avatars">
-              <button type="button" class="profile-avatar-preset" data-avatar="😀" aria-label="Smiling avatar" onclick="setProfileAvatarPreset('😀')">😀</button><button type="button" class="profile-avatar-preset" data-avatar="😎" aria-label="Cool avatar" onclick="setProfileAvatarPreset('😎')">😎</button><button type="button" class="profile-avatar-preset" data-avatar="🐱" aria-label="Cat avatar" onclick="setProfileAvatarPreset('🐱')">🐱</button><button type="button" class="profile-avatar-preset" data-avatar="🐼" aria-label="Panda avatar" onclick="setProfileAvatarPreset('🐼')">🐼</button><button type="button" class="profile-avatar-preset" data-avatar="🦊" aria-label="Fox avatar" onclick="setProfileAvatarPreset('🦊')">🦊</button><button type="button" class="profile-avatar-preset" data-avatar="🐸" aria-label="Frog avatar" onclick="setProfileAvatarPreset('🐸')">🐸</button><button type="button" class="profile-avatar-preset" data-avatar="🐙" aria-label="Octopus avatar" onclick="setProfileAvatarPreset('🐙')">🐙</button><button type="button" class="profile-avatar-preset" data-avatar="🦄" aria-label="Unicorn avatar" onclick="setProfileAvatarPreset('🦄')">🦄</button><button type="button" class="profile-avatar-preset" data-avatar="🐧" aria-label="Penguin avatar" onclick="setProfileAvatarPreset('🐧')">🐧</button><button type="button" class="profile-avatar-preset" data-avatar="🐨" aria-label="Koala avatar" onclick="setProfileAvatarPreset('🐨')">🐨</button><button type="button" class="profile-avatar-preset" data-avatar="🐯" aria-label="Tiger avatar" onclick="setProfileAvatarPreset('🐯')">🐯</button><button type="button" class="profile-avatar-preset" data-avatar="🦋" aria-label="Butterfly avatar" onclick="setProfileAvatarPreset('🦋')">🦋</button><button type="button" class="profile-avatar-preset" data-avatar="🌟" aria-label="Star avatar" onclick="setProfileAvatarPreset('🌟')">🌟</button><button type="button" class="profile-avatar-preset" data-avatar="🌈" aria-label="Rainbow avatar" onclick="setProfileAvatarPreset('🌈')">🌈</button><button type="button" class="profile-avatar-preset" data-avatar="🚀" aria-label="Rocket avatar" onclick="setProfileAvatarPreset('🚀')">🚀</button>
-            </div><p id="profileAvatarStatus" class="status" role="status" aria-live="polite"></p>
+    <div class="settings-content settings-content-emerald">
+      <section class="settings-section profile-identity-section">
+        <div class="profile-hero">
+          <div class="profile-photo-wrap">
+            <div class="avatar profile-avatar-preview" id="profileAvatarPreview" aria-label="Profile picture preview"></div>
+            <button type="button" class="profile-photo-edit" id="profilePhotoEditBtn" aria-label="Change profile photo or choose emoji" title="Change profile photo or emoji" onclick="toggleProfileAvatarPicker()"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1-4 1 1-4Z"/></svg></button>
           </div>
+          <input id="profileAvatarFileInput" type="file" accept="image/png,image/jpeg,image/webp" hidden aria-label="Choose profile picture">
+          <div class="profile-avatar-picker" id="profileAvatarPicker" hidden>
+            <div class="profile-avatar-picker-head"><strong>Choose your profile photo</strong><button type="button" class="profile-avatar-upload" id="profileAvatarUploadBtn">Upload photo</button></div>
+            <p>Or choose an emoji avatar</p>
+            <div class="profile-avatar-presets" aria-label="Emoji profile photos">
+              <button type="button" class="profile-avatar-preset" data-avatar="😀" aria-label="Choose 😀" onclick="setProfileAvatarPreset('😀')">😀</button><button type="button" class="profile-avatar-preset" data-avatar="😎" aria-label="Choose 😎" onclick="setProfileAvatarPreset('😎')">😎</button><button type="button" class="profile-avatar-preset" data-avatar="🥰" aria-label="Choose 🥰" onclick="setProfileAvatarPreset('🥰')">🥰</button><button type="button" class="profile-avatar-preset" data-avatar="🤩" aria-label="Choose 🤩" onclick="setProfileAvatarPreset('🤩')">🤩</button><button type="button" class="profile-avatar-preset" data-avatar="😇" aria-label="Choose 😇" onclick="setProfileAvatarPreset('😇')">😇</button><button type="button" class="profile-avatar-preset" data-avatar="🤗" aria-label="Choose 🤗" onclick="setProfileAvatarPreset('🤗')">🤗</button><button type="button" class="profile-avatar-preset" data-avatar="🥳" aria-label="Choose 🥳" onclick="setProfileAvatarPreset('🥳')">🥳</button><button type="button" class="profile-avatar-preset" data-avatar="🫶" aria-label="Choose 🫶" onclick="setProfileAvatarPreset('🫶')">🫶</button><button type="button" class="profile-avatar-preset" data-avatar="🐱" aria-label="Choose 🐱" onclick="setProfileAvatarPreset('🐱')">🐱</button><button type="button" class="profile-avatar-preset" data-avatar="🐼" aria-label="Choose 🐼" onclick="setProfileAvatarPreset('🐼')">🐼</button><button type="button" class="profile-avatar-preset" data-avatar="🦊" aria-label="Choose 🦊" onclick="setProfileAvatarPreset('🦊')">🦊</button><button type="button" class="profile-avatar-preset" data-avatar="🐸" aria-label="Choose 🐸" onclick="setProfileAvatarPreset('🐸')">🐸</button><button type="button" class="profile-avatar-preset" data-avatar="🐙" aria-label="Choose 🐙" onclick="setProfileAvatarPreset('🐙')">🐙</button><button type="button" class="profile-avatar-preset" data-avatar="🦄" aria-label="Choose 🦄" onclick="setProfileAvatarPreset('🦄')">🦄</button><button type="button" class="profile-avatar-preset" data-avatar="🐧" aria-label="Choose 🐧" onclick="setProfileAvatarPreset('🐧')">🐧</button><button type="button" class="profile-avatar-preset" data-avatar="🐨" aria-label="Choose 🐨" onclick="setProfileAvatarPreset('🐨')">🐨</button><button type="button" class="profile-avatar-preset" data-avatar="🐯" aria-label="Choose 🐯" onclick="setProfileAvatarPreset('🐯')">🐯</button><button type="button" class="profile-avatar-preset" data-avatar="🦋" aria-label="Choose 🦋" onclick="setProfileAvatarPreset('🦋')">🦋</button><button type="button" class="profile-avatar-preset" data-avatar="🌟" aria-label="Choose 🌟" onclick="setProfileAvatarPreset('🌟')">🌟</button><button type="button" class="profile-avatar-preset" data-avatar="🌈" aria-label="Choose 🌈" onclick="setProfileAvatarPreset('🌈')">🌈</button><button type="button" class="profile-avatar-preset" data-avatar="🚀" aria-label="Choose 🚀" onclick="setProfileAvatarPreset('🚀')">🚀</button><button type="button" class="profile-avatar-preset" data-avatar="🍀" aria-label="Choose 🍀" onclick="setProfileAvatarPreset('🍀')">🍀</button><button type="button" class="profile-avatar-preset" data-avatar="🌻" aria-label="Choose 🌻" onclick="setProfileAvatarPreset('🌻')">🌻</button><button type="button" class="profile-avatar-preset" data-avatar="⚡" aria-label="Choose ⚡" onclick="setProfileAvatarPreset('⚡')">⚡</button>
+            </div>
+            <p id="profileAvatarStatus" class="status" role="status" aria-live="polite"></p>
+          </div>
+          <div class="profile-username" id="profileUsernameHandle"></div>
+          <form id="profileSettingsForm" class="profile-identity-form" onsubmit="event.preventDefault()">
+            <div class="profile-identity-edit-row">
+              <input id="profileUsername" class="profile-display-name-input" maxlength="48" required autocomplete="nickname" disabled aria-label="Display name">
+              <button type="button" class="profile-edit-icon" id="editUsernameBtn" title="Edit display name" aria-label="Edit display name" onclick="setProfileFieldEditing('username',true)"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg></button>
+            </div>
+            <div class="profile-edit-actions" id="usernameEditActions" hidden><button type="button" class="btn btn-ghost btn-sm" onclick="cancelProfileFieldEdit('username')">Cancel</button><button type="button" class="btn btn-primary btn-sm" id="saveUsernameBtn" onclick="submitProfileField('username')">Save</button></div>
+            <div class="profile-designation-row">
+              <select id="profileDesignation" class="profile-designation-select" required disabled aria-label="Designation">
+                <option value="AM">Assistant Manager</option><option value="TL">Team Leader</option><option value="STL">Senior Team Leader</option><option value="QDE">Quality Development Executive</option><option value="LRD">Learning &amp; Resource Development Lead</option><option value="EE">Escalation Executive</option><option value="CSA">Customer Service Advisor</option>
+              </select>
+              <button type="button" class="profile-edit-icon" id="editDesignationBtn" title="Edit designation" aria-label="Edit designation" onclick="setProfileFieldEditing('designation',true)"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg></button>
+            </div>
+            <div class="profile-edit-actions" id="designationEditActions" hidden><button type="button" class="btn btn-ghost btn-sm" onclick="cancelProfileFieldEdit('designation')">Cancel</button><button type="button" class="btn btn-primary btn-sm" id="saveDesignationBtn" onclick="submitProfileField('designation')">Save</button></div>
+            <p id="profileSettingsStatus" class="status" role="status" aria-live="polite"></p>
+          </form>
         </div>
-        <form id="profileSettingsForm" onsubmit="event.preventDefault()">
-          <div class="profile-edit-row"><label class="field" for="profileUsername"><span>Username</span><input id="profileUsername" minlength="3" maxlength="24" required autocomplete="username" pattern="[A-Za-z0-9][A-Za-z0-9_.-]{2,23}" disabled></label>
-            <button type="button" class="profile-edit-icon" id="editUsernameBtn" title="Edit username" aria-label="Edit username" onclick="setProfileFieldEditing('username',true)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg></button>
-          </div>
-          <div class="profile-edit-actions" id="usernameEditActions" hidden><button type="button" class="btn btn-ghost btn-sm" onclick="cancelProfileFieldEdit('username')">Cancel</button><button type="button" class="btn btn-primary btn-sm" id="saveUsernameBtn" onclick="submitProfileField('username')">Save username</button></div>
-          <div class="profile-edit-row"><label class="field" for="profileDesignation"><span>Designation</span><select id="profileDesignation" required disabled>
-            <option value="AM">Assistant Manager - AM</option><option value="TL">Team Leader - TL</option><option value="STL">Senior Team Leader - STL</option><option value="QDE">Quality Development Executive - QDE</option><option value="LRD">Learning &amp; Resource Development Lead - LRD</option><option value="EE">Escalation Executive - EE</option><option value="CSA">Customer Service Advisor</option>
-          </select></label>
-            <button type="button" class="profile-edit-icon" id="editDesignationBtn" title="Edit designation" aria-label="Edit designation" onclick="setProfileFieldEditing('designation',true)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg></button>
-          </div>
-          <div class="profile-edit-actions" id="designationEditActions" hidden><button type="button" class="btn btn-ghost btn-sm" onclick="cancelProfileFieldEdit('designation')">Cancel</button><button type="button" class="btn btn-primary btn-sm" id="saveDesignationBtn" onclick="submitProfileField('designation')">Save designation</button></div>
-          <p id="profileSettingsStatus" class="status" role="status" aria-live="polite"></p>
-        </form>
       </section>
-      <section class="settings-section"><h3 class="settings-section-heading"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="8" cy="18" r="2"/></svg>Appearance</h3><button id="themeToggle" class="settings-action" type="button" onclick="toggleTheme()">Toggle theme</button></section>
-      <section class="settings-section"><h3 class="settings-section-heading"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>Notifications</h3><div id="settingsNotificationsSlot"></div></section>
-      <section class="settings-section"><h3>Account security</h3><button class="settings-action" type="button" onclick="openChangePasswordModal({ forced: false }); closeSettingsPanel();">Change password</button></section>
+      <section class="settings-section settings-preferences-section">
+        <h3 class="settings-section-heading">Preferences</h3>
+        <div class="settings-preference-row">
+          <span class="settings-preference-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z"/></svg></span>
+          <span class="settings-preference-copy"><strong>Dark theme</strong><small>Switch between light and dark appearance</small></span>
+          <button id="themeToggle" class="settings-switch" type="button" role="switch" aria-label="Dark theme" aria-checked="false" onclick="toggleTheme()"><span></span></button>
+        </div>
+        <div class="settings-preference-row settings-notification-row">
+          <span class="settings-preference-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg></span>
+          <span class="settings-preference-copy"><strong>Notifications</strong><small>Desktop alerts and snooze duration</small></span>
+          <div id="settingsNotificationsSlot"></div>
+        </div>
+      </section>
+      <section class="settings-section settings-links-section">
+        <button type="button" class="settings-link-row" id="settingsShareBtn" onclick="closeSettingsPanel();openShareModal()"><span class="settings-link-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h3v3h-3zM18 14h3v3h-3zM14 18h3v3h-3zM18 18h3v3h-3z"/></svg></span><span>Share &amp; Pair</span><svg class="settings-link-chevron" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></button>
+        <button type="button" class="settings-link-row" id="settingsAboutBtn" onclick="closeSettingsPanel();openModal('aboutModal')"><span class="settings-link-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg></span><span>About</span><svg class="settings-link-chevron" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></button>
+        <button type="button" class="settings-link-row" id="settingsPasswordBtn" onclick="openChangePasswordModal({ forced: false }); closeSettingsPanel();"><span class="settings-link-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/></svg></span><span>Change password</span><svg class="settings-link-chevron" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></button>
+      </section>
+      <div class="settings-panel-bottom-links"><a id="adminLink" class="settings-admin-link" href="/admin" target="_blank" rel="noopener" hidden>Admin Panel</a></div>
     </div>
     <footer class="settings-logout-footer"><button type="button" class="settings-logout-btn" onclick="signOut()"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 17l5-5-5-5M15 12H3M12 3h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-6"/></svg>Logout</button></footer>
   </aside>
@@ -684,6 +690,17 @@
     <audio id="remoteAudio" autoplay></audio>
   </div>
 
-  <script src="/app.js?v=20261021b"></script>
+  <script src="/app.js?v=20261102-chatlist-refine2"></script>
+  <div id="customFilterModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="customFilterTitle">
+    <div class="custom-filter-panel">
+      <div class="custom-filter-heading"><div><span class="custom-filter-eyebrow">PERSONALIZE YOUR CHAT LIST</span><h2 id="customFilterTitle">Create custom filter</h2><p>Choose the conversations you want to see together.</p></div><button type="button" class="icon-btn" aria-label="Close" onclick="closeCustomFilterModal()">×</button></div>
+      <label class="custom-filter-field"><span>Filter name</span><input id="customFilterName" type="text" maxlength="32" placeholder="e.g. Management Team" autocomplete="off"></label>
+      <div class="custom-filter-search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input id="customFilterSearch" type="search" placeholder="Search conversations..." autocomplete="off" oninput="renderCustomFilterChoices()"></div>
+      <div class="custom-filter-kind" role="group" aria-label="Filter conversation types"><button type="button" class="active" data-custom-kind="all" onclick="setCustomFilterKind('all')">All</button><button type="button" data-custom-kind="channels" onclick="setCustomFilterKind('channels')">Channel</button><button type="button" data-custom-kind="personal" onclick="setCustomFilterKind('personal')">Personal</button></div>
+      <div class="custom-filter-selection-head"><strong>Select chats</strong><span id="customFilterSelectedCount">0 selected</span></div>
+      <div id="customFilterChoices" class="custom-filter-choices"></div>
+      <div class="custom-filter-footer"><button type="button" class="btn btn-ghost" onclick="closeCustomFilterModal()">Cancel</button><button type="button" class="btn btn-primary" id="customFilterSaveBtn" onclick="saveCustomFilter()">Create filter</button></div>
+    </div>
+  </div>
 </body>
 </html>
