@@ -4072,7 +4072,7 @@ async function uploadProfileAvatar(file) {
 }
 $("profileAvatarUploadBtn")?.addEventListener("click",()=> $("profileAvatarFileInput")?.click());
 $("profileAvatarFileInput")?.addEventListener("change",async()=>{const file=$("profileAvatarFileInput").files?.[0];$("profileAvatarFileInput").value="";if(file)await uploadProfileAvatar(file);});
-$("profileAvatarUploadBtn")?.addEventListener("click",()=> $("profileAvatarFileInput")?.click());
+
 Object.assign(window,{setProfileAvatarPreset});
 
 function openSettingsPanel() {
