@@ -998,10 +998,10 @@ function setStatus(kind, label) {
 }
 
 // ── Browser notifications ─────────────────────────────────────────────
-// Permission is granted by the browser, but snooze is deliberately session-only:
-// reloading or signing in again resumes notifications automatically.
+// Permission is browser-managed; snooze is session-only and resets on reload/sign-in.
 let _browserNotificationSnoozedUntil = 0;
 let _browserNotificationSnoozeTimer = null;
+let _browserNotificationSnoozedForMinutes = 0;
 
 function browserNotificationsEnabled() {
   return typeof Notification !== "undefined" &&
@@ -1009,33 +1009,38 @@ function browserNotificationsEnabled() {
     Date.now() >= _browserNotificationSnoozedUntil;
 }
 
+function notificationDurationLabel(minutes) {
+  return minutes === 60 ? "1 hour" : minutes === 480 ? "8 hours" : minutes + " minutes";
+}
+
 function updateBrowserNotificationButton() {
   const button = $("browserNotificationsBtn");
-  if (!button) return;
   const supported = "Notification" in window;
   const granted = supported && Notification.permission === "granted";
   const enabled = browserNotificationsEnabled();
   const snoozed = granted && !enabled && Date.now() < _browserNotificationSnoozedUntil;
-  button.classList.toggle("active", enabled);
-  button.classList.toggle("snoozed", snoozed);
-  button.classList.toggle("blocked", supported && Notification.permission === "denied");
-  button.classList.toggle("unsupported", !supported);
-  button.dataset.state = !supported ? "unsupported" : Notification.permission === "denied" ? "blocked" : snoozed ? "snoozed" : enabled ? "enabled" : "disabled";
-  button.title = !supported ? "Browser notifications are not supported here"
-    : !granted ? (Notification.permission === "denied" ? "Notifications blocked by browser" : "Enable browser notifications")
-    : snoozed ? "Notifications snoozed" : "Browser notifications enabled";
-  button.setAttribute("aria-label", button.title);
-  button.setAttribute("aria-pressed", String(enabled));
-  button.setAttribute("aria-checked", String(enabled));
-  button.classList.toggle("is-on", enabled);
-  button.classList.toggle("is-off", !enabled);
-  button.setAttribute("aria-expanded", String(!!$("browserNotificationMenu") && !$("browserNotificationMenu").hidden));
-  button.innerHTML = enabled
-    ? '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg>'
-    : snoozed
-      ? '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/><circle cx="18" cy="18" r="4" fill="var(--bg-1)"/><path d="M18 16v2l1.2 1"/></svg>'
-      : '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/><path d="m3 3 18 18"/></svg>';
   const menu = $("browserNotificationMenu");
+  const status = $("notificationStatusText");
+  if (button) {
+    button.classList.toggle("active", enabled);
+    button.classList.toggle("snoozed", snoozed);
+    button.classList.toggle("blocked", supported && Notification.permission === "denied");
+    button.classList.toggle("unsupported", !supported);
+    button.dataset.state = !supported ? "unsupported" : Notification.permission === "denied" ? "blocked" : snoozed ? "snoozed" : enabled ? "enabled" : "disabled";
+    button.title = !supported ? "Desktop notifications are not supported"
+      : !granted ? (Notification.permission === "denied" ? "Notifications blocked by browser" : "Set up desktop notifications")
+      : snoozed ? "Notifications snoozed" : "Notification options";
+    button.setAttribute("aria-label", button.title);
+    button.setAttribute("aria-expanded", String(!!menu && !menu.hidden));
+    button.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/>' + (snoozed ? '<path d="M17 3v3m-1.5-1.5h3"/>' : enabled ? '' : '<path d="m3 3 18 18"/>') + '</svg>';
+  }
+  if (status) {
+    status.textContent = !supported ? "Desktop notifications are not supported in this browser"
+      : Notification.permission === "denied" ? "Notifications are blocked by your browser"
+      : !granted ? "Enable desktop notifications"
+      : snoozed ? "Notification is snoozed for " + notificationDurationLabel(_browserNotificationSnoozedForMinutes)
+      : "Notification is on";
+  }
   if (menu) {
     const enable = menu.querySelector('[data-notification-action="enable"]');
     const resume = menu.querySelector('[data-notification-action="resume"]');
@@ -1048,6 +1053,7 @@ function updateBrowserNotificationButton() {
 async function enableBrowserNotifications() {
   if (!("Notification" in window)) {
     toast("This browser does not support desktop notifications.", 4000);
+    updateBrowserNotificationButton();
     return;
   }
   if (!window.isSecureContext && !["localhost", "127.0.0.1", "::1"].includes(location.hostname)) {
@@ -1056,6 +1062,7 @@ async function enableBrowserNotifications() {
   }
   if (Notification.permission === "denied") {
     toast("Notifications are blocked by your browser. Allow them in site settings, then try again.", 5000);
+    updateBrowserNotificationButton();
     return;
   }
   let permission = Notification.permission;
@@ -1068,53 +1075,40 @@ async function enableBrowserNotifications() {
     updateBrowserNotificationButton();
     return;
   }
+  _browserNotificationSnoozedForMinutes = 0;
   _browserNotificationSnoozedUntil = 0;
   clearTimeout(_browserNotificationSnoozeTimer);
   updateBrowserNotificationButton();
-  toast("Browser notifications are enabled. Snoozing lasts only until you sign out or reload LocalChat.");
+  toast("Desktop notifications are on.");
 }
 
 function snoozeBrowserNotifications(minutes) {
   const duration = Number(minutes);
   if (![5, 30, 60, 480].includes(duration)) return;
   if (typeof Notification === "undefined" || Notification.permission !== "granted") {
-    toast("Enable browser notifications first.", 3000);
+    toast("Enable desktop notifications first.", 3000);
     return;
   }
   clearTimeout(_browserNotificationSnoozeTimer);
+  _browserNotificationSnoozedForMinutes = duration;
   _browserNotificationSnoozedUntil = Date.now() + duration * 60 * 1000;
   _browserNotificationSnoozeTimer = setTimeout(() => {
     _browserNotificationSnoozedUntil = 0;
+    _browserNotificationSnoozedForMinutes = 0;
     updateBrowserNotificationButton();
-    toast("Browser notifications resumed.");
+    toast("Desktop notifications are back on.");
   }, duration * 60 * 1000);
   updateBrowserNotificationButton();
-  toast("Browser notifications snoozed for " + (duration === 60 ? "1 hour" : duration === 480 ? "8 hours" : duration + " minutes") + ".");
+  toast("Notifications snoozed for " + notificationDurationLabel(duration) + ".");
 }
 
 function toggleBrowserNotifications() {
   const menu = $("browserNotificationMenu");
   if (!menu) return;
   menu.hidden = !menu.hidden;
-  $("browserNotificationMenuBtn")?.setAttribute("aria-expanded", String(!menu.hidden));
+  $("browserNotificationsBtn")?.setAttribute("aria-expanded", String(!menu.hidden));
 }
-$("browserNotificationsBtn")?.addEventListener("click", async ev => {
-  ev.stopPropagation();
-  if (browserNotificationsEnabled()) {
-    _browserNotificationSnoozedUntil = Number.MAX_SAFE_INTEGER;
-    clearTimeout(_browserNotificationSnoozeTimer);
-    updateBrowserNotificationButton();
-    toast("Desktop notifications are turned off.");
-  } else if (Notification.permission === "granted") {
-    clearTimeout(_browserNotificationSnoozeTimer);
-    _browserNotificationSnoozedUntil = 0;
-    updateBrowserNotificationButton();
-    toast("Desktop notifications are turned on.");
-  } else {
-    await enableBrowserNotifications();
-  }
-});
-$("browserNotificationMenuBtn")?.addEventListener("click", ev => {
+$("browserNotificationsBtn")?.addEventListener("click", ev => {
   ev.stopPropagation();
   toggleBrowserNotifications();
 });
@@ -1125,16 +1119,17 @@ $("browserNotificationMenu")?.addEventListener("click", async ev => {
   else if (action.dataset.notificationAction === "resume") {
     clearTimeout(_browserNotificationSnoozeTimer);
     _browserNotificationSnoozedUntil = 0;
+    _browserNotificationSnoozedForMinutes = 0;
     updateBrowserNotificationButton();
-    toast("Browser notifications resumed.");
+    toast("Desktop notifications are back on.");
   } else if (action.dataset.snoozeMinutes) snoozeBrowserNotifications(action.dataset.snoozeMinutes);
   $("browserNotificationMenu").hidden = true;
-  $("browserNotificationMenuBtn")?.setAttribute("aria-expanded", "false");
+  $("browserNotificationsBtn")?.setAttribute("aria-expanded", "false");
 });
 document.addEventListener("click", ev => {
   if (!ev.target.closest("#browserNotificationControl") && $("browserNotificationMenu")) {
     $("browserNotificationMenu").hidden = true;
-    $("browserNotificationMenuBtn")?.setAttribute("aria-expanded","false");
+    $("browserNotificationsBtn")?.setAttribute("aria-expanded", "false");
   }
 });
 Object.assign(window, { toggleBrowserNotifications, enableBrowserNotifications, snoozeBrowserNotifications });
