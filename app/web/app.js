@@ -1032,7 +1032,9 @@ function updateBrowserNotificationButton() {
       : snoozed ? "Notifications snoozed" : "Notification options";
     button.setAttribute("aria-label", button.title);
     button.setAttribute("aria-expanded", String(!!menu && !menu.hidden));
-    button.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/>' + (snoozed ? '<path d="M17 3v3m-1.5-1.5h3"/>' : enabled ? '' : '<path d="m3 3 18 18"/>') + '</svg>';
+    const bellRing = '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/><path d="M19 2a2 2 0 0 1 2 2"/><path d="M3 2a2 2 0 0 0-2 2"/>';
+    const bellOff = '<path d="M10.68 10.68A2 2 0 0 0 14 13.4"/><path d="M18.8 18.8A17.9 17.9 0 0 1 18 13V8a6 6 0 0 0-9.33-5"/><path d="M6.26 6.26A5.86 5.86 0 0 0 6 8c0 7-3 7-3 9h14"/><path d="m2 2 20 20"/><path d="M10 21h4"/>';
+    button.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (enabled ? bellRing : bellOff) + '</svg>';
   }
   if (status) {
     status.textContent = !supported ? "Desktop notifications are not supported in this browser"
