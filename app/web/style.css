@@ -4475,3 +4475,47 @@ html[data-theme="dark"] .sb-brand .brand-mark.sm {
 .browser-notification-menu-trigger{width:26px;height:26px;border-radius:7px;color:var(--settings-muted);background:var(--settings-card);border:1px solid var(--settings-line)}
 .settings-notification-control .browser-notification-menu{right:0;bottom:auto;top:calc(100% + 8px);z-index:500}
 @media(hover:none){.profile-photo-edit{opacity:.9;visibility:visible}}
+
+
+/* Settings identity alignment: center the text independently of the hover-only edit actions. */
+.profile-identity-form{width:100%!important;align-items:stretch!important}
+.profile-identity-edit-row,.profile-designation-row{
+  position:relative!important;display:flex!important;width:100%!important;max-width:100%!important;
+  min-height:30px;align-items:center!important;justify-content:center!important;
+  align-self:stretch!important;margin:0!important;padding:0 38px 0 12px!important;box-sizing:border-box!important;
+}
+.profile-display-name-input,.profile-designation-select{
+  display:block!important;flex:1 1 100%!important;width:100%!important;max-width:100%!important;
+  min-width:0!important;margin:0 auto!important;text-align:center!important;text-align-last:center!important;
+}
+.profile-edit-icon{
+  position:absolute!important;right:12px!important;top:50%!important;transform:translateY(-50%)!important;
+  opacity:0!important;visibility:hidden!important;transition:opacity .15s ease,visibility .15s ease!important;
+  flex:0 0 24px!important;width:24px!important;height:24px!important;padding:0!important;
+}
+.profile-identity-edit-row:hover .profile-edit-icon,
+.profile-designation-row:hover .profile-edit-icon,
+.profile-identity-edit-row:focus-within .profile-edit-icon,
+.profile-designation-row:focus-within .profile-edit-icon{
+  opacity:1!important;visibility:visible!important;
+}
+.profile-edit-icon:focus-visible{opacity:1!important;visibility:visible!important;outline:2px solid var(--settings-emerald);outline-offset:2px}
+.settings-notification-control{display:flex;align-items:center;position:relative;margin-left:auto}
+.settings-notification-dnd{
+  display:flex!important;align-items:center!important;justify-content:center!important;
+  width:34px!important;height:34px!important;min-width:34px!important;padding:0!important;
+  border:1px solid var(--settings-line)!important;border-radius:10px!important;
+  background:var(--settings-card)!important;color:var(--settings-muted)!important;
+  transition:background .16s ease,border-color .16s ease,color .16s ease;
+}
+.settings-notification-dnd:hover,.settings-notification-dnd[aria-expanded="true"]{
+  color:var(--settings-emerald-strong)!important;border-color:var(--settings-emerald)!important;background:var(--settings-emerald-soft)!important;
+}
+.settings-notification-dnd.active{color:var(--settings-emerald)!important}
+.settings-notification-dnd.snoozed{color:var(--settings-emerald-strong)!important;background:var(--settings-emerald-soft)!important;border-color:var(--settings-emerald)!important}
+.settings-notification-dnd.blocked,.settings-notification-dnd.unsupported{opacity:.55}
+.settings-notification-control .browser-notification-menu{
+  right:0;left:auto;bottom:auto;top:calc(100% + 8px);z-index:500;
+}
+.settings-notification-control .browser-notification-menu[hidden]{display:none!important}
+.settings-notification-row .settings-preference-copy small{transition:color .15s ease}
