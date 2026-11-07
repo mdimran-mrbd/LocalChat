@@ -4521,26 +4521,45 @@ html[data-theme="dark"] .sb-brand .brand-mark.sm {
 .settings-notification-row .settings-preference-copy small{transition:color .15s ease}
 
 
-/* LocalChat 4.0.0 — profile identity alignment and real DND icon treatment. */
-.profile-hero > .profile-username { display:block; width:100%; text-align:center; }
+/* LocalChat 4.0.0 — profile identity alignment and real DND icon treatment.
+   Center text against the full profile panel; edit controls are removed from
+   normal flow so their presence/width can never shift the text's center. */
+.profile-hero > .profile-username {
+  display:block!important;width:100%!important;text-align:center!important;
+}
+.profile-identity-form {
+  display:flex!important;flex-direction:column!important;
+  align-items:stretch!important;width:100%!important;gap:1px!important;
+}
 .profile-identity-edit-row,.profile-designation-row {
-  display:grid;
-  grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);
-  align-items:center;
-  justify-content:initial;
-  column-gap:0;
+  position:relative!important;display:flex!important;flex:0 0 auto!important;
+  align-items:center!important;justify-content:center!important;
+  align-self:stretch!important;width:100%!important;max-width:100%!important;
+  min-height:30px!important;margin:0!important;padding:0!important;
+  box-sizing:border-box!important;
 }
 .profile-identity-edit-row .profile-display-name-input,
 .profile-designation-row .profile-designation-select {
-  grid-column:2;
-  justify-self:center;
-  text-align:center;
+  display:block!important;flex:1 1 auto!important;width:100%!important;
+  max-width:100%!important;min-width:0!important;margin:0!important;
+  text-align:center!important;text-align-last:center!important;
 }
 .profile-identity-edit-row .profile-edit-icon,
 .profile-designation-row .profile-edit-icon {
-  grid-column:3;
-  justify-self:start;
-  margin-left:3px;
+  position:absolute!important;right:12px!important;top:50%!important;
+  transform:translateY(-50%)!important;margin:0!important;
+  z-index:1;opacity:0!important;visibility:hidden!important;
+  transition:opacity .15s ease,visibility .15s ease!important;
+}
+.profile-identity-edit-row:hover .profile-edit-icon,
+.profile-designation-row:hover .profile-edit-icon,
+.profile-identity-edit-row:focus-within .profile-edit-icon,
+.profile-designation-row:focus-within .profile-edit-icon {
+  opacity:1!important;visibility:visible!important;
+}
+.profile-edit-icon:focus-visible {
+  opacity:1!important;visibility:visible!important;
+  outline:2px solid var(--settings-emerald);outline-offset:2px;
 }
 #settingsNotificationsSlot .browser-notification-button {
   width:38px!important;height:38px!important;min-width:38px!important;padding:0!important;
