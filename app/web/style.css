@@ -4519,3 +4519,40 @@ html[data-theme="dark"] .sb-brand .brand-mark.sm {
 }
 .settings-notification-control .browser-notification-menu[hidden]{display:none!important}
 .settings-notification-row .settings-preference-copy small{transition:color .15s ease}
+
+
+/* LocalChat 4.0.0 — profile identity alignment and real DND icon treatment. */
+.profile-hero > .profile-username { display:block; width:100%; text-align:center; }
+.profile-identity-edit-row,.profile-designation-row {
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);
+  align-items:center;
+  justify-content:initial;
+  column-gap:0;
+}
+.profile-identity-edit-row .profile-display-name-input,
+.profile-designation-row .profile-designation-select {
+  grid-column:2;
+  justify-self:center;
+  text-align:center;
+}
+.profile-identity-edit-row .profile-edit-icon,
+.profile-designation-row .profile-edit-icon {
+  grid-column:3;
+  justify-self:start;
+  margin-left:3px;
+}
+#settingsNotificationsSlot .browser-notification-button {
+  width:38px!important;height:38px!important;min-width:38px!important;padding:0!important;
+  display:inline-flex!important;align-items:center!important;justify-content:center!important;
+  border:1px solid var(--settings-line)!important;border-radius:10px!important;
+  background:var(--settings-card)!important;color:var(--settings-muted)!important;
+  position:relative!important;
+}
+#settingsNotificationsSlot .browser-notification-button svg { display:block!important;width:20px;height:20px; }
+#settingsNotificationsSlot .browser-notification-button::before,
+#settingsNotificationsSlot .browser-notification-button::after { display:none!important;content:none!important; }
+#settingsNotificationsSlot .browser-notification-button.active { color:var(--settings-emerald)!important;border-color:var(--settings-emerald)!important;background:var(--settings-emerald-soft)!important; }
+#settingsNotificationsSlot .browser-notification-button.snoozed { color:var(--settings-emerald-strong)!important;border-color:var(--settings-emerald)!important;background:var(--settings-emerald-soft)!important; }
+#settingsNotificationsSlot .browser-notification-button.blocked,
+#settingsNotificationsSlot .browser-notification-button.unsupported { opacity:.6; }
