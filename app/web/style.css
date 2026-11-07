@@ -4443,3 +4443,35 @@ html[data-theme="dark"] .sb-brand .brand-mark.sm {
 [data-theme="dark"] .about-panel .btn-ghost,[data-theme="dark"] .modal-panel:has(#cpwTitle) .btn-ghost{background:#1d3328!important;border-color:#355544!important;color:#d9eee1!important}
 [data-theme="dark"] .about-panel input,[data-theme="dark"] .modal-panel:has(#cpwTitle) input{background:#162820!important;border-color:#355544!important;color:#edf7f0!important}
 [data-theme="dark"] .about-panel .btn-primary,[data-theme="dark"] .modal-panel:has(#cpwTitle) .btn-primary{background:#238b5d!important;border-color:#238b5d!important;color:#fff!important}
+
+
+/* Profile identity: keep each label and its edit control as one centered inline unit. */
+.profile-identity-form{align-items:center!important}
+.profile-identity-edit-row,.profile-designation-row{
+  width:max-content!important;max-width:100%;align-self:center!important;
+  display:flex!important;align-items:center!important;justify-content:center!important;
+  gap:3px!important;margin-inline:auto!important;
+}
+.profile-display-name-input{flex:0 1 auto!important;width:auto!important;max-width:calc(100vw - 120px)!important;min-width:0!important;text-align:center!important}
+.profile-designation-select{flex:0 1 auto!important;width:auto!important;max-width:calc(100vw - 120px)!important;text-align:center!important;text-align-last:center!important}
+.profile-edit-icon{flex:0 0 22px!important;width:22px!important;height:22px!important;padding:0!important}
+.profile-photo-edit{opacity:0;visibility:hidden;transition:opacity .16s ease,visibility .16s ease}
+.profile-photo-wrap:hover .profile-photo-edit,.profile-photo-wrap:focus-within .profile-photo-edit{opacity:1;visibility:visible}
+.profile-photo-edit:focus-visible{opacity:1;visibility:visible;outline:2px solid var(--settings-emerald);outline-offset:2px}
+.settings-notification-control{display:flex;align-items:center;gap:7px;position:relative;margin-left:auto}
+.settings-notification-switch{
+  position:relative;width:42px!important;height:24px!important;min-width:42px;padding:0!important;
+  border:0!important;border-radius:999px!important;background:#aab7af!important;
+  cursor:pointer;transition:background .18s ease;
+}
+.settings-notification-switch::after{
+  content:"";position:absolute;left:3px;top:3px;width:18px;height:18px;
+  border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.22);
+  transition:transform .18s ease;
+}
+.settings-notification-switch.is-on{background:var(--settings-emerald)!important}
+.settings-notification-switch.is-on::after{transform:translateX(18px)}
+.settings-notification-switch.blocked,.settings-notification-switch.unsupported{opacity:.55}
+.browser-notification-menu-trigger{width:26px;height:26px;border-radius:7px;color:var(--settings-muted);background:var(--settings-card);border:1px solid var(--settings-line)}
+.settings-notification-control .browser-notification-menu{right:0;bottom:auto;top:calc(100% + 8px);z-index:500}
+@media(hover:none){.profile-photo-edit{opacity:.9;visibility:visible}}
