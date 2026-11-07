@@ -4575,3 +4575,18 @@ html[data-theme="dark"] .sb-brand .brand-mark.sm {
 #settingsNotificationsSlot .browser-notification-button.snoozed { color:var(--settings-emerald-strong)!important;border-color:var(--settings-emerald)!important;background:var(--settings-emerald-soft)!important; }
 #settingsNotificationsSlot .browser-notification-button.blocked,
 #settingsNotificationsSlot .browser-notification-button.unsupported { opacity:.6; }
+
+
+/* LocalChat 4.0.0 — keep the native designation select optically centered. */
+.profile-designation-row .profile-designation-select {
+  box-sizing:border-box!important;
+  padding-left:0!important;
+  padding-right:0!important;
+  text-align:center!important;
+  text-align-last:center!important;
+  direction:ltr!important;
+}
+.profile-designation-row .profile-designation-select:disabled {
+  appearance:none!important;
+  -webkit-appearance:none!important;
+}
