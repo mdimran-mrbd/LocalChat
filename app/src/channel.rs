@@ -53,7 +53,7 @@ pub struct Channel {
     /// For DM channels: the two participant usernames (lowercased, sorted).
     /// Used to re-bind a returning user's new ephemeral UserId on reconnect
     /// so DMs persist across page reloads.
-    pub dm_users: Option<[CompactString; 2]>,
+    pub dm_users: StdRwLock<Option<[CompactString; 2]>>,
 }
 
 impl Channel {
@@ -79,7 +79,7 @@ impl Channel {
             tx,
             history: RwLock::new(VecDeque::with_capacity(history_cap)),
             history_cap,
-            dm_users: None,
+            dm_users: StdRwLock::new(None),
         }
     }
 
@@ -100,7 +100,7 @@ impl Channel {
             members: self.members.iter().map(|e| e.clone()).collect(),
             created_by: self.created_by.clone(),
             created_at: self.created_at,
-            dm_users: self.dm_users.clone(),
+            dm_users: self.dm_users.read().map(|v| v.clone()).unwrap_or(None),
         }
     }
 
@@ -216,7 +216,7 @@ impl ChannelRegistry {
             a_id.clone(),
             self.history_cap,
         );
-        ch.dm_users = Some(names);
+        *ch.dm_users.write().expect("DM users lock poisoned") = Some(names);
         let ch = Arc::new(ch);
         ch.members.insert(a_id.clone());
         ch.members.insert(b_id.clone());
@@ -228,16 +228,46 @@ impl ChannelRegistry {
 
     /// Re-bind any DM channels that contain `username` to the new `user_id`.
     /// Returns the channel IDs that were rebound.
+    /// Keep durable DM identity bindings intact when an authenticated user
+    /// changes their username. DM messages and channel IDs are not rewritten.
+    pub fn rename_dm_username(&self, old_username: &str, new_username: &str) -> Vec<Arc<Channel>> {
+        let old_key = old_username.to_lowercase();
+        let new_key = new_username.to_lowercase().to_compact_string();
+        let mut changed = Vec::new();
+        for entry in self.map.iter() {
+            let channel = Arc::clone(entry.value());
+            if !matches!(channel.kind, ChannelKind::Dm) { continue; }
+            if let Ok(mut dm_users) = channel.dm_users.write() {
+                if let Some(names) = dm_users.as_mut() {
+                let mut did_change = false;
+                for name in names.iter_mut() {
+                    if name.to_lowercase() == old_key {
+                        *name = new_key.clone();
+                        did_change = true;
+                    }
+                }
+                if did_change {
+                    names.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+                    changed.push(Arc::clone(&channel));
+                }
+                }
+            };
+        }
+        changed
+    }
+
     pub fn rebind_user_dms(&self, user_id: UserId, username: &str) -> Vec<ChannelId> {
         let lname = username.to_lowercase();
         let mut out = Vec::new();
         for entry in self.map.iter() {
             let ch = entry.value();
-            if let Some(names) = &ch.dm_users {
+            if let Ok(dm_users) = ch.dm_users.read() {
+                if let Some(names) = dm_users.as_ref() {
                 if names.iter().any(|n| n.to_lowercase() == lname) {
                     ch.members.insert(user_id.clone());
                     self.add_user_channel(user_id.clone(), &ch.id);
                     out.push(ch.id.clone());
+                }
                 }
             }
         }
@@ -326,7 +356,7 @@ impl ChannelRegistry {
                 m.created_by,
                 self.history_cap,
             );
-            ch.dm_users = m.dm_users;
+            *ch.dm_users.write().expect("DM users lock poisoned") = m.dm_users;
             let ch = Arc::new(ch);
             for uid in &m.members {
                 ch.members.insert(uid.clone());
