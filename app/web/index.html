@@ -135,22 +135,22 @@
     </aside>
     <!-- ───────── Main panel ───────── -->
     <main class="main">
-      <header class="chat-header">
+      <header class="chat-header" role="banner">
         <button class="icon-btn mobile-only" onclick="toggleSidebar()" aria-label="Toggle sidebar">
           <svg viewBox="0 0 24 24" width="20" height="20"><path d="M3 6h18M3 12h18M3 18h18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
         </button>
-        <div class="ch-avatar" id="chAvatar">#</div>
-        <div class="ch-title">
-          <div class="h5" id="chTitle">general</div>
-          <div class="muted xs" id="chSub">lobby</div>
+        <div class="ch-identity">
+          <div class="ch-avatar" id="chAvatar" aria-hidden="true">#</div>
+          <div class="ch-title">
+            <div class="h5" id="chTitle">Lobby</div>
+            <div class="muted xs" id="chSub">Everyone</div>
+          </div>
         </div>
         <div class="ch-actions">
           <span class="badge-lock hidden" id="e2eeBadge" title="End-to-end encrypted" aria-label="End-to-end encrypted">
             <svg viewBox="0 0 24 24" width="14" height="14"><path d="M6 10V7a6 6 0 0112 0v3M5 10h14v10H5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
           </span>
-          <button id="savedMessagesBtn" class="icon-btn ch-tool-btn" title="View saved messages" aria-label="View saved messages" onclick="openSavedMessages()"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/></svg><span id="savedMessagesCount" class="saved-count hidden"></span></button>
-          <button id="channelInfoBtn" class="icon-btn ch-tool-btn" title="Chat info" aria-label="Chat info" onclick="openChannelInfo()"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7h.01"/></svg></button>
-          <button id="messageSearchBtn" class="icon-btn ch-tool-btn" title="Search this channel's messages" aria-label="Search this channel's messages" onclick="openMessageSearch()"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg></button>
+          <button id="messageSearchBtn" class="icon-btn ch-tool-btn" title="Search messages" aria-label="Search messages" onclick="openMessageSearch()"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg></button>
           <form id="messageSearchBar" class="message-search-bar hidden" onsubmit="runMessageSearch(event)" role="search" aria-label="Search channel messages">
             <input id="messageSearchInput" type="search" placeholder="Search messages…" minlength="2" maxlength="100" autocomplete="off" aria-label="Search messages" onkeydown="handleMessageSearchKeydown(event)" />
             <button type="button" class="search-nav-btn" title="Previous match (Shift+Enter)" aria-label="Previous match" onclick="navigateMessageSearch('previous')">↑</button>
@@ -158,20 +158,29 @@
             <span id="messageSearchCount" class="search-match-count" aria-live="polite">0/0</span>
             <button type="button" class="search-nav-btn search-close-btn" title="Close search (Esc)" aria-label="Close search" onclick="closeMessageSearch()">×</button>
           </form>
-          <button id="joinBtn" class="btn btn-primary btn-sm hidden" title="Join this channel" onclick="joinCurrentChannel()">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4M10 17l5-5-5-5M15 12H3"/></svg>
-            <span>Join</span>
-          </button>
-          <button id="addPeopleBtn" class="btn btn-ghost btn-sm hidden" title="Add people to this channel" onclick="openInviteModal()">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg>
-            <span>Add people</span>
-          </button>
-          <button id="callBtn" class="icon-btn hidden" title="Audio call" aria-label="Start audio call" onclick="startCall(false)">
-            <svg viewBox="0 0 24 24" width="18" height="18"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.13.96.37 1.9.72 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.91.35 1.85.59 2.81.72A2 2 0 0122 16.92z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </button>
-          <button id="videoCallBtn" class="icon-btn hidden" title="Video call" aria-label="Start video call" onclick="startCall(true)">
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
-          </button>
+          <button id="channelInfoBtn" class="icon-btn ch-tool-btn" title="Chat info" aria-label="Chat info" onclick="openChannelInfo()"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7h.01"/></svg></button>
+          <div class="header-more-wrap">
+            <button id="headerMoreBtn" class="icon-btn ch-tool-btn" type="button" title="More options" aria-label="More options" aria-haspopup="menu" aria-expanded="false" onclick="toggleHeaderMore()">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>
+            </button>
+            <div id="headerMoreMenu" class="header-more-menu hidden" role="menu" aria-label="Conversation actions">
+              <button id="savedMessagesBtn" class="header-menu-item" type="button" role="menuitem" title="View saved messages" onclick="openSavedMessages();closeHeaderMore()">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/></svg><span>Saved messages</span><span id="savedMessagesCount" class="saved-count hidden"></span>
+              </button>
+              <button id="joinBtn" class="header-menu-item hidden" type="button" role="menuitem" title="Join this channel" onclick="joinCurrentChannel();closeHeaderMore()">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4M10 17l5-5-5-5M15 12H3"/></svg><span>Join conversation</span>
+              </button>
+              <button id="addPeopleBtn" class="header-menu-item hidden" type="button" role="menuitem" title="Add people to this group" onclick="openInviteModal();closeHeaderMore()">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg><span>Add people</span>
+              </button>
+              <button id="callBtn" class="header-menu-item hidden" type="button" role="menuitem" title="Audio call" onclick="startCall(false);closeHeaderMore()">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.13.96.37 1.9.72 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.91.35 1.85.59 2.81.72A2 2 0 0122 16.92z"/></svg><span>Audio call</span>
+              </button>
+              <button id="videoCallBtn" class="header-menu-item hidden" type="button" role="menuitem" title="Video call" onclick="startCall(true);closeHeaderMore()">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg><span>Video call</span>
+              </button>
+            </div>
+          </div>
         </div>
       </header>
 
