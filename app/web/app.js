@@ -3139,42 +3139,82 @@ function updateHeader() {
   const addPeopleBtn = $("addPeopleBtn");
   if (!ch) return;
 
-  // "Join" appears for public groups the current user isn't already a member of.
+  const isNotes = ch.id.startsWith("notes:");
+  const isLobby = ch.kind === "lobby" || ch.id === S.lobby || ch.id === "pub:general";
+  const isGroup = ch.kind === "group" && !isLobby && !isNotes;
   const isMember = !!(S.me && (ch.members || []).includes(S.me.id));
-  if (joinBtn) joinBtn.classList.toggle("hidden", !(ch.kind === "group" && !ch.isPrivate && !isMember));
-  // "Add people" appears for any group channel you're already a member of.
-  // For private channels this is the ONLY way for new people to get in.
-  if (addPeopleBtn) addPeopleBtn.classList.toggle("hidden", !(ch.kind === "group" && isMember));
+
+  // Contextual actions live in the overflow menu; preserve their existing rules.
+  if (joinBtn) joinBtn.classList.toggle("hidden", !(isGroup && !ch.isPrivate && !isMember));
+  if (addPeopleBtn) addPeopleBtn.classList.toggle("hidden", !(isGroup && isMember));
 
   if (ch.kind === "dm") {
     const p = dmPeer(ch);
     title.replaceChildren(userNameNode(p || { username: "unknown" }));
-    sub.textContent = p ? (p.offline ? "offline" : "online") : "";
+    sub.textContent = p ? (p.offline ? "Offline" : "Online") : "Status unavailable";
+    sub.dataset.presence = p ? (p.offline ? "offline" : "online") : "unknown";
     badge.classList.remove("hidden");
     composer.placeholder = "Type a message";
     if (avSlot) {
       avSlot.style.background = p?.color || "var(--brand)";
       renderAvatarContent(avSlot, p?.avatar, p?.username?.[0] || "?");
+      avSlot.dataset.presence = p ? (p.offline ? "offline" : "online") : "unknown";
       avSlot.classList.remove("hidden");
     }
     if (callBtn) callBtn.classList.toggle("hidden", !p);
     if (videoCallBtn) videoCallBtn.classList.toggle("hidden", !p);
   } else {
-    const isNotes = ch.id.startsWith("notes:");
-    const isLobby = ch.kind === "lobby" || ch.id === S.lobby || ch.id === "pub:general";
-    title.textContent = isNotes ? (S.me?.display_name || S.me?.username || "My") + " (Me)" : (isLobby ? "Lobby" : "#" + (ch.name || ch.id));
-    sub.textContent = isNotes ? "Personal notes · only you" : (ch.kind === "lobby" ? "lobby · everyone" : (ch.isPrivate ? "private channel" : "channel"));
+    title.textContent = isNotes
+      ? (S.me?.display_name || S.me?.username || "My") + " (Me)"
+      : (isLobby ? "Lobby" : (ch.name || ch.id));
+    const members = Array.isArray(ch.members) ? ch.members.length : 0;
+    if (isNotes) sub.textContent = "Personal notes · only you";
+    else if (isLobby) sub.textContent = "Everyone · " + S.users.size + " online";
+    else sub.textContent = (ch.isPrivate ? "Private group" : "Group") + (members ? " · " + members + (members === 1 ? " member" : " members") : "");
+    sub.dataset.presence = "none";
     badge.classList.add("hidden");
     composer.placeholder = "Type a message";
     if (avSlot) {
       avSlot.style.background = "var(--brand)";
-      avSlot.textContent = "#";
+      avSlot.dataset.presence = "none";
+      if (isGroup) {
+        avSlot.innerHTML = '<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19v-1.2a5.5 5.5 0 015.5-5.5h1a5.5 5.5 0 015.5 5.5V19M16 5.2a3.1 3.1 0 010 5.9M17 13.1a5.3 5.3 0 013.5 5V19"/></svg>';
+      } else if (isNotes) {
+        avSlot.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5h8l4 4V20a1 1 0 01-1 1H6a1 1 0 01-1-1V4.5a1 1 0 011-1z"/><path d="M14 3.5v4h4M8 12h8M8 16h6"/></svg>';
+      } else {
+        avSlot.textContent = "#";
+      }
       avSlot.classList.remove("hidden");
     }
     if (callBtn) callBtn.classList.add("hidden");
     if (videoCallBtn) videoCallBtn.classList.add("hidden");
   }
 }
+
+function toggleHeaderMore() {
+  const menu = $("headerMoreMenu"), button = $("headerMoreBtn");
+  if (!menu || !button) return;
+  const opening = menu.classList.contains("hidden");
+  menu.classList.toggle("hidden", !opening);
+  button.setAttribute("aria-expanded", opening ? "true" : "false");
+  if (opening) {
+    const first = menu.querySelector("button:not(.hidden)");
+    if (first) first.focus();
+  }
+}
+function closeHeaderMore() {
+  const menu = $("headerMoreMenu"), button = $("headerMoreBtn");
+  if (!menu || !button) return;
+  menu.classList.add("hidden");
+  button.setAttribute("aria-expanded", "false");
+}
+document.addEventListener("click", (event) => {
+  const wrap = document.querySelector(".header-more-wrap");
+  if (wrap && !wrap.contains(event.target)) closeHeaderMore();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeHeaderMore();
+});
 
 function renderTyping() {
   const m = S.typing.get(S.active);
