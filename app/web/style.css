@@ -4716,3 +4716,21 @@ html[data-theme="dark"] .sb-brand .brand-mark.sm {
   .msg .bubble:has(.video-att) { max-width: 100%; }
   .msg .bubble .file { min-width: 0; width: 100%; }
 }
+
+
+/* LocalChat 4.0.0 — Item 3: grouped sender identity and quiet timestamps. */
+.msg-header .header-time {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: .01em;
+  opacity: .62;
+}
+.msg-header .user-designation {
+  font-size: 10px;
+  font-weight: 550;
+  color: var(--fg-3);
+  opacity: .9;
+}
+.msg-header.own-header {
+  justify-content: flex-end;
+}
