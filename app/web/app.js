@@ -2631,17 +2631,15 @@ async function renderMessage(m, { follow, peer, ch }) {
     bubble.append(quote);
   }
 
-  // Header row above the bubble (Teams-style):
-  //  - incoming first-of-group: "Author • Time"
-  //  - own first-of-group: "Time" right-aligned
-  //  - DM first-of-group: "Time"
-  //  - follow-up bubbles: no header
+  // Show sender identity once at the beginning of each non-DM message group.
+  // Direct chats already identify the peer in the conversation header.
   let header = null;
-  const showAuthor = !follow && !isOwn && !isDm;
+  const showAuthor = !follow && !isDm;
   if (!follow) {
     if (showAuthor) {
-      const authorIsMe = m.userId === S.me?.id;
-      header = el("div", { class: "msg-header" }, [
+      const authorIsMe = isOwn;
+      const profile = S.users.get(m.userId) || (authorIsMe ? S.me : null) || { username: m.username };
+      header = el("div", { class: "msg-header" + (isOwn ? " own-header" : "") }, [
         el(authorIsMe ? "span" : "button", {
           type: authorIsMe ? undefined : "button",
           class: "author" + (authorIsMe ? "" : " author-link"),
@@ -2651,7 +2649,7 @@ async function renderMessage(m, { follow, peer, ch }) {
             ev.stopPropagation();
             openDmWithUserId(m.userId, m.username);
           },
-        }, userNameNode(S.users.get(m.userId) || { username: m.username })),
+        }, userNameNode(profile)),
         el("span", { class: "header-time" }, fmtTime(m.ts)),
       ]);
     } else {
