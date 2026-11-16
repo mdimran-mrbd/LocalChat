@@ -4653,3 +4653,66 @@ html[data-theme="dark"] .sb-brand .brand-mark.sm {
   .ch-actions{gap:2px}
   .ch-actions .ch-tool-btn{width:32px;height:32px;min-width:32px;flex-basis:32px;border-radius:9px}
 }
+
+
+/* LocalChat 4.0.0 — Emerald Minimal message bubble treatment (Item 2). */
+.msg-stack {
+  width: fit-content;
+  max-width: min(72%, 720px);
+}
+.msg .bubble {
+  max-width: min(62ch, 100%);
+  border: 1px solid rgba(105, 132, 114, .14);
+  border-radius: 13px;
+  padding: 8px 12px;
+  background: #26332c;
+  color: #edf5ef;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .12);
+}
+.msg.own .bubble {
+  background: #174b34;
+  color: #effaf3;
+  border-color: rgba(112, 190, 143, .18);
+}
+.msg.has-tail .bubble { border-top-left-radius: 5px; }
+.msg.own.has-tail .bubble {
+  border-top-left-radius: 13px;
+  border-top-right-radius: 5px;
+}
+.msg .bubble .text { line-height: 1.48; }
+.msg.own .bubble .text { padding-right: 28px; }
+
+/* Keep attachment cards and media inside the responsive bubble width. */
+.msg .bubble:has(.image-att),
+.msg .bubble:has(.video-att) {
+  max-width: min(100%, 480px);
+}
+.msg .bubble .file {
+  min-width: min(240px, 100%);
+  max-width: 100%;
+}
+
+[data-theme="light"] .msg .bubble {
+  background: #f1f4f1;
+  color: #1d2b22;
+  border-color: #e4ebe5;
+  box-shadow: 0 1px 2px rgba(28, 54, 37, .07);
+}
+[data-theme="light"] .msg.own .bubble {
+  background: #dff2e5;
+  color: #173b28;
+  border-color: #cce7d5;
+}
+[data-theme="light"] .msg .bubble .meta { color: #718276; }
+[data-theme="light"] .msg.own .bubble .meta { color: #587563; }
+
+@media (max-width: 600px) {
+  .msg-stack { max-width: 86%; }
+  .msg .bubble {
+    max-width: 100%;
+    padding: 8px 11px;
+  }
+  .msg .bubble:has(.image-att),
+  .msg .bubble:has(.video-att) { max-width: 100%; }
+  .msg .bubble .file { min-width: 0; width: 100%; }
+}
