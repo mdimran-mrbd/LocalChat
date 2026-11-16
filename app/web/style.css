@@ -4736,41 +4736,52 @@ html[data-theme="dark"] .sb-brand .brand-mark.sm {
 }
 
 
-/* LocalChat 4.0.0 — Item 4: compact, non-layout-shifting message action toolbar. */
-.msg.actions-visible { padding-top: 0 !important; }
-.msg.actions-visible.actions-below { padding-bottom: 0 !important; }
-.msg .msg-actions {
-  position: absolute; z-index: 12;
-  display: flex; align-items: center; gap: 2px;
-  padding: 3px;
-  border: 1px solid var(--border-strong, var(--border));
-  border-radius: 11px;
-  background: var(--bg-1);
-  box-shadow: 0 5px 18px rgba(12, 35, 22, .18);
-  opacity: 0; pointer-events: none; white-space: nowrap;
-  transition: opacity 120ms ease;
+/* LocalChat 4.0.0 — Item 4 refinement: click-to-open actions, no hover UI. */
+.msg .msg-actions-trigger {
+  position: absolute; z-index: 6; top: 50%; right: 4px;
+  transform: translateY(-50%); width: 23px; height: 23px;
+  display: grid; place-items: center; padding: 0;
+  border: 0; border-radius: 7px; background: transparent;
+  color: var(--fg-2); opacity: .78; cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, opacity 120ms ease;
 }
-.msg.actions-visible .msg-actions, .msg:focus-within .msg-actions { opacity: 1; pointer-events: auto; }
+.msg.own .msg-actions-trigger { right: auto; left: 4px; }
+.msg .msg-actions-trigger:hover,
+.msg .msg-actions-trigger:focus-visible,
+.msg.actions-open .msg-actions-trigger {
+  opacity: 1; color: var(--brand); background: var(--brand-soft); outline: none;
+}
+.msg .msg-actions {
+  position: absolute; z-index: 14;
+  display: flex; align-items: center; gap: 2px; padding: 3px;
+  border: 1px solid var(--border); border-radius: 11px;
+  background: var(--bg-1); color: var(--fg-0); box-shadow: var(--shadow-lg);
+  opacity: 0; visibility: hidden; pointer-events: none; white-space: nowrap;
+  transition: opacity 120ms ease, visibility 120ms ease;
+}
+.msg.actions-open .msg-actions { opacity: 1; visibility: visible; pointer-events: auto; }
 .msg .msg-actions .ma-btn {
   flex: 0 0 30px; width: 30px; height: 30px;
   display: grid; place-items: center; padding: 0;
   border: 0; border-radius: 8px; background: transparent;
   color: var(--fg-2); cursor: pointer;
-  transition: color 110ms ease, background 110ms ease;
 }
-.msg .msg-actions .ma-btn:hover, .msg .msg-actions .ma-btn:focus-visible {
+.msg .msg-actions .ma-btn:hover,
+.msg .msg-actions .ma-btn:focus-visible {
   color: var(--brand); background: var(--brand-soft); outline: none;
 }
 .msg .msg-actions .ma-btn.pinned { color: var(--brand); background: var(--brand-soft); }
-[data-theme="light"] .msg .msg-actions { background: #fff; border-color: #dfe8e1; box-shadow: 0 5px 18px rgba(24,55,35,.14); }
-[data-theme="light"] .msg .msg-actions .ma-btn { color: #64756a; }
-[data-theme="light"] .msg .msg-actions .ma-btn:hover,
-[data-theme="light"] .msg .msg-actions .ma-btn:focus-visible,
-[data-theme="light"] .msg .msg-actions .ma-btn.pinned { color: #087747; background: #e8f5ed; }
-.msg:not(.system) .bubble { padding-right: 12px !important; }
-.msg.own:not(.system) .bubble { padding-left: 12px !important; }
-@media (hover: none) { .msg .msg-actions { opacity: 1; pointer-events: auto; } }
+.msg .bubble { padding-right: 34px !important; }
+.msg.own .bubble { padding-left: 34px !important; padding-right: 12px !important; }
+.msg .msg-menu {
+  border: 1px solid var(--border); border-radius: 10px;
+  background: var(--bg-1); color: var(--fg-0); box-shadow: var(--shadow-lg);
+}
+.msg .msg-menu-item { color: var(--fg-0); }
+.msg .msg-menu-item:hover { background: var(--brand-soft); color: var(--brand); }
+.msg .msg-menu-item.danger { color: var(--danger); }
 @media (max-width: 600px) {
   .msg .msg-actions { gap: 0; padding: 2px; }
   .msg .msg-actions .ma-btn { flex-basis: 28px; width: 28px; height: 28px; }
+  .msg .msg-actions-trigger { opacity: 1; }
 }

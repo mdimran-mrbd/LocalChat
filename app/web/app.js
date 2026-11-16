@@ -1787,7 +1787,7 @@ function toggleMessageMenu(row, menu, bubble, trigger) {
   menu.style.left = `${left}px`; menu.style.top = `${top}px`;
 }
 function positionMessageActions(row) {
-  if (!row?.isConnected || !row.classList.contains("actions-visible")) return;
+  if (!row?.isConnected || !row.classList.contains("actions-open")) return;
   row.classList.remove("actions-above", "actions-below");
   const bubble = row.querySelector(".bubble");
   const actions = row.querySelector(".msg-actions");
@@ -1837,8 +1837,15 @@ function positionMessageActions(row) {
 
 function repositionVisibleMessageActions() {
   document.querySelectorAll("#messages .msg").forEach(positionMessageReaction);
-  document.querySelectorAll("#messages .msg.actions-visible").forEach(positionMessageActions);
+  document.querySelectorAll("#messages .msg.actions-open").forEach(positionMessageActions);
 }
+document.addEventListener("click", (ev) => {
+  if (ev.target.closest(".msg-actions-trigger, .msg-actions, .msg-menu")) return;
+  document.querySelectorAll("#messages .msg.actions-open").forEach((row) => {
+    row.classList.remove("actions-open");
+    row.querySelector(".msg-actions-trigger")?.setAttribute("aria-expanded", "false");
+  });
+});
 window.addEventListener("resize", repositionVisibleMessageActions);
 $("messages")?.addEventListener("scroll", repositionVisibleMessageActions, { passive: true });
 
@@ -2877,9 +2884,6 @@ async function renderMessage(m, { follow, peer, ch }) {
   });
   const moreTrigger = actionButton("More", `<circle cx="5" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1" fill="currentColor" stroke="none"/>`, (ev) => toggleMessageMenu(row, menu, bubble, ev.currentTarget));
   const menu = el("div", { class: "msg-menu", role: "menu" }, [
-    el("button", { type: "button", class: "msg-menu-item", onclick: (ev) => { ev.stopPropagation(); closeMessageMenu(row, menu, bubble); startReplyTo(m, displayText, fileRealName); } }, [svg("M10 9V5l-7 7 7 7v-4c5 0 8 1.5 10 5-1-7-5-11-10-11z", 16), "Reply"]),
-    el("button", { type: "button", class: "msg-menu-item", onclick: (ev) => { ev.stopPropagation(); closeMessageMenu(row, menu, bubble); openForwardDialog(m, displayText, fileRealName, peer); } }, [svg("M14 5l7 7-7 7M21 12H9a6 6 0 0 0-6 6", 16), "Forward"]),
-    ...(canPinMessage ? [el("button", { type: "button", class: "msg-menu-item", onclick: (ev) => { ev.stopPropagation(); closeMessageMenu(row, menu, bubble); toggleMessagePin(m); } }, [svg("m16 3 5 5-4 1-4 4-1 5-2-2-4 4-2-2 4-4-2-2 5-1 4-4z", 16), isMessagePinned(m) ? "Unpin" : "Pin"])] : []),
     el("button", { type: "button", class: "msg-menu-item", onclick: (ev) => { ev.stopPropagation(); closeMessageMenu(row, menu, bubble); toggleMessageBookmark(m); } }, [svg("M6 4h12v17l-6-4-6 4z", 16), savedNow ? "Remove saved message" : "Save message"]),
     el("button", { type: "button", class: "msg-menu-item", onclick: async (ev) => { ev.stopPropagation(); closeMessageMenu(row, menu, bubble); try { await navigator.clipboard.writeText(displayText || fileRealName || ""); toast("Copied"); } catch { toast("Could not copy this message"); } } }, [svg("M8 8V4h12v12h-4M4 8h12v12H4z", 16), "Copy"]),
     el("button", { type: "button", class: "msg-menu-item danger", disabled: !canDeleteMessage, title: canDeleteMessage ? "Delete for everyone" : "Only the sender or group admin can delete this message", onclick: (ev) => { ev.stopPropagation(); closeMessageMenu(row, menu, bubble); if (canDeleteMessage && confirm("Delete this message for everyone? This cannot be undone.")) sendOp({ op: "delete_message", channel: m.channel, msgId: Number(m.id) }); } }, [svg("M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14M10 10v6M14 10v6", 16), "Delete for everyone"]),
@@ -2898,30 +2902,17 @@ async function renderMessage(m, { follow, peer, ch }) {
   if (follow) classes.push("follow");
   else        classes.push("has-tail");
 
-  bubble.append(menu);
+  bubble.append(actionToggle, menu);
   const stack = el("div", { class: "msg-stack" });
   if (header) stack.append(header);
   stack.append(bubble);
   const row = el("div", { class: classes.join(" "), id: `m-${m.channel}-${m.id}` }, [avatar, stack, actions]);
-  row.addEventListener("mouseenter", () => {
-    row.classList.add("actions-visible");
-    requestAnimationFrame(() => { positionMessageReaction(row); positionMessageActions(row); });
-  });
-  row.addEventListener("focusin", () => {
-    row.classList.add("actions-visible");
-    requestAnimationFrame(() => { positionMessageReaction(row); positionMessageActions(row); });
-  });
-  row.addEventListener("mouseleave", (ev) => {
-    if (!row.contains(ev.relatedTarget) && !menu.contains(ev.relatedTarget)) {
-      row.classList.remove("actions-visible");
-      // Leave the menu open if keyboard focus is still within the row.
-      if (!row.contains(document.activeElement) && !menu.contains(document.activeElement)) closeMessageMenu(row, menu, bubble);
-    }
-  });
-  row.addEventListener("focusout", (ev) => {
-    if (!row.contains(ev.relatedTarget) && !menu.contains(ev.relatedTarget)) {
-      row.classList.remove("actions-visible");
+  row.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape" && row.classList.contains("actions-open")) {
+      row.classList.remove("actions-open");
+      actionToggle.setAttribute("aria-expanded", "false");
       closeMessageMenu(row, menu, bubble);
+      actionToggle.focus();
     }
   });
   row.addEventListener("dblclick", (ev) => {
