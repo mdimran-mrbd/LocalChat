@@ -2867,17 +2867,15 @@ async function renderMessage(m, { follow, peer, ch }) {
     html: `<svg viewBox="0 0 24 24" width="19" height="19"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="9" cy="10.5" r="1.1" fill="currentColor"/><circle cx="15" cy="10.5" r="1.1" fill="currentColor"/><path d="M8.5 14.2c.8 1.3 2.1 2.1 3.5 2.1s2.7-.8 3.5-2.1" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`,
   });
 
-  const menuTrigger = el("button", {
+  const actionButton = (label, path, onClick, extraClass = "") => el("button", {
     type: "button",
-    class: "msg-menu-trigger",
-    title: "Message actions",
-    "aria-label": "Message actions",
-    onclick: (ev) => {
-      ev.stopPropagation();
-      toggleMessageMenu(row, menu, bubble, ev.currentTarget);
-    },
-    html: `<svg viewBox="0 0 24 24" width="16" height="16"><path d="m7 10 5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+    class: "ma-btn" + (extraClass ? " " + extraClass : ""),
+    title: label,
+    "aria-label": label,
+    onclick: (ev) => { ev.stopPropagation(); onClick(ev); },
+    html: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${path}</svg>`,
   });
+  const moreTrigger = actionButton("More", `<circle cx="5" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1" fill="currentColor" stroke="none"/>`, (ev) => toggleMessageMenu(row, menu, bubble, ev.currentTarget));
   const menu = el("div", { class: "msg-menu", role: "menu" }, [
     el("button", { type: "button", class: "msg-menu-item", onclick: (ev) => { ev.stopPropagation(); closeMessageMenu(row, menu, bubble); startReplyTo(m, displayText, fileRealName); } }, [svg("M10 9V5l-7 7 7 7v-4c5 0 8 1.5 10 5-1-7-5-11-10-11z", 16), "Reply"]),
     el("button", { type: "button", class: "msg-menu-item", onclick: (ev) => { ev.stopPropagation(); closeMessageMenu(row, menu, bubble); openForwardDialog(m, displayText, fileRealName, peer); } }, [svg("M14 5l7 7-7 7M21 12H9a6 6 0 0 0-6 6", 16), "Forward"]),
@@ -2886,6 +2884,13 @@ async function renderMessage(m, { follow, peer, ch }) {
     el("button", { type: "button", class: "msg-menu-item", onclick: async (ev) => { ev.stopPropagation(); closeMessageMenu(row, menu, bubble); try { await navigator.clipboard.writeText(displayText || fileRealName || ""); toast("Copied"); } catch { toast("Could not copy this message"); } } }, [svg("M8 8V4h12v12h-4M4 8h12v12H4z", 16), "Copy"]),
     el("button", { type: "button", class: "msg-menu-item danger", disabled: !canDeleteMessage, title: canDeleteMessage ? "Delete for everyone" : "Only the sender or group admin can delete this message", onclick: (ev) => { ev.stopPropagation(); closeMessageMenu(row, menu, bubble); if (canDeleteMessage && confirm("Delete this message for everyone? This cannot be undone.")) sendOp({ op: "delete_message", channel: m.channel, msgId: Number(m.id) }); } }, [svg("M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14M10 10v6M14 10v6", 16), "Delete for everyone"]),
   ]);
+  const actions = el("div", { class: "msg-actions", role: "toolbar", "aria-label": "Message actions" }, [
+    actionButton("React", `<circle cx="12" cy="12" r="9"/><circle cx="9" cy="10" r="1" fill="currentColor" stroke="none"/><circle cx="15" cy="10" r="1" fill="currentColor" stroke="none"/><path d="M8.5 14.2c.8 1.3 2.1 2.1 3.5 2.1s2.7-.8 3.5-2.1"/>`, (ev) => openReactionPicker(ev.currentTarget, m.id)),
+    actionButton("Reply", `<path d="M10 9V5l-7 7 7 7v-4c5 0 8 1.5 10 5-1-7-5-11-10-11z"/>`, () => startReplyTo(m, displayText, fileRealName)),
+    actionButton("Forward", `<path d="M14 5l7 7-7 7M21 12H9a6 6 0 0 0-6 6"/>`, () => openForwardDialog(m, displayText, fileRealName, peer)),
+    ...(canPinMessage ? [actionButton(isMessagePinned(m) ? "Unpin" : "Pin", `<path d="m16 3 5 5-4 1-4 4-1 5-2-2-4 4-2-2 4-4-2-2 5-1 4-4z"/>`, () => toggleMessagePin(m), isMessagePinned(m) ? "pinned" : "")] : []),
+    moreTrigger,
+  ]);
   // Tail only on the first bubble of a group.
   const classes = ["msg"];
   if (isOwn) classes.push("own");
@@ -2893,11 +2898,11 @@ async function renderMessage(m, { follow, peer, ch }) {
   if (follow) classes.push("follow");
   else        classes.push("has-tail");
 
-  bubble.append(menuTrigger, menu);
+  bubble.append(menu);
   const stack = el("div", { class: "msg-stack" });
   if (header) stack.append(header);
   stack.append(bubble);
-  const row = el("div", { class: classes.join(" "), id: `m-${m.channel}-${m.id}` }, [avatar, stack, quickReaction]);
+  const row = el("div", { class: classes.join(" "), id: `m-${m.channel}-${m.id}` }, [avatar, stack, actions]);
   row.addEventListener("mouseenter", () => {
     row.classList.add("actions-visible");
     requestAnimationFrame(() => { positionMessageReaction(row); positionMessageActions(row); });
