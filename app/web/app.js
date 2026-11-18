@@ -2883,6 +2883,30 @@ async function renderMessage(m, { follow, peer, ch }) {
     html: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${path}</svg>`,
   });
   const moreTrigger = actionButton("More", `<circle cx="5" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1" fill="currentColor" stroke="none"/>`, (ev) => toggleMessageMenu(row, menu, bubble, ev.currentTarget));
+  const actionToggle = el("button", {
+    type: "button",
+    class: "msg-actions-trigger",
+    title: "Message actions",
+    "aria-label": "Open message actions",
+    "aria-expanded": "false",
+    onclick: (ev) => {
+      ev.stopPropagation();
+      const opening = !row.classList.contains("actions-open");
+      document.querySelectorAll("#messages .msg.actions-open").forEach((other) => {
+        if (other === row) return;
+        other.classList.remove("actions-open");
+        other.querySelector(".msg-actions-trigger")?.setAttribute("aria-expanded", "false");
+      });
+      row.classList.toggle("actions-open", opening);
+      actionToggle.setAttribute("aria-expanded", opening ? "true" : "false");
+      if (opening) requestAnimationFrame(() => {
+        positionMessageReaction(row);
+        positionMessageActions(row);
+      });
+      else closeMessageMenu(row, menu, bubble);
+    },
+    html: `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg>`,
+  });
   const menu = el("div", { class: "msg-menu", role: "menu" }, [
     el("button", { type: "button", class: "msg-menu-item", onclick: (ev) => { ev.stopPropagation(); closeMessageMenu(row, menu, bubble); toggleMessageBookmark(m); } }, [svg("M6 4h12v17l-6-4-6 4z", 16), savedNow ? "Remove saved message" : "Save message"]),
     el("button", { type: "button", class: "msg-menu-item", onclick: async (ev) => { ev.stopPropagation(); closeMessageMenu(row, menu, bubble); try { await navigator.clipboard.writeText(displayText || fileRealName || ""); toast("Copied"); } catch { toast("Could not copy this message"); } } }, [svg("M8 8V4h12v12h-4M4 8h12v12H4z", 16), "Copy"]),
